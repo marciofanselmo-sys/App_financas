@@ -36,36 +36,36 @@ export function TransactionTable({ transactions, onEdit, onDelete }: Transaction
   if (transactions.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <p className="text-slate-400 text-sm">Nenhuma transação encontrada.</p>
-        <p className="text-slate-300 text-xs mt-1">Adicione sua primeira transação clicando no botão acima.</p>
+        <p className="text-slate-400 dark:text-slate-500 text-sm">Nenhuma transação encontrada.</p>
+        <p className="text-slate-300 dark:text-slate-600 text-xs mt-1">Adicione sua primeira transação clicando no botão acima.</p>
       </div>
     )
   }
 
   return (
     <>
-      <div className="rounded-lg border border-slate-100 overflow-hidden bg-white">
+      <div className="rounded-lg border border-slate-100 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-800">
         <Table>
           <TableHeader>
-            <TableRow className="bg-slate-50">
-              <TableHead className="text-xs font-semibold text-slate-500">Descrição</TableHead>
-              <TableHead className="text-xs font-semibold text-slate-500 hidden sm:table-cell">Categoria</TableHead>
-              <TableHead className="text-xs font-semibold text-slate-500 hidden md:table-cell">Data</TableHead>
-              <TableHead className="text-xs font-semibold text-slate-500">Tipo</TableHead>
-              <TableHead className="text-xs font-semibold text-slate-500 text-right">Valor</TableHead>
+            <TableRow className="bg-slate-50 dark:bg-slate-700/50">
+              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400">Descrição</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden sm:table-cell">Categoria</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden md:table-cell">Data</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tipo</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 text-right">Valor</TableHead>
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {transactions.map((tx) => (
-              <TableRow key={tx.id} className="hover:bg-slate-50/50">
-                <TableCell className="font-medium text-slate-700 text-sm">{tx.description}</TableCell>
+              <TableRow key={tx.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-700/30">
+                <TableCell className="font-medium text-slate-700 dark:text-slate-200 text-sm">{tx.description}</TableCell>
                 <TableCell className="hidden sm:table-cell">
                   <Badge variant="secondary" className="text-xs font-normal">
                     {tx.category}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-slate-500 text-sm hidden md:table-cell">
+                <TableCell className="text-slate-500 dark:text-slate-400 text-sm hidden md:table-cell">
                   {format(new Date(tx.date + 'T00:00:00'), "dd 'de' MMM, yyyy", { locale: ptBR })}
                 </TableCell>
                 <TableCell>

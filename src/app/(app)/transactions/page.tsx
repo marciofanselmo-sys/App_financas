@@ -48,8 +48,8 @@ export default function TransactionsPage() {
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Transações</h1>
-          <p className="text-sm text-slate-500">
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Transações</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             {transactions.length} transação{transactions.length !== 1 ? 'ões' : ''} encontrada{transactions.length !== 1 ? 's' : ''}
           </p>
         </div>
