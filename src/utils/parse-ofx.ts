@@ -20,6 +20,64 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
   Outros: [],
 }
 
+// Prefixos bancários comuns que não agregam informação
+const BANKING_PREFIXES = [
+  /^pix\s+enviado\s+a\s+/i,
+  /^pix\s+recebido\s+de\s+/i,
+  /^pix\s+enviado\s+/i,
+  /^pix\s+recebido\s+/i,
+  /^pix\s+/i,
+  /^pgto\s+pix\s+/i,
+  /^pagamento\s+pix\s+/i,
+  /^pagto\s+pix\s+/i,
+  /^compra\s+déb(ito)?\s+/i,
+  /^compra\s+deb(ito)?\s+/i,
+  /^compra\s+crédito\s+/i,
+  /^compra\s+credito\s+/i,
+  /^compra\s+/i,
+  /^transferência\s+/i,
+  /^transferencia\s+/i,
+  /^transf\s+/i,
+  /^ted\s+/i,
+  /^doc\s+/i,
+  /^débito\s+em\s+conta\s+/i,
+  /^debito\s+em\s+conta\s+/i,
+  /^saque\s+/i,
+  /^retirada\s+/i,
+  /^tarifa\s+/i,
+]
+
+function cleanDescription(raw: string): string {
+  if (!raw.trim()) return raw
+
+  let s = raw.trim()
+
+  // Converte ALL CAPS para Title Case (bancos brasileiros geralmente exportam em maiúsculas)
+  if (s === s.toUpperCase()) {
+    s = s.toLowerCase().replace(/(?:^|\s|[-/])\S/g, c => c.toUpperCase())
+  }
+
+  // Remove prefixos bancários que não informam nada
+  for (const prefix of BANKING_PREFIXES) {
+    const replaced = s.replace(prefix, '')
+    if (replaced.length > 3) { s = replaced; break }
+  }
+
+  // Remove datas embutidas no meio/fim: "10/06", "10/06/2026", "10/06/26"
+  s = s.replace(/\s+\d{2}\/\d{2}(\/\d{2,4})?\b/g, '')
+
+  // Remove códigos numéricos longos no fim (IDs de transação)
+  s = s.replace(/\s+\d{6,}$/g, '')
+
+  // Remove "- SP", "- RJ" (estados abreviados no final)
+  s = s.replace(/\s+-\s+[A-Z]{2}$/g, '')
+
+  // Limpa espaços extras
+  s = s.replace(/\s+/g, ' ').trim()
+
+  return s || raw
+}
+
 function guessCategory(description: string, type: TransactionType): string {
   const lower = description.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 
@@ -46,7 +104,6 @@ function guessCategory(description: string, type: TransactionType): string {
 }
 
 function parseOFXDate(raw: string): string {
-  // YYYYMMDDHHMMSS or YYYYMMDD
   const s = raw.replace(/\[.*\]/, '').trim()
   const y = s.slice(0, 4)
   const m = s.slice(4, 6)
@@ -60,15 +117,12 @@ function extractTagValue(block: string, tag: string): string {
 }
 
 export function parseOFX(content: string): OFXTransaction[] {
-  // Normalize line endings and remove OFX header (before first <OFX>)
   const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 
-  // Extract all STMTTRN blocks
   const trnRegex = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi
   const matches = [...normalized.matchAll(trnRegex)]
 
   if (matches.length === 0) {
-    // Try SGML-style (no closing tags) — split by <STMTTRN>
     const parts = normalized.split(/<STMTTRN>/i).slice(1)
     return parts.map(block => parseSGMLBlock(block)).filter(Boolean) as OFXTransaction[]
   }
@@ -85,7 +139,6 @@ function parseXMLBlock(block: string): OFXTransaction | null {
 }
 
 function parseSGMLBlock(block: string): OFXTransaction | null {
-  // In SGML OFX, each field is on its own line: <TAG>value
   const memo = extractTagValue(block, 'MEMO') || extractTagValue(block, 'NAME')
   const amount = extractTagValue(block, 'TRNAMT')
   const date = extractTagValue(block, 'DTPOSTED')
@@ -101,7 +154,9 @@ function buildTransaction(memo: string, amountRaw: string, dateRaw: string): OFX
   const type: TransactionType = amount > 0 ? 'receita' : 'despesa'
   const absAmount = Math.abs(amount)
   const date = parseOFXDate(dateRaw)
-  const category = guessCategory(memo, type)
 
-  return { description: memo, amount: absAmount, date, type, category }
+  const description = cleanDescription(memo)
+  const category = guessCategory(description, type)
+
+  return { description, amount: absAmount, date, type, category }
 }
