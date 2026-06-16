@@ -40,9 +40,10 @@ export function TransactionForm({ open, onClose, onSubmit, initialData }: Transa
     }
   }, [open, initialData])
 
-  // Ajusta categoria quando tipo muda e a atual não é compatível
+  // Limpa categoria apenas quando o tipo muda e a categoria não é compatível.
+  // Ignora enquanto categories ainda não carregou (evita limpar na abertura do form).
   useEffect(() => {
-    if (!category) return
+    if (!category || categories.length === 0) return
     const still = categories.find(c => c.name === category && (c.type === type || c.type === 'ambos'))
     if (!still) setCategory('')
   }, [type, categories, category])
