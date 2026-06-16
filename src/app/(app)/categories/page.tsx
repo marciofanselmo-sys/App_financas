@@ -42,6 +42,7 @@ export default function CategoriesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [seeding, setSeeding] = useState(false)
+  const [seedError, setSeedError] = useState('')
 
   function openCreate() {
     setEditing(null)
@@ -89,7 +90,9 @@ export default function CategoriesPage() {
 
   async function handleSeedDefaults() {
     setSeeding(true)
-    await seedDefaults()
+    setSeedError('')
+    const { error } = await seedDefaults()
+    if (error) setSeedError(error)
     setSeeding(false)
   }
 
@@ -120,6 +123,12 @@ export default function CategoriesPage() {
           </Button>
         </div>
       </div>
+
+      {seedError && (
+        <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
+          Erro ao restaurar: {seedError}
+        </div>
+      )}
 
       {loading ? (
         <div className="space-y-3">
