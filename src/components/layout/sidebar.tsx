@@ -4,13 +4,14 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, ArrowLeftRight, LogOut, TrendingUp } from 'lucide-react'
+import { LayoutDashboard, ArrowLeftRight, LogOut, TrendingUp, Tag } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/transactions', label: 'Transações', icon: ArrowLeftRight },
+  { href: '/categories', label: 'Categorias', icon: Tag },
 ]
 
 export function Sidebar() {

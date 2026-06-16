@@ -1,14 +1,14 @@
-import { Category, TransactionType } from '@/types'
+import { TransactionType } from '@/types'
 
 interface OFXTransaction {
   description: string
   amount: number
   date: string
   type: TransactionType
-  category: Category
+  category: string
 }
 
-const CATEGORY_KEYWORDS: Record<Category, string[]> = {
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
   Alimentação: ['supermercado', 'mercado', 'restaurante', 'lanche', 'pizza', 'burger', 'hamburguer', 'ifood', 'rappi', 'delivery', 'padaria', 'açougue', 'hortifruti', 'conveniencia', 'conveniência', 'cafe', 'café', 'bar ', 'boteco', 'peixaria'],
   Transporte: ['uber', '99pop', '99app', 'taxi', 'táxi', 'onibus', 'ônibus', 'metro', 'metrô', 'trem', 'combustivel', 'combustível', 'gasolina', 'etanol', 'posto ', 'shell', 'ipiranga', 'br distribuidora', 'estacionamento', 'pedagio', 'pedágio', 'passagem'],
   Moradia: ['aluguel', 'condominio', 'condomínio', 'agua ', 'água ', 'sabesp', 'copasa', 'cemig', 'enel', 'cpfl', 'eletropaulo', 'luz ', 'energia', 'gas encanado', 'gás', 'comgas', 'internet', 'vivo', 'claro', 'tim', 'oi ', 'nextel', 'iptu', 'seguro resid'],
@@ -20,7 +20,7 @@ const CATEGORY_KEYWORDS: Record<Category, string[]> = {
   Outros: [],
 }
 
-function guessCategory(description: string, type: TransactionType): Category {
+function guessCategory(description: string, type: TransactionType): string {
   const lower = description.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 
   if (type === 'receita') {
@@ -33,7 +33,7 @@ function guessCategory(description: string, type: TransactionType): Category {
     return 'Outros'
   }
 
-  for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS) as [Category, string[]][]) {
+  for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
     if (cat === 'Salário' || cat === 'Freelance' || cat === 'Outros') continue
     for (const kw of keywords) {
       if (lower.includes(kw.normalize('NFD').replace(/[̀-ͯ]/g, '').trim())) {

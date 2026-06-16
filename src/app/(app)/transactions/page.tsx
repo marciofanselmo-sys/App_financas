@@ -8,7 +8,7 @@ import { TransactionFilters } from '@/components/transactions/transaction-filter
 import { ImportCSVModal } from '@/components/transactions/import-csv-modal'
 import { exportToCSV } from '@/utils/export-csv'
 import { Button } from '@/components/ui/button'
-import { Transaction, Category } from '@/types'
+import { Transaction } from '@/types'
 import { Plus, Download, Upload } from 'lucide-react'
 
 export default function TransactionsPage() {
@@ -16,7 +16,7 @@ export default function TransactionsPage() {
   const [search, setSearch] = useState('')
   const [month, setMonth] = useState<number | 'all'>(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
-  const [category, setCategory] = useState<Category | 'all'>('all')
+  const [category, setCategory] = useState<string>('all')
   const [formOpen, setFormOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)

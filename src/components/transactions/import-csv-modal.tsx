@@ -7,7 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { CATEGORIES, Category, TransactionType } from '@/types'
+import { TransactionType } from '@/types'
+import { useCategories } from '@/hooks/use-categories'
 import { Upload, Download, CheckCircle, AlertCircle, FileText } from 'lucide-react'
 import { parseOFX } from '@/utils/parse-ofx'
 
@@ -74,8 +75,8 @@ function normalizeType(raw: string): TransactionType | null {
   return null
 }
 
-function normalizeCategory(raw: string): Category {
-  const found = CATEGORIES.find(c => c.toLowerCase() === raw.trim().toLowerCase())
+function normalizeCategory(raw: string, categoryNames: string[]): string {
+  const found = categoryNames.find(c => c.toLowerCase() === raw.trim().toLowerCase())
   return found ?? 'Outros'
 }
 
@@ -86,7 +87,7 @@ interface PreviewRow {
   amount: number
   date: string
   type: TransactionType
-  category: Category
+  category: string
   valid: boolean
   errors: string[]
 }
@@ -103,6 +104,8 @@ type FileType = 'ofx' | 'csv' | null
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
 export function ImportCSVModal({ open, onClose, onImported }: ImportCSVModalProps) {
+  const { categories } = useCategories()
+  const categoryNames = categories.map(c => c.name)
   const fileRef = useRef<HTMLInputElement>(null)
   const [step, setStep] = useState<Step>('upload')
   const [fileType, setFileType] = useState<FileType>(null)
@@ -204,7 +207,7 @@ export function ImportCSVModal({ open, onClose, onImported }: ImportCSVModalProp
       const type = normalizeType(mapping.tipo ? raw[mapping.tipo] : '') ?? 'despesa'
       if (!mapping.tipo || !normalizeType(raw[mapping.tipo])) errors.push('Tipo não mapeado — assumido "despesa"')
 
-      const category = normalizeCategory(mapping.categoria ? raw[mapping.categoria] : 'Outros')
+      const category = normalizeCategory(mapping.categoria ? raw[mapping.categoria] : 'Outros', categoryNames)
 
       return { description, amount: isNaN(amount) ? 0 : amount, date, type, category, valid: errors.filter(e => !e.includes('assumido')).length === 0, errors }
     })
@@ -331,7 +334,7 @@ export function ImportCSVModal({ open, onClose, onImported }: ImportCSVModalProp
             </div>
 
             <div className="text-xs text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800 p-3 rounded-lg space-y-1">
-              <p><strong>Categorias válidas:</strong> {CATEGORIES.join(', ')}</p>
+              <p><strong>Categorias válidas:</strong> {categoryNames.join(', ')}</p>
               <p><strong>Datas aceitas:</strong> AAAA-MM-DD ou DD/MM/AAAA</p>
               <p><strong>Tipo:</strong> receita ou despesa</p>
             </div>
