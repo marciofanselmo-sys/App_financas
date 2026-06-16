@@ -16,6 +16,11 @@ create table if not exists transactions (
 -- Row Level Security
 alter table transactions enable row level security;
 
+drop policy if exists "Users can view own transactions" on transactions;
+drop policy if exists "Users can insert own transactions" on transactions;
+drop policy if exists "Users can update own transactions" on transactions;
+drop policy if exists "Users can delete own transactions" on transactions;
+
 create policy "Users can view own transactions"
   on transactions for select
   using (auth.uid() = user_id);
