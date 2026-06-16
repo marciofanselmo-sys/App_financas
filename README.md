@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FinanceApp — Gestão Financeira Pessoal
 
-## Getting Started
+App web para controle de finanças pessoais com dashboard, gráficos e exportação CSV.
 
-First, run the development server:
+**Stack:** Next.js 16 · Supabase · Tailwind CSS · shadcn/ui · Recharts · Vercel
 
+---
+
+## Setup local
+
+### 1. Instalar dependências
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Configurar variáveis de ambiente
+```bash
+cp .env.example .env.local
+```
+Preencha `.env.local` com suas credenciais do Supabase (Settings → API no painel do Supabase).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+> **Segurança:** `.env.local` está no `.gitignore` e **nunca** deve ser commitado.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 3. Criar tabela no Supabase
+No SQL Editor do Supabase, execute o conteúdo de `src/lib/supabase/schema.sql`.
 
-## Learn More
+### 4. Rodar em desenvolvimento
+```bash
+npm run dev
+```
+Acesse `http://localhost:3000`.
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deploy na Vercel
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+O projeto está configurado para deploy contínuo via GitHub.  
+Cada `git push` na branch `main` dispara um novo deploy automaticamente.
 
-## Deploy on Vercel
+**Variáveis de ambiente na Vercel:**  
+Configure em Dashboard → Project → Settings → Environment Variables:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Variável | Onde encontrar |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Settings → API → Project URL |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase → Settings → API → anon public |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+## Segurança
+
+- As credenciais do Supabase usam o prefixo `NEXT_PUBLIC_` pois a **Publishable Key** (anteriormente Anon Key) é projetada para ser pública — a segurança dos dados é garantida pelas políticas de **Row Level Security (RLS)** configuradas no banco.
+- Nenhuma chave secreta é exposta no código ou no repositório.
+- O arquivo `.env.local` está protegido pelo `.gitignore`.
+
+---
+
+## Estrutura do projeto
+
+```
+src/
+  app/
+    (app)/        # Dashboard e Transações (rotas protegidas)
+    auth/         # Login e Cadastro
+  components/     # UI, Dashboard, Transações, Layout
+  hooks/          # useTransactions (CRUD + filtros)
+  lib/supabase/   # Clientes e schema SQL
+  types/          # Tipos TypeScript
+  utils/          # Exportação CSV
+  middleware.ts   # Proteção de rotas via Supabase Auth
+```
