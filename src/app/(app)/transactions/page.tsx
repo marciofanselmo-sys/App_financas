@@ -5,10 +5,11 @@ import { useTransactions } from '@/hooks/use-transactions'
 import { TransactionTable } from '@/components/transactions/transaction-table'
 import { TransactionForm } from '@/components/transactions/transaction-form'
 import { TransactionFilters } from '@/components/transactions/transaction-filters'
+import { ImportCSVModal } from '@/components/transactions/import-csv-modal'
 import { exportToCSV } from '@/utils/export-csv'
 import { Button } from '@/components/ui/button'
 import { Transaction, Category } from '@/types'
-import { Plus, Download } from 'lucide-react'
+import { Plus, Download, Upload } from 'lucide-react'
 
 export default function TransactionsPage() {
   const now = new Date()
@@ -17,9 +18,10 @@ export default function TransactionsPage() {
   const [year, setYear] = useState(now.getFullYear())
   const [category, setCategory] = useState<Category | 'all'>('all')
   const [formOpen, setFormOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
 
-  const { transactions, loading, createTransaction, updateTransaction, deleteTransaction } =
+  const { transactions, loading, createTransaction, updateTransaction, deleteTransaction, refetch } =
     useTransactions({
       month: month === 'all' ? undefined : month,
       year,
@@ -38,9 +40,7 @@ export default function TransactionsPage() {
   }
 
   async function handleSubmit(data: Omit<Transaction, 'id' | 'user_id' | 'created_at'>) {
-    if (editingTx) {
-      return updateTransaction(editingTx.id, data)
-    }
+    if (editingTx) return updateTransaction(editingTx.id, data)
     return createTransaction(data)
   }
 
@@ -53,7 +53,7 @@ export default function TransactionsPage() {
             {transactions.length} transação{transactions.length !== 1 ? 'ões' : ''} encontrada{transactions.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -63,6 +63,15 @@ export default function TransactionsPage() {
           >
             <Download className="h-4 w-4" />
             <span className="hidden sm:inline">Exportar CSV</span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setImportOpen(true)}
+            className="gap-2"
+          >
+            <Upload className="h-4 w-4" />
+            <span className="hidden sm:inline">Importar CSV</span>
           </Button>
           <Button size="sm" onClick={() => setFormOpen(true)} className="gap-2">
             <Plus className="h-4 w-4" />
@@ -85,7 +94,7 @@ export default function TransactionsPage() {
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-14 bg-white rounded-lg animate-pulse shadow-sm" />
+            <div key={i} className="h-14 bg-white dark:bg-slate-800 rounded-lg animate-pulse shadow-sm" />
           ))}
         </div>
       ) : (
@@ -101,6 +110,12 @@ export default function TransactionsPage() {
         onClose={handleCloseForm}
         onSubmit={handleSubmit}
         initialData={editingTx ?? undefined}
+      />
+
+      <ImportCSVModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={refetch}
       />
     </div>
   )
