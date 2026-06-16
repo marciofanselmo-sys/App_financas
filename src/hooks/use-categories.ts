@@ -1,80 +1,100 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { useState, useEffect } from 'react'
 import { Category, DEFAULT_CATEGORIES } from '@/types'
+
+const STORAGE_KEY = 'financeapp_categories'
+
+function load(): Category[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) return JSON.parse(raw) as Category[]
+  } catch {}
+  return []
+}
+
+function save(cats: Category[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(cats))
+}
+
+function uid() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36)
+}
 
 export function useCategories() {
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
 
-  const fetch = useCallback(async () => {
-    setLoading(true)
-    try {
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('categories')
-        .select('*')
-        .order('name')
-
-      if (error) {
-        console.error('Erro ao buscar categorias:', error.message)
-        setCategories([])
-        return
-      }
-
-      setCategories((data as Category[]) ?? [])
-    } finally {
-      setLoading(false)
+  useEffect(() => {
+    const stored = load()
+    if (stored.length > 0) {
+      setCategories(stored)
+    } else {
+      const defaults = DEFAULT_CATEGORIES.map(c => ({
+        ...c,
+        id: uid(),
+        user_id: 'local',
+        created_at: new Date().toISOString(),
+      }))
+      save(defaults)
+      setCategories(defaults)
     }
+    setLoading(false)
   }, [])
 
-  useEffect(() => { fetch() }, [fetch])
+  function persist(cats: Category[]) {
+    save(cats)
+    setCategories(cats)
+  }
 
   async function createCategory(cat: Omit<Category, 'id' | 'user_id' | 'created_at'>) {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { error: 'Não autenticado' }
+    const duplicate = categories.find(c => c.name.toLowerCase() === cat.name.toLowerCase())
+    if (duplicate) return { error: 'Já existe uma categoria com esse nome.' }
 
-    const { error } = await supabase
-      .from('categories')
-      .insert({ ...cat, user_id: user.id })
-
-    if (!error) await fetch()
-    return { error: error?.message ?? null }
+    const newCat: Category = {
+      ...cat,
+      id: uid(),
+      user_id: 'local',
+      created_at: new Date().toISOString(),
+    }
+    persist([...categories, newCat])
+    return { error: null }
   }
 
   async function updateCategory(id: string, cat: Partial<Omit<Category, 'id' | 'user_id' | 'created_at'>>) {
-    const supabase = createClient()
-    const { error } = await supabase.from('categories').update(cat).eq('id', id)
-    if (!error) await fetch()
-    return { error: error?.message ?? null }
+    persist(categories.map(c => (c.id === id ? { ...c, ...cat } : c)))
+    return { error: null }
   }
 
   async function deleteCategory(id: string) {
-    const supabase = createClient()
-    const { error } = await supabase.from('categories').delete().eq('id', id)
-    if (!error) await fetch()
-    return { error: error?.message ?? null }
+    persist(categories.filter(c => c.id !== id))
+    return { error: null }
   }
 
   async function seedDefaults() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { error: 'Não autenticado' }
-
-    // Insere apenas categorias que ainda não existem
     const existing = categories.map(c => c.name.toLowerCase())
-    const toInsert = DEFAULT_CATEGORIES
+    const toAdd = DEFAULT_CATEGORIES
       .filter(c => !existing.includes(c.name.toLowerCase()))
-      .map(c => ({ ...c, user_id: user.id }))
+      .map(c => ({
+        ...c,
+        id: uid(),
+        user_id: 'local',
+        created_at: new Date().toISOString(),
+      }))
 
-    if (!toInsert.length) return { error: null }
-
-    const { error } = await supabase.from('categories').insert(toInsert)
-    if (!error) await fetch()
-    return { error: error?.message ?? null }
+    if (toAdd.length === 0) return { error: null }
+    persist([...categories, ...toAdd])
+    return { error: null }
   }
 
-  return { categories, loading, refetch: fetch, createCategory, updateCategory, deleteCategory, seedDefaults }
+  return {
+    categories,
+    loading,
+    refetch: () => {},
+    createCategory,
+    updateCategory,
+    deleteCategory,
+    seedDefaults,
+  }
 }
