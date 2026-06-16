@@ -58,7 +58,14 @@ export function TransactionForm({ open, onClose, onSubmit, initialData }: Transa
 
     setLoading(true)
     const { error } = await onSubmit({ description, amount: amountNum, date, type, category })
-    if (error) { setError('Erro ao salvar transação. Tente novamente.'); setLoading(false); return }
+    if (error) {
+      const msg = typeof error === 'object' && error !== null && 'message' in error
+        ? (error as { message: string }).message
+        : String(error)
+      setError(msg || 'Erro ao salvar transação. Tente novamente.')
+      setLoading(false)
+      return
+    }
     onClose()
     setLoading(false)
   }
