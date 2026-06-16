@@ -3,7 +3,7 @@ import { MobileNav } from '@/components/layout/mobile-nav'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-900">
       <div className="hidden md:flex">
         <Sidebar />
       </div>

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { LayoutDashboard, ArrowLeftRight, LogOut } from 'lucide-react'
+import { ThemeToggleIcon } from '@/components/theme-toggle'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -23,23 +24,26 @@ export function MobileNav() {
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex items-center z-50 md:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex items-center z-50 md:hidden">
       {navItems.map(({ href, label, icon: Icon }) => (
         <Link
           key={href}
           href={href}
           className={cn(
             'flex flex-1 flex-col items-center gap-1 py-3 text-xs font-medium transition-colors',
-            pathname === href ? 'text-blue-600' : 'text-slate-500'
+            pathname === href
+              ? 'text-blue-600 dark:text-blue-400'
+              : 'text-slate-500 dark:text-slate-400'
           )}
         >
           <Icon className="h-5 w-5" />
           {label}
         </Link>
       ))}
+      <ThemeToggleIcon />
       <button
         onClick={handleLogout}
-        className="flex flex-1 flex-col items-center gap-1 py-3 text-xs font-medium text-slate-500 hover:text-red-500 transition-colors"
+        className="flex flex-1 flex-col items-center gap-1 py-3 text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-red-500 transition-colors"
       >
         <LogOut className="h-5 w-5" />
         Sair
