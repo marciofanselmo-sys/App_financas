@@ -5,13 +5,14 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, ArrowLeftRight, LogOut, TrendingUp, Settings, Tag, ChevronDown } from 'lucide-react'
+import { LayoutDashboard, ArrowLeftRight, LogOut, TrendingUp, Settings, Tag, ChevronDown, Target } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/transactions', label: 'Transações', icon: ArrowLeftRight },
+  { href: '/goals', label: 'Metas', icon: Target },
 ]
 
 const settingsItems = [
