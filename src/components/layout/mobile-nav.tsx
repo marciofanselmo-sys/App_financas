@@ -10,7 +10,7 @@ import { ThemeToggleIcon } from '@/components/theme-toggle'
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/transactions', label: 'Transações', icon: ArrowLeftRight },
-  { href: '/settings', label: 'Config.', icon: Settings },
+  { href: '/settings/categories', label: 'Config.', icon: Settings },
 ]
 
 export function MobileNav() {
@@ -32,7 +32,7 @@ export function MobileNav() {
           href={href}
           className={cn(
             'flex flex-1 flex-col items-center gap-1 py-3 text-xs font-medium transition-colors',
-            pathname === href || (href === '/settings' && pathname.startsWith('/settings'))
+            pathname === href || (href === '/settings/categories' && pathname.startsWith('/settings'))
               ? 'text-blue-600 dark:text-blue-400'
               : 'text-slate-500 dark:text-slate-400'
           )}
