@@ -47,6 +47,21 @@ export const DEFAULT_CATEGORIES: Omit<Category, 'id' | 'user_id' | 'created_at'>
   { name: 'Outros',       type: 'ambos',   color: '#6b7280' },
 ]
 
+export interface RICOPosition {
+  ticker: string
+  value: number
+  allocation: string
+  rentabilidade: string
+}
+
+export interface GoalImport {
+  importedAt: string
+  patrimonio: number
+  totalInvestido: number
+  saldoDisponivel: number
+  positions: RICOPosition[]
+}
+
 export interface Goal {
   id: string
   name: string
@@ -55,6 +70,7 @@ export interface Goal {
   deadline: string // YYYY-MM
   color: string
   created_at: string
+  lastImport?: GoalImport
 }
 
 export const GOAL_COLORS = [
