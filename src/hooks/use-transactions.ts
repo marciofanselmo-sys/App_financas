@@ -29,12 +29,25 @@ export function useTransactions(filters?: TransactionFilters) {
         .lte('date', `${filters.year}-12-31`)
     }
 
+    if (filters?.board_id) {
+      query = query.eq('board_id', filters.board_id)
+    }
+
     if (filters?.category && filters.category !== 'all') {
       query = query.eq('category', filters.category)
     }
 
     if (filters?.search) {
       query = query.ilike('description', `%${filters.search}%`)
+    }
+
+    if (filters?.tag) {
+      query = query.contains('tags', [filters.tag])
+    }
+
+    if (filters?.exclude_board_ids?.length) {
+      const ids = filters.exclude_board_ids.join(',')
+      query = query.or(`board_id.is.null,board_id.not.in.(${ids})`)
     }
 
     const { data, error } = await query
@@ -45,7 +58,8 @@ export function useTransactions(filters?: TransactionFilters) {
       setTransactions(data as Transaction[])
     }
     setLoading(false)
-  }, [filters?.month, filters?.year, filters?.category, filters?.search])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters?.month, filters?.year, filters?.category, filters?.search, filters?.board_id, filters?.tag, filters?.exclude_board_ids?.join(',')])
 
   useEffect(() => {
     fetchTransactions()
@@ -66,13 +80,16 @@ export function useTransactions(filters?: TransactionFilters) {
   }
 
   async function updateTransaction(id: string, tx: Partial<Omit<Transaction, 'id' | 'user_id' | 'created_at'>>) {
+    // Optimistic update: apply change immediately, no skeleton flash
+    setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...tx } : t))
+
     const supabase = createClient()
     const { error } = await supabase
       .from('transactions')
       .update(tx)
       .eq('id', id)
 
-    if (!error) fetchTransactions()
+    if (error) fetchTransactions() // revert on error
     return { error }
   }
 

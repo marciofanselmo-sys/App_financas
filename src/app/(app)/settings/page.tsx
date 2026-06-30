@@ -263,7 +263,7 @@ export default function SettingsPage() {
             <DialogTitle>Excluir categoria</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-slate-500 dark:text-slate-400 pt-2">
-            Excluir <strong>"{deleteTarget?.name}"</strong>? As transações com essa categoria não serão afetadas.
+            Excluir <strong>&ldquo;{deleteTarget?.name}&rdquo;</strong>? As transações com essa categoria não serão afetadas.
           </p>
           <div className="flex gap-2 pt-2">
             <Button variant="outline" onClick={() => setDeleteTarget(null)} className="flex-1">Cancelar</Button>

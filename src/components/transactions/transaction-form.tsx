@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -8,15 +8,30 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Transaction, TransactionType } from '@/types'
 import { useCategories } from '@/hooks/use-categories'
+import { X } from 'lucide-react'
+
+type TransactionData = Omit<Transaction, 'id' | 'user_id' | 'created_at'>
+
+function addMonths(dateStr: string, months: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const totalMonths = (m - 1) + months
+  const newYear = y + Math.floor(totalMonths / 12)
+  const newMonth = (totalMonths % 12) + 1
+  const lastDay = new Date(newYear, newMonth, 0).getDate()
+  const newDay = Math.min(d, lastDay)
+  return `${newYear}-${String(newMonth).padStart(2, '0')}-${String(newDay).padStart(2, '0')}`
+}
 
 interface TransactionFormProps {
   open: boolean
   onClose: () => void
-  onSubmit: (data: Omit<Transaction, 'id' | 'user_id' | 'created_at'>) => Promise<{ error: unknown }>
+  onSubmit: (data: TransactionData) => Promise<{ error: unknown }>
+  onSubmitBatch?: (items: TransactionData[]) => Promise<{ error: unknown }>
   initialData?: Transaction
+  boardId?: string
 }
 
-export function TransactionForm({ open, onClose, onSubmit, initialData }: TransactionFormProps) {
+export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initialData, boardId }: TransactionFormProps) {
   const { categories } = useCategories()
 
   const [description, setDescription] = useState('')
@@ -24,10 +39,18 @@ export function TransactionForm({ open, onClose, onSubmit, initialData }: Transa
   const [date, setDate] = useState('')
   const [type, setType] = useState<TransactionType>('despesa')
   const [category, setCategory] = useState('')
+  const [tags, setTags] = useState<string[]>([])
+  const [tagInput, setTagInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [isInstallment, setIsInstallment] = useState(false)
+  const [installmentCount, setInstallmentCount] = useState(2)
+  const tagRef = useRef<HTMLInputElement>(null)
 
+  const isTransfer = type === 'transferencia'
   const filteredCategories = categories.filter(c => c.type === type || c.type === 'ambos')
+  const isNewTransaction = !initialData
+  const canInstallment = isNewTransaction && type === 'despesa' && !!onSubmitBatch
 
   useEffect(() => {
     if (open) {
@@ -36,17 +59,39 @@ export function TransactionForm({ open, onClose, onSubmit, initialData }: Transa
       setDate(initialData?.date ?? new Date().toISOString().split('T')[0])
       setType(initialData?.type ?? 'despesa')
       setCategory(initialData?.category ?? '')
+      setTags(initialData?.tags ?? [])
+      setTagInput('')
       setError('')
+      setIsInstallment(false)
+      setInstallmentCount(2)
     }
   }, [open, initialData])
 
-  // Limpa categoria apenas quando o tipo muda e a categoria não é compatível.
-  // Ignora enquanto categories ainda não carregou (evita limpar na abertura do form).
   useEffect(() => {
     if (!category || categories.length === 0) return
     const still = categories.find(c => c.name === category && (c.type === type || c.type === 'ambos'))
     if (!still) setCategory('')
   }, [type, categories, category])
+
+  function addTag(raw: string) {
+    const tag = raw.trim().toLowerCase()
+    if (tag && !tags.includes(tag)) setTags(prev => [...prev, tag])
+    setTagInput('')
+  }
+
+  function handleTagKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      addTag(tagInput)
+    }
+    if (e.key === 'Backspace' && tagInput === '' && tags.length > 0) {
+      setTags(prev => prev.slice(0, -1))
+    }
+  }
+
+  function removeTag(tag: string) {
+    setTags(prev => prev.filter(t => t !== tag))
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -54,18 +99,45 @@ export function TransactionForm({ open, onClose, onSubmit, initialData }: Transa
 
     const amountNum = parseFloat(amount.replace(',', '.'))
     if (isNaN(amountNum) || amountNum <= 0) { setError('Informe um valor válido.'); return }
-    if (!category) { setError('Selecione uma categoria.'); return }
+    if (!isTransfer && !category) { setError('Selecione uma categoria.'); return }
+
+    const baseData = {
+      description,
+      amount: amountNum,
+      type,
+      category: isTransfer ? 'Transferência' : category,
+      tags,
+      board_id: initialData?.board_id ?? boardId ?? null,
+    }
 
     setLoading(true)
-    const { error } = await onSubmit({ description, amount: amountNum, date, type, category })
-    if (error) {
-      const msg = typeof error === 'object' && error !== null && 'message' in error
-        ? (error as { message: string }).message
-        : String(error)
-      setError(msg || 'Erro ao salvar transação. Tente novamente.')
-      setLoading(false)
-      return
+
+    if (canInstallment && isInstallment && installmentCount > 1 && onSubmitBatch) {
+      const items: TransactionData[] = Array.from({ length: installmentCount }, (_, i) => ({
+        ...baseData,
+        date: addMonths(date, i),
+        installment_current: i + 1,
+        installment_total: installmentCount,
+      }))
+      const { error } = await onSubmitBatch(items)
+      if (error) {
+        const msg = typeof error === 'object' && error !== null && 'message' in error
+          ? (error as { message: string }).message : String(error)
+        setError(msg || 'Erro ao salvar parcelamento. Tente novamente.')
+        setLoading(false)
+        return
+      }
+    } else {
+      const { error } = await onSubmit({ ...baseData, date })
+      if (error) {
+        const msg = typeof error === 'object' && error !== null && 'message' in error
+          ? (error as { message: string }).message : String(error)
+        setError(msg || 'Erro ao salvar transação. Tente novamente.')
+        setLoading(false)
+        return
+      }
     }
+
     onClose()
     setLoading(false)
   }
@@ -85,21 +157,23 @@ export function TransactionForm({ open, onClose, onSubmit, initialData }: Transa
 
           <div className="space-y-2">
             <Label>Tipo</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {(['receita', 'despesa'] as TransactionType[]).map(t => (
+            <div className="grid grid-cols-3 gap-2">
+              {(['receita', 'despesa', 'transferencia'] as TransactionType[]).map(t => (
                 <button
                   key={t}
                   type="button"
                   onClick={() => setType(t)}
-                  className={`py-2 px-4 rounded-lg text-sm font-medium border transition-colors ${
+                  className={`py-2 px-3 rounded-lg text-sm font-medium border transition-colors ${
                     type === t
                       ? t === 'receita'
                         ? 'bg-green-600 text-white border-green-600'
-                        : 'bg-red-500 text-white border-red-500'
+                        : t === 'despesa'
+                          ? 'bg-red-500 text-white border-red-500'
+                          : 'bg-slate-500 text-white border-slate-500'
                       : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'
                   }`}
                 >
-                  {t === 'receita' ? 'Receita' : 'Despesa'}
+                  {t === 'receita' ? 'Receita' : t === 'despesa' ? 'Despesa' : 'Transferência'}
                 </button>
               ))}
             </div>
@@ -142,38 +216,108 @@ export function TransactionForm({ open, onClose, onSubmit, initialData }: Transa
             </div>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>Categoria</Label>
-              <a href="/categories" className="text-xs text-blue-600 hover:underline">
-                + Gerenciar categorias
-              </a>
+          {canInstallment && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <Label>Parcelado?</Label>
+                <button
+                  type="button"
+                  onClick={() => setIsInstallment(v => !v)}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
+                    isInstallment ? 'bg-blue-600' : 'bg-slate-200 dark:bg-slate-600'
+                  }`}
+                >
+                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                    isInstallment ? 'translate-x-4' : 'translate-x-1'
+                  }`} />
+                </button>
+              </div>
+              {isInstallment && (
+                <div className="flex items-center gap-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
+                  <Input
+                    type="number"
+                    min="2"
+                    max="48"
+                    value={installmentCount}
+                    onChange={e => setInstallmentCount(Math.max(2, Math.min(48, parseInt(e.target.value) || 2)))}
+                    className="w-20 h-8 text-center"
+                  />
+                  <span className="text-sm text-slate-600 dark:text-slate-300">parcelas mensais</span>
+                  {amount && !isNaN(parseFloat(amount.replace(',', '.'))) && (
+                    <span className="text-xs text-blue-600 dark:text-blue-400 font-medium ml-auto">
+                      {installmentCount}x de {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(parseFloat(amount.replace(',', '.')))}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
-            <Select value={category} onValueChange={v => setCategory(v ?? '')}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione uma categoria..." />
-              </SelectTrigger>
-              <SelectContent>
-                {filteredCategories.length === 0 ? (
-                  <SelectItem value="__empty__" disabled>Nenhuma categoria disponível</SelectItem>
-                ) : (
-                  filteredCategories.map(cat => (
-                    <SelectItem key={cat.id} value={cat.name}>
-                      <div className="flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                        {cat.name}
-                      </div>
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
+          )}
+
+          {!isTransfer && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Categoria</Label>
+                <a href="/categories" className="text-xs text-blue-600 hover:underline">
+                  + Gerenciar categorias
+                </a>
+              </div>
+              <Select value={category} onValueChange={v => setCategory(v ?? '')}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione uma categoria..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {filteredCategories.length === 0 ? (
+                    <SelectItem value="__empty__" disabled>Nenhuma categoria disponível</SelectItem>
+                  ) : (
+                    filteredCategories.map(cat => (
+                      <SelectItem key={cat.id} value={cat.name}>
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                          {cat.name}
+                        </div>
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Tags / Etiquetas */}
+          <div className="space-y-2">
+            <Label>Etiquetas</Label>
+            <div
+              className="flex flex-wrap gap-1.5 min-h-10 px-3 py-2 rounded-md border border-input bg-background dark:bg-slate-800 dark:border-slate-600 cursor-text"
+              onClick={() => tagRef.current?.focus()}
+            >
+              {tags.map(tag => (
+                <span
+                  key={tag}
+                  className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs px-2 py-0.5 rounded-full"
+                >
+                  {tag}
+                  <button type="button" onClick={() => removeTag(tag)} className="hover:text-red-500">
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+              <input
+                ref={tagRef}
+                value={tagInput}
+                onChange={e => setTagInput(e.target.value)}
+                onKeyDown={handleTagKeyDown}
+                onBlur={() => { if (tagInput.trim()) addTag(tagInput) }}
+                placeholder={tags.length === 0 ? 'Digite e pressione Enter...' : ''}
+                className="flex-1 min-w-[120px] text-sm bg-transparent outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500"
+              />
+            </div>
+            <p className="text-xs text-slate-400 dark:text-slate-500">Pressione Enter ou vírgula para adicionar uma etiqueta</p>
           </div>
 
           <div className="flex gap-2 pt-2">
             <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancelar</Button>
             <Button type="submit" disabled={loading} className="flex-1">
-              {loading ? 'Salvando...' : initialData ? 'Salvar' : 'Adicionar'}
+              {loading ? 'Salvando...' : initialData ? 'Salvar' : isInstallment ? `Criar ${installmentCount} parcelas` : 'Adicionar'}
             </Button>
           </div>
         </form>

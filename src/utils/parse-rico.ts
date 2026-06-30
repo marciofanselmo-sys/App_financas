@@ -5,6 +5,9 @@ export interface RICOPosition {
   value: number
   allocation: string
   rentabilidade: string
+  quantity?: string
+  category: string
+  subcategory: string
 }
 
 export interface RICOData {
@@ -16,11 +19,12 @@ export interface RICOData {
 }
 
 function parseBRL(value: unknown): number {
-  if (typeof value !== 'string') return 0
   return parseFloat(
-    String(value).replace(/R\$\s?/g, '').replace(/\./g, '').replace(',', '.')
+    String(value ?? '').replace(/R\$\s?/g, '').replace(/\./g, '').replace(',', '.')
   ) || 0
 }
+
+const STOP_KEYWORDS = ['dividendo', 'provento', 'distribuiç', 'custódia', 'custodi']
 
 export function parseRICOXLSX(buffer: ArrayBuffer): RICOData {
   const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' })
@@ -34,12 +38,21 @@ export function parseRICOXLSX(buffer: ArrayBuffer): RICOData {
   let saldoDisponivel = 0
   const positions: RICOPosition[] = []
 
+  let currentCategory = ''
+  let currentSubcategory = ''
+  let stop = false
+
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]
     const cell0 = String(row[0] ?? '').trim()
+    const lower = cell0.toLowerCase()
 
-    // Linha de cabeçalho do resumo: "Este é o seu patrimônio"
-    if (cell0.toLowerCase().includes('patrimônio') || cell0.toLowerCase().includes('patrimonio')) {
+    if (STOP_KEYWORDS.some(kw => lower.includes(kw))) {
+      stop = true
+    }
+
+    // Patrimônio: cabeçalho seguido dos valores na próxima linha
+    if (lower.includes('patrimônio') || lower.includes('patrimonio')) {
       const next = rows[i + 1]
       if (next) {
         patrimonio      = parseBRL(next[0])
@@ -48,13 +61,43 @@ export function parseRICOXLSX(buffer: ArrayBuffer): RICOData {
       }
     }
 
-    // Linhas de posição: ticker = letras maiúsculas + números (ex: CMIG4, XPML11, IVVB11)
-    if (/^[A-Z]{3,5}\d{1,2}$/.test(cell0) && row[1]) {
+    if (stop) continue
+
+    const isEmpty = (v: unknown) => String(v ?? '').trim() === ''
+
+    // Categoria principal: col[0] tem texto, cols[1-3] vazias, col[6] tem "R$"
+    // ex: ["Fundos Imobiliários","","","","","","R$ 735,95"]
+    if (cell0 && isEmpty(row[1]) && isEmpty(row[2]) && isEmpty(row[3]) && String(row[6] ?? '').includes('R$')) {
+      currentCategory = cell0
+      currentSubcategory = ''
+      continue
+    }
+
+    // Subcategoria: "XX% | Nome" na col[0]
+    // ex: "11,9% | Fundos Listados"
+    if (cell0.includes('%') && cell0.includes('|')) {
+      currentSubcategory = cell0.split('|')[1].trim()
+      continue
+    }
+
+    // Posição: ticker = letras maiúsculas + dígitos (CMIG4, XPML11, IVVB11...)
+    if (/^[A-Z]{3,6}\d{1,2}$/.test(cell0) && row[1]) {
+      const col6 = String(row[6] ?? '').trim()
+      const hasQuantity = col6 !== '' && !col6.includes('R$') && !isNaN(Number(col6))
+
+      // FIIs: col[3]=c/ proventos, col[4]=Rentabilidade Bruta (sem proventos)
+      // Ações: col[3]=Rentabilidade (%)
+      const isFII = currentCategory === 'Fundos Imobiliários'
+      const rentabilidade = isFII ? String(row[4] ?? '') : String(row[3] ?? '')
+
       positions.push({
         ticker:        cell0,
         value:         parseBRL(String(row[1])),
         allocation:    String(row[2] ?? ''),
-        rentabilidade: String(row[3] ?? ''),
+        rentabilidade,
+        quantity:      hasQuantity ? col6 : undefined,
+        category:      currentCategory,
+        subcategory:   currentSubcategory,
       })
     }
   }

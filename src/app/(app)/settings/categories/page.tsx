@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useCategories } from '@/hooks/use-categories'
+import { useTransactions } from '@/hooks/use-transactions'
 import { Category, CategoryType, CATEGORY_COLORS } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Pencil, Trash2, Tag, RotateCcw } from 'lucide-react'
+import { Plus, Pencil, Trash2, Tag, RotateCcw, Search, AlertTriangle, ArrowRight } from 'lucide-react'
 
 const TYPE_LABELS: Record<CategoryType, string> = {
   receita: 'Receita',
@@ -23,16 +24,29 @@ const TYPE_BADGE: Record<CategoryType, string> = {
   ambos:   'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
 }
 
+const TYPE_FILTER: { value: string; label: string }[] = [
+  { value: 'todos',   label: 'Todos' },
+  { value: 'despesa', label: 'Despesa' },
+  { value: 'receita', label: 'Receita' },
+  { value: 'ambos',   label: 'Ambos' },
+]
+
 interface FormState {
   name: string
   type: CategoryType
   color: string
 }
 
+interface MergeState {
+  from: Category
+  toId: string   // empty string = not selected
+}
+
 const EMPTY_FORM: FormState = { name: '', type: 'despesa', color: CATEGORY_COLORS[0] }
 
 export default function CategoriesPage() {
   const { categories, loading, createCategory, updateCategory, deleteCategory, seedDefaults } = useCategories()
+  const { transactions } = useTransactions()
 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Category | null>(null)
@@ -43,37 +57,53 @@ export default function CategoriesPage() {
   const [deleting, setDeleting] = useState(false)
   const [seeding, setSeeding] = useState(false)
   const [seedError, setSeedError] = useState('')
+  const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState('todos')
+  const [mergeState, setMergeState] = useState<MergeState | null>(null)
+  const [merging, setMerging] = useState(false)
+
+  // Count transactions per category
+  const usageCount = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const t of transactions) {
+      if (t.category) map[t.category] = (map[t.category] ?? 0) + 1
+    }
+    return map
+  }, [transactions])
+
+  const filtered = useMemo(() => {
+    let result = categories
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      result = result.filter(c => c.name.toLowerCase().includes(q))
+    }
+    if (typeFilter !== 'todos') {
+      result = result.filter(c => c.type === typeFilter)
+    }
+    return result
+  }, [categories, search, typeFilter])
+
+  const receitas = filtered.filter(c => c.type === 'receita' || c.type === 'ambos')
+  const despesas = filtered.filter(c => c.type === 'despesa' || c.type === 'ambos')
 
   function openCreate() {
-    setEditing(null)
-    setForm(EMPTY_FORM)
-    setFormError('')
-    setFormOpen(true)
+    setEditing(null); setForm(EMPTY_FORM); setFormError(''); setFormOpen(true)
   }
 
   function openEdit(cat: Category) {
-    setEditing(cat)
-    setForm({ name: cat.name, type: cat.type, color: cat.color })
-    setFormError('')
-    setFormOpen(true)
+    setEditing(cat); setForm({ name: cat.name, type: cat.type, color: cat.color }); setFormError(''); setFormOpen(true)
   }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim()) { setFormError('Nome obrigatório.'); return }
-    setSaving(true)
-    setFormError('')
-
+    setSaving(true); setFormError('')
     const { error } = editing
       ? await updateCategory(editing.id, form)
       : await createCategory(form)
-
     if (error) {
-      setFormError(
-        error.includes('unique') || error.includes('duplicate')
-          ? 'Já existe uma categoria com esse nome.'
-          : `Erro: ${error}`
-      )
+      setFormError(error.includes('unique') || error.includes('duplicate') || error.includes('nome')
+        ? 'Já existe uma categoria com esse nome.' : `Erro: ${error}`)
     } else {
       setFormOpen(false)
     }
@@ -88,19 +118,32 @@ export default function CategoriesPage() {
     setDeleting(false)
   }
 
+  async function confirmMerge() {
+    if (!mergeState || !mergeState.toId) return
+    const target = categories.find(c => c.id === mergeState.toId)
+    if (!target) return
+    setMerging(true)
+    await updateCategory(mergeState.from.id, { name: target.name })
+    await deleteCategory(mergeState.from.id)
+    setMergeState(null)
+    setMerging(false)
+  }
+
   async function handleSeedDefaults() {
-    setSeeding(true)
-    setSeedError('')
+    setSeeding(true); setSeedError('')
     const { error } = await seedDefaults()
     if (error) setSeedError(error)
     setSeeding(false)
   }
 
-  const receitas = categories.filter(c => c.type === 'receita' || c.type === 'ambos')
-  const despesas = categories.filter(c => c.type === 'despesa' || c.type === 'ambos')
+  const deleteCount = deleteTarget ? (usageCount[deleteTarget.name] ?? 0) : 0
+  const mergeTargets = mergeState
+    ? categories.filter(c => c.id !== mergeState.from.id && c.type === mergeState.from.type)
+    : []
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
+      {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <p className="text-sm text-slate-500 dark:text-slate-400">{categories.length} categorias cadastradas</p>
         <div className="flex gap-2">
@@ -109,8 +152,7 @@ export default function CategoriesPage() {
             Restaurar padrões
           </Button>
           <Button size="sm" onClick={openCreate} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Nova categoria
+            <Plus className="h-4 w-4" /> Nova categoria
           </Button>
         </div>
       </div>
@@ -118,6 +160,31 @@ export default function CategoriesPage() {
       {seedError && (
         <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
           Erro ao restaurar: {seedError}
+        </div>
+      )}
+
+      {/* Busca + filtro */}
+      {categories.length > 0 && (
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Input
+              placeholder="Buscar categoria..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Select value={typeFilter} onValueChange={v => setTypeFilter(v ?? 'todos')}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TYPE_FILTER.map(t => (
+                <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
 
@@ -139,6 +206,8 @@ export default function CategoriesPage() {
             {seeding ? 'Restaurando...' : 'Restaurar categorias padrão'}
           </Button>
         </div>
+      ) : filtered.length === 0 ? (
+        <p className="text-center text-sm text-slate-400 py-10">Nenhuma categoria para &ldquo;{search}&rdquo;</p>
       ) : (
         <div className="space-y-6">
           {[
@@ -151,30 +220,45 @@ export default function CategoriesPage() {
                 <p className="text-sm text-slate-400 dark:text-slate-500 py-2">Nenhuma categoria de {label.toLowerCase()}</p>
               ) : (
                 <div className="space-y-2">
-                  {items.map(cat => (
-                    <div
-                      key={cat.id}
-                      className="flex items-center gap-3 bg-white dark:bg-slate-800 rounded-xl px-4 py-3 shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors"
-                    >
-                      <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: cat.color + '25' }}>
-                        <Tag className="h-4 w-4" style={{ color: cat.color }} />
+                  {items.map(cat => {
+                    const count = usageCount[cat.name] ?? 0
+                    return (
+                      <div
+                        key={cat.id}
+                        className="flex items-center gap-3 bg-white dark:bg-slate-800 rounded-xl px-4 py-3 shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors"
+                      >
+                        <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: cat.color + '25' }}>
+                          <Tag className="h-4 w-4" style={{ color: cat.color }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-slate-700 dark:text-slate-200 text-sm">{cat.name}</p>
+                          {count > 0 && (
+                            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                              {count} transaç{count === 1 ? 'ão' : 'ões'}
+                            </p>
+                          )}
+                        </div>
+                        <Badge className={`text-xs shrink-0 border-0 ${TYPE_BADGE[cat.type]}`}>
+                          {TYPE_LABELS[cat.type]}
+                        </Badge>
+                        <div className="flex gap-1 shrink-0">
+                          <Button
+                            variant="ghost" size="icon" className="h-8 w-8"
+                            title="Mesclar com outra categoria"
+                            onClick={() => setMergeState({ from: cat, toId: '' })}
+                          >
+                            <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(cat)}>
+                            <Pencil className="h-3.5 w-3.5 text-slate-400" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={() => setDeleteTarget(cat)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-slate-700 dark:text-slate-200 text-sm">{cat.name}</p>
-                      </div>
-                      <Badge className={`text-xs shrink-0 border-0 ${TYPE_BADGE[cat.type]}`}>
-                        {TYPE_LABELS[cat.type]}
-                      </Badge>
-                      <div className="flex gap-1 shrink-0">
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(cat)}>
-                          <Pencil className="h-3.5 w-3.5 text-slate-400" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={() => setDeleteTarget(cat)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -228,17 +312,72 @@ export default function CategoriesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* DELETE CONFIRM */}
+      {/* DELETE CONFIRM — com contagem de uso */}
       <Dialog open={!!deleteTarget} onOpenChange={v => { if (!v) setDeleteTarget(null) }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader><DialogTitle>Excluir categoria</DialogTitle></DialogHeader>
-          <p className="text-sm text-slate-500 dark:text-slate-400 pt-2">
-            Excluir <strong>"{deleteTarget?.name}"</strong>? As transações com essa categoria não serão afetadas.
-          </p>
-          <div className="flex gap-2 pt-2">
-            <Button variant="outline" onClick={() => setDeleteTarget(null)} className="flex-1">Cancelar</Button>
-            <Button variant="destructive" onClick={confirmDelete} disabled={deleting} className="flex-1">{deleting ? 'Excluindo...' : 'Excluir'}</Button>
+          <div className="space-y-3 pt-2">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Tem certeza que deseja excluir <strong className="text-slate-700 dark:text-slate-200">&ldquo;{deleteTarget?.name}&rdquo;</strong>?
+            </p>
+            {deleteCount > 0 && (
+              <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-xl p-3.5">
+                <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                <div className="text-sm text-amber-700 dark:text-amber-300">
+                  <p className="font-semibold">Atenção</p>
+                  <p className="mt-0.5">
+                    {deleteCount} transaç{deleteCount === 1 ? 'ão usa' : 'ões usam'} essa categoria. Elas ficarão sem categoria após a exclusão.
+                  </p>
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                    Dica: use &ldquo;Mesclar&rdquo; (→) para mover as transações para outra categoria antes de excluir.
+                  </p>
+                </div>
+              </div>
+            )}
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" onClick={() => setDeleteTarget(null)} className="flex-1">Cancelar</Button>
+              <Button variant="destructive" onClick={confirmDelete} disabled={deleting} className="flex-1">
+                {deleting ? 'Excluindo...' : deleteCount > 0 ? `Excluir mesmo assim` : 'Excluir'}
+              </Button>
+            </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* MERGE MODAL */}
+      <Dialog open={!!mergeState} onOpenChange={v => { if (!v) setMergeState(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>Mesclar categoria</DialogTitle></DialogHeader>
+          {mergeState && (
+            <div className="space-y-4 pt-2">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Todas as transações de <strong className="text-slate-700 dark:text-slate-200">&ldquo;{mergeState.from.name}&rdquo;</strong> serão
+                movidas para a categoria destino, e &ldquo;{mergeState.from.name}&rdquo; será excluída.
+              </p>
+              {(usageCount[mergeState.from.name] ?? 0) > 0 && (
+                <p className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/40 rounded-lg px-3 py-2">
+                  {usageCount[mergeState.from.name]} transaç{usageCount[mergeState.from.name] === 1 ? 'ão será movida' : 'ões serão movidas'} para a nova categoria.
+                </p>
+              )}
+              <div className="space-y-2">
+                <Label>Categoria destino</Label>
+                <Select value={mergeState.toId} onValueChange={v => setMergeState(s => s ? { ...s, toId: v ?? '' } : null)}>
+                  <SelectTrigger><SelectValue placeholder="Selecione a categoria destino..." /></SelectTrigger>
+                  <SelectContent>
+                    {mergeTargets.map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Button variant="outline" onClick={() => setMergeState(null)} className="flex-1">Cancelar</Button>
+                <Button onClick={confirmMerge} disabled={!mergeState.toId || merging} className="flex-1">
+                  {merging ? 'Mesclando...' : 'Mesclar e excluir'}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
