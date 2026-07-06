@@ -98,7 +98,7 @@ export default function LoginPage() {
           <div className="bg-white/8 border border-white/10 rounded-2xl p-4 backdrop-blur-sm space-y-3.5 max-w-xs">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-white/70 uppercase tracking-wide">Resumo do mês</span>
-              <span className="text-[11px] text-blue-300/70">Junho 2026</span>
+              <span className="text-[11px] text-blue-300/70">Julho 2026</span>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div className="bg-white/8 rounded-xl p-2.5">
@@ -149,15 +149,7 @@ export default function LoginPage() {
             <span className="font-bold text-slate-800 dark:text-slate-100">FinanceApp</span>
           </div>
           <div className="hidden lg:block" />
-          <div className="flex items-center gap-3">
-            <ThemeToggle />
-            <Link
-              href="/auth/register"
-              className="text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-            >
-              Criar conta
-            </Link>
-          </div>
+          <ThemeToggle />
         </div>
 
         {/* Área do formulário */}

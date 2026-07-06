@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useCategories } from '@/hooks/use-categories'
-import { TrendingDown, TrendingUp, Wallet, BarChart2, Loader2, Zap, CheckCircle2 } from 'lucide-react'
+import { TrendingDown, TrendingUp, Wallet, BarChart2, Loader2 } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
 import Link from 'next/link'
@@ -12,10 +12,10 @@ import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
-import { Transaction } from '@/types'
-import { useRules, applyRuleToExisting } from '@/hooks/use-rules'
+import { Transaction, TRANSFER_CATEGORY_COLOR } from '@/types'
+import { useRules } from '@/hooks/use-rules'
+import { categoriesForDate } from '@/lib/special-category-filter'
+import { installmentLabel } from '@/utils/format-installment'
 
 const CATEGORY_COLORS: Record<string, string> = {
   'Alimentação':  '#f59e0b',
@@ -41,7 +41,7 @@ export default function AnalyticsPage() {
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
   const [boardId, setBoardId] = useState<string>('all')
-  const [selectedCategory, setSelectedCategory] = useState<{ cat: string; type: 'despesa' | 'receita' } | null>(null)
+  const [selectedCategory, setSelectedCategory] = useState<{ cat: string; type: 'despesa' | 'receita' | 'transferencia' } | null>(null)
 
   const { boards } = useTransactionBoards()
   const { categories } = useCategories()
@@ -49,58 +49,32 @@ export default function AnalyticsPage() {
     () => boards.filter(b => !b.show_on_dashboard).map(b => b.id),
     [boards]
   )
-  const { createRule } = useRules()
+  const { syncCategoryToRule } = useRules()
   const [savingTxId, setSavingTxId] = useState<string | null>(null)
 
-  // Rule creation from transaction
-  interface RuleForm { txId: string; keyword: string; category: string }
-  const [ruleForm, setRuleForm] = useState<RuleForm | null>(null)
-  const [ruleSaving, setRuleSaving] = useState(false)
-  const [ruleCreatedFor, setRuleCreatedFor] = useState<string | null>(null)
-
-  function extractKeyword(desc: string): string {
-    const words = desc.toUpperCase().split(/[\s\-_*.,/\\|:]+/).filter(w => w.length > 2 && !/^\d+$/.test(w))
-    return words[0] ?? desc.toUpperCase().slice(0, 20)
-  }
-
-  function openRuleForm(tx: Transaction) {
-    setRuleForm({ txId: tx.id, keyword: extractKeyword(tx.description), category: tx.category })
-    setRuleCreatedFor(null)
-  }
-
-  async function handleCreateRule() {
-    if (!ruleForm?.keyword || !ruleForm?.category) return
-    setRuleSaving(true)
-    const saved = await createRule(ruleForm.keyword.trim().toUpperCase(), ruleForm.category)
-    if (saved) {
-      await applyRuleToExisting({
-        keyword: saved.keyword,
-        match_type: saved.match_type ?? 'contains',
-        category: saved.category,
-        board_id: saved.board_id ?? null,
-      })
-      setRuleCreatedFor(ruleForm.txId)
-    }
-    setRuleSaving(false)
-    setRuleForm(null)
-  }
-  const { transactions, loading, updateTransaction } = useTransactions({
+  const { transactions, loading, updateTransaction, refetch } = useTransactions({
     month,
     year,
     board_id: boardId === 'all' ? undefined : boardId,
     exclude_board_ids: boardId === 'all' ? unpinnedBoardIds : undefined,
   })
 
-  const { totalIncome, totalExpenses, balance, expenseByCategory, incomeByCategory } = useMemo(() => {
+  const { totalIncome, totalExpenses, totalTransfers, balance, expenseByCategory, incomeByCategory, transferByCategory } = useMemo(() => {
     let totalIncome = 0
     let totalExpenses = 0
+    let totalTransfers = 0
     const expenseMap: Record<string, { total: number; count: number }> = {}
     const incomeMap: Record<string, { total: number; count: number }> = {}
+    const transferMap: Record<string, { total: number; count: number }> = {}
 
     for (const t of transactions) {
-      if (t.type === 'transferencia') continue
       const amt = Number(t.amount)
-      if (t.type === 'receita') {
+      if (t.type === 'transferencia') {
+        totalTransfers += amt
+        transferMap[t.category] = transferMap[t.category] ?? { total: 0, count: 0 }
+        transferMap[t.category].total += amt
+        transferMap[t.category].count += 1
+      } else if (t.type === 'receita') {
         totalIncome += amt
         incomeMap[t.category] = incomeMap[t.category] ?? { total: 0, count: 0 }
         incomeMap[t.category].total += amt
@@ -121,14 +95,27 @@ export default function AnalyticsPage() {
       .map(([cat, d]) => ({ cat, total: d.total, count: d.count, pct: totalIncome > 0 ? (d.total / totalIncome) * 100 : 0 }))
       .sort((a, b) => b.total - a.total)
 
-    return { totalIncome, totalExpenses, balance: totalIncome - totalExpenses, expenseByCategory, incomeByCategory }
+    const transferByCategory = Object.entries(transferMap)
+      .map(([cat, d]) => ({ cat, total: d.total, count: d.count, pct: totalTransfers > 0 ? (d.total / totalTransfers) * 100 : 0 }))
+      .sort((a, b) => b.total - a.total)
+
+    return { totalIncome, totalExpenses, totalTransfers, balance: totalIncome - totalExpenses, expenseByCategory, incomeByCategory, transferByCategory }
   }, [transactions])
 
   const maxExpense = expenseByCategory[0]?.total ?? 1
+  const maxTransfer = transferByCategory[0]?.total ?? 1
 
   async function handleRecategorize(txId: string, newCategory: string) {
+    const tx = transactions.find(t => t.id === txId)
     setSavingTxId(txId)
     await updateTransaction(txId, { category: newCategory })
+    // Categoria normal: "gruda" em todas as transações com esse nome exato via
+    // regra automática (categoria especial nunca entra aqui).
+    if (tx) {
+      const syncResult = await syncCategoryToRule(tx.description, newCategory, categories)
+      if (syncResult.error) console.error('[handleRecategorize] syncCategoryToRule falhou:', syncResult.error)
+      refetch()
+    }
     setSavingTxId(null)
   }
 
@@ -223,14 +210,19 @@ export default function AnalyticsPage() {
         <>
           {/* Expense breakdown */}
           <section>
-            <div className="flex items-center gap-2 mb-4">
-              <BarChart2 className="h-4 w-4 text-red-500" />
-              <h2 className="text-base font-semibold text-slate-700 dark:text-slate-200">Despesas por Categoria</h2>
-              {boardId !== 'all' && (
-                <span className="text-xs text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">
-                  {boards.find(b => b.id === boardId)?.name}
-                </span>
-              )}
+            <div className="mb-4">
+              <div className="flex items-center gap-2">
+                <BarChart2 className="h-4 w-4 text-red-500" />
+                <h2 className="text-base font-semibold text-slate-700 dark:text-slate-200">Despesas por Categoria</h2>
+                {boardId !== 'all' && (
+                  <span className="text-xs text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">
+                    {boards.find(b => b.id === boardId)?.name}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 ml-6">
+                Quanto saiu de verdade neste período, agrupado por categoria. Conta no saldo e no planejamento.
+              </p>
             </div>
 
             {expenseByCategory.length === 0 ? (
@@ -286,9 +278,14 @@ export default function AnalyticsPage() {
           {/* Income breakdown */}
           {incomeByCategory.length > 0 && (
             <section>
-              <div className="flex items-center gap-2 mb-4">
-                <BarChart2 className="h-4 w-4 text-green-500" />
-                <h2 className="text-base font-semibold text-slate-700 dark:text-slate-200">Entradas por Categoria</h2>
+              <div className="mb-4">
+                <div className="flex items-center gap-2">
+                  <BarChart2 className="h-4 w-4 text-green-500" />
+                  <h2 className="text-base font-semibold text-slate-700 dark:text-slate-200">Entradas por Categoria</h2>
+                </div>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 ml-6">
+                  Quanto entrou de verdade neste período, agrupado por categoria. Conta no saldo e no planejamento.
+                </p>
               </div>
 
               <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
@@ -333,6 +330,59 @@ export default function AnalyticsPage() {
             </section>
           )}
 
+          {/* Transfer breakdown — sempre na cor cinza de transferência, não por categoria. Fica sempre por último. */}
+          {transferByCategory.length > 0 && (
+            <section>
+              <div className="mb-4">
+                <div className="flex items-center gap-2">
+                  <BarChart2 className="h-4 w-4 text-slate-400" />
+                  <h2 className="text-base font-semibold text-slate-700 dark:text-slate-200">Transferências por Categoria</h2>
+                </div>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 ml-6">
+                  Movimentação entre suas próprias contas (ex: pagar fatura, aplicar num investimento) — não é gasto nem ganho real, por isso fica fora do saldo e do planejamento.
+                </p>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
+                <div className="p-5 space-y-3">
+                  {transferByCategory.map(({ cat, total, count, pct }) => (
+                    <button
+                      key={cat}
+                      className="w-full text-left group"
+                      onClick={() => setSelectedCategory({ cat, type: 'transferencia' })}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: TRANSFER_CATEGORY_COLOR }}
+                          />
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:underline">{cat}</span>
+                          <span className="text-xs text-slate-400">({count} {count === 1 ? 'lançamento' : 'lançamentos'})</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-slate-400 w-10 text-right">{pct.toFixed(0)}%</span>
+                          <span className="text-sm font-semibold text-slate-500 dark:text-slate-400 w-28 text-right">{fmt(total)}</span>
+                        </div>
+                      </div>
+                      <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{ width: `${(total / maxTransfer) * 100}%`, backgroundColor: TRANSFER_CATEGORY_COLOR }}
+                        />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="border-t border-slate-100 dark:border-slate-700 px-5 py-3 bg-slate-50 dark:bg-slate-700/40 flex justify-between items-center">
+                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total transferido</span>
+                  <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{fmt(totalTransfers)}</span>
+                </div>
+              </div>
+            </section>
+          )}
+
           {/* Quick link to recurring */}
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 rounded-xl p-4 flex items-center justify-between gap-4">
             <div>
@@ -350,13 +400,19 @@ export default function AnalyticsPage() {
       )}
 
       {/* Category detail dialog */}
-      <Dialog open={!!selectedCategory} onOpenChange={() => { setSelectedCategory(null); setRuleForm(null); setRuleCreatedFor(null) }}>
+      <Dialog open={!!selectedCategory} onOpenChange={() => setSelectedCategory(null)}>
         <DialogContent className="sm:max-w-lg max-h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <span
                 className="inline-block w-3 h-3 rounded-full shrink-0"
-                style={{ backgroundColor: selectedCategory ? colorFor(selectedCategory.cat) : '#6366f1' }}
+                style={{
+                  backgroundColor: !selectedCategory
+                    ? '#6366f1'
+                    : selectedCategory.type === 'transferencia'
+                      ? TRANSFER_CATEGORY_COLOR
+                      : colorFor(selectedCategory.cat),
+                }}
               />
               {selectedCategory?.cat}
             </DialogTitle>
@@ -368,105 +424,42 @@ export default function AnalyticsPage() {
             ) : (
               <div className="divide-y divide-slate-100 dark:divide-slate-700">
                 {categoryTxs.map(tx => (
-                  <div key={tx.id} className="py-3 space-y-2">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{tx.description}</p>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          {format(new Date(tx.date + 'T00:00:00'), "dd 'de' MMM, yyyy", { locale: ptBR })}
-                        </p>
-                      </div>
-                      <span className={`text-sm font-semibold shrink-0 ${tx.type === 'receita' ? 'text-green-600' : 'text-red-500'}`}>
-                        {tx.type === 'despesa' ? '- ' : '+ '}{fmt(Number(tx.amount))}
-                      </span>
+                  <div key={tx.id} className="py-3 flex items-center gap-3">
+                    {/* Coluna 1: descrição + data (+ parcela, se houver) */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{tx.description}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {format(new Date(tx.date + 'T00:00:00'), "dd 'de' MMM, yyyy", { locale: ptBR })}
+                        {installmentLabel(tx) && ` · Parcela ${installmentLabel(tx)}`}
+                      </p>
                     </div>
 
-                    {/* Inline category selector + create rule button */}
-                    <div className="flex items-center gap-2 flex-wrap">
+                    {/* Coluna 2: categoria — muda só essa transação; se for categoria
+                        normal, a regra automática cuida de propagar pro histórico */}
+                    <div className="shrink-0 flex items-center gap-1.5">
                       {savingTxId === tx.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
                       <Select
                         value={tx.category}
                         onValueChange={v => v && v !== tx.category && handleRecategorize(tx.id, v)}
                         disabled={savingTxId === tx.id}
                       >
-                        <SelectTrigger className="h-7 text-xs px-2 w-auto min-w-[140px] border-dashed">
+                        <SelectTrigger className="h-7 text-xs px-2 w-auto min-w-[120px] border-dashed">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {categories.map(c => (
-                            <SelectItem key={c.id} value={c.name} className="text-xs">{c.name}</SelectItem>
-                          ))}
+                          {categoriesForDate(categories, tx.date)
+                            .filter(c => c.type === tx.type || c.type === 'ambos')
+                            .map(c => (
+                              <SelectItem key={c.id} value={c.name} className="text-xs">{c.name}</SelectItem>
+                            ))}
                         </SelectContent>
                       </Select>
-
-                      {ruleCreatedFor === tx.id ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Regra criada!
-                        </span>
-                      ) : ruleForm?.txId === tx.id ? null : (
-                        <button
-                          onClick={() => openRuleForm(tx)}
-                          title="Criar regra automática"
-                          className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-amber-500 transition-colors"
-                        >
-                          <Zap className="h-3.5 w-3.5" />
-                          <span>virar regra</span>
-                        </button>
-                      )}
                     </div>
 
-                    {/* Inline rule form */}
-                    {ruleForm?.txId === tx.id && (
-                      <div className="mt-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-xl space-y-2">
-                        <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1">
-                          <Zap className="h-3.5 w-3.5" /> Nova regra automática
-                        </p>
-                        <p className="text-xs text-amber-700 dark:text-amber-400">
-                          Quando a descrição contiver a palavra-chave abaixo, a categoria será aplicada automaticamente.
-                        </p>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Input
-                            className="h-7 text-xs w-40 font-mono bg-white dark:bg-slate-800"
-                            value={ruleForm.keyword}
-                            onChange={e => setRuleForm(f => f ? { ...f, keyword: e.target.value.toUpperCase() } : f)}
-                            placeholder="PALAVRA-CHAVE"
-                            autoFocus
-                          />
-                          <Select
-                            value={ruleForm.category}
-                            onValueChange={v => v && setRuleForm(f => f ? { ...f, category: v } : f)}
-                          >
-                            <SelectTrigger className="h-7 text-xs w-auto min-w-[130px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {categories.map(c => (
-                                <SelectItem key={c.id} value={c.name} className="text-xs">{c.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            className="h-7 text-xs gap-1 bg-amber-500 hover:bg-amber-600 text-white"
-                            disabled={!ruleForm.keyword || !ruleForm.category || ruleSaving}
-                            onClick={handleCreateRule}
-                          >
-                            {ruleSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
-                            Criar regra
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 text-xs text-slate-500"
-                            onClick={() => setRuleForm(null)}
-                          >
-                            Cancelar
-                          </Button>
-                        </div>
-                      </div>
-                    )}
+                    {/* Coluna 3: valor */}
+                    <span className={`text-sm font-semibold shrink-0 w-24 text-right ${tx.type === 'receita' ? 'text-green-600' : tx.type === 'transferencia' ? 'text-slate-400' : 'text-red-500'}`}>
+                      {tx.type === 'receita' ? '+ ' : tx.type === 'transferencia' ? '' : '- '}{fmt(Number(tx.amount))}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -475,7 +468,7 @@ export default function AnalyticsPage() {
 
           <div className="border-t border-slate-100 dark:border-slate-700 pt-3 flex justify-between items-center mt-2">
             <span className="text-xs text-slate-500">{categoryTxs.length} {categoryTxs.length === 1 ? 'lançamento' : 'lançamentos'}</span>
-            <span className={`text-sm font-bold ${selectedCategory?.type === 'receita' ? 'text-green-600' : 'text-red-500'}`}>
+            <span className={`text-sm font-bold ${selectedCategory?.type === 'receita' ? 'text-green-600' : selectedCategory?.type === 'transferencia' ? 'text-slate-500 dark:text-slate-400' : 'text-red-500'}`}>
               {fmt(categoryTxs.reduce((s, t) => s + Number(t.amount), 0))}
             </span>
           </div>

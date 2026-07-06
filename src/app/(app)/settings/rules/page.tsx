@@ -4,14 +4,19 @@ import { useState, useMemo } from 'react'
 import { useRules, CategorizationRule, applyRuleToExisting } from '@/hooks/use-rules'
 import { useCategories } from '@/hooks/use-categories'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
+import { CategoryType } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Plus, Pencil, Trash2, Zap, ToggleLeft, ToggleRight, ChevronDown, ChevronRight, Info, CheckCircle2, X } from 'lucide-react'
+import {
+  Plus, Pencil, Trash2, Zap, ToggleLeft, ToggleRight, ChevronDown, ChevronRight, CheckCircle2, X,
+  TrendingDown, TrendingUp, ArrowLeftRight, Layers,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
+import { InfoBox } from '@/components/ui/info-box'
 
 type MatchType = 'contains' | 'starts_with' | 'ends_with' | 'exact'
 
@@ -61,6 +66,11 @@ function RuleRow({
           <span className="text-xs text-slate-400">
             ({matchDescription(rule).split('"')[0].trim()})
           </span>
+          {rule.auto_created && (
+            <span className="text-[10px] font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/30 px-1.5 py-0.5 rounded-full">
+              Automática
+            </span>
+          )}
         </div>
         {boardName && (
           <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">→ conta: {boardName}</p>
@@ -88,7 +98,7 @@ function CategoryGroup({
   onEdit: (rule: CategorizationRule) => void
   onDelete: (rule: CategorizationRule) => void
 }) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const activeCount = rules.filter(r => r.active).length
 
   return (
@@ -125,7 +135,32 @@ function CategoryGroup({
   )
 }
 
-type RetroResult = { count: number; keyword: string; schemaWarning?: boolean }
+type RetroResult = { count: number; keyword: string; schemaWarning?: boolean; error?: string }
+
+// Categorias tipo "Ambos" (ex: "Outros") valem pros três tipos de transação —
+// regras que apontam pra elas caem na seção "Outras" em vez de uma específica.
+type SectionKey = 'despesa' | 'receita' | 'transferencia' | 'outras'
+
+const SECTION_ORDER: SectionKey[] = ['despesa', 'receita', 'transferencia', 'outras']
+
+const SECTION_META: Record<SectionKey, { label: string; icon: React.ElementType; iconColor: string; iconBg: string; help: string }> = {
+  despesa: {
+    label: 'Despesas', icon: TrendingDown, iconColor: 'text-red-500', iconBg: 'bg-red-50 dark:bg-red-900/20',
+    help: 'Regras que apontam pra uma categoria de despesa.',
+  },
+  receita: {
+    label: 'Receitas', icon: TrendingUp, iconColor: 'text-green-500', iconBg: 'bg-green-50 dark:bg-green-900/20',
+    help: 'Regras que apontam pra uma categoria de receita.',
+  },
+  transferencia: {
+    label: 'Transferências', icon: ArrowLeftRight, iconColor: 'text-slate-400', iconBg: 'bg-slate-100 dark:bg-slate-700',
+    help: 'Regras que apontam pra uma categoria de transferência.',
+  },
+  outras: {
+    label: 'Outras', icon: Layers, iconColor: 'text-violet-500', iconBg: 'bg-violet-50 dark:bg-violet-900/20',
+    help: 'Regras que apontam pra uma categoria válida em mais de um tipo (ex: "Outros").',
+  },
+}
 
 export default function RulesPage() {
   const { rules, loading, createRule, updateRule, deleteRule } = useRules()
@@ -146,6 +181,18 @@ export default function RulesPage() {
     return m
   }, [boards])
 
+  const categoryTypeMap = useMemo(() => {
+    const m = new Map<string, CategoryType>()
+    categories.forEach(c => m.set(c.name, c.type))
+    return m
+  }, [categories])
+
+  function sectionFor(categoryName: string): SectionKey {
+    const type = categoryTypeMap.get(categoryName)
+    if (type === 'despesa' || type === 'receita' || type === 'transferencia') return type
+    return 'outras'
+  }
+
   const grouped = useMemo(() => {
     const filtered = search.trim()
       ? rules.filter(r =>
@@ -161,6 +208,17 @@ export default function RulesPage() {
     }
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b, 'pt-BR'))
   }, [rules, search])
+
+  const groupedBySection = useMemo(() => {
+    const buckets: Record<SectionKey, [string, CategorizationRule[]][]> = {
+      despesa: [], receita: [], transferencia: [], outras: [],
+    }
+    for (const entry of grouped) {
+      buckets[sectionFor(entry[0])].push(entry)
+    }
+    return buckets
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grouped, categoryTypeMap])
 
   function openCreate() { setEditing(null); setForm(EMPTY); setFormOpen(true) }
   function openEdit(r: CategorizationRule) {
@@ -202,10 +260,10 @@ export default function RulesPage() {
       await createRule(keyword, form.category, payload as Parameters<typeof createRule>[2])
     }
 
-    const count = await applyRuleToExisting(payload)
+    const { count, error: retroError } = await applyRuleToExisting(payload, categories)
     setSaving(false)
     setFormOpen(false)
-    setRetroResult({ count, keyword, schemaWarning })
+    setRetroResult({ count, keyword, schemaWarning, error: retroError })
   }
 
   if (loading) return null
@@ -226,13 +284,27 @@ export default function RulesPage() {
       </div>
 
       {/* Info */}
-      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 text-sm text-blue-700 dark:text-blue-300">
-        <p className="font-semibold mb-1 flex items-center gap-1.5"><Info className="h-3.5 w-3.5" /> Como funciona</p>
+      <InfoBox id="rules-como-funciona">
         <p className="text-blue-600 dark:text-blue-400">
           Na importação, cada transação é testada contra as regras ativas e a primeira que combinar define a categoria automaticamente.
-          Ao criar ou editar uma regra, todas as transações anteriores que combinam são atualizadas imediatamente — mantendo o histórico sempre correto.
+          Ao criar ou editar uma regra aqui, todas as transações anteriores que combinam são atualizadas imediatamente — mantendo o histórico sempre correto.
         </p>
-      </div>
+        <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
+          <p className="font-semibold mb-1 flex items-center gap-1.5">
+            <Zap className="h-3.5 w-3.5" /> Regras automáticas
+            <span className="text-[10px] font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/30 px-1.5 py-0.5 rounded-full">Automática</span>
+          </p>
+          <p className="text-blue-600 dark:text-blue-400">
+            Você não precisa criar regra na mão pra corrigir uma categoria: mude a categoria de qualquer transação (em Contas e Cartões ou Análise) e o app já cria — ou atualiza, se já existir uma pra essa descrição — uma regra de correspondência exata sozinho, aplicando a mudança em todo o histórico. Essas regras aparecem aqui com a etiqueta roxa &ldquo;Automática&rdquo;, junto com as que você cria manualmente, e podem ser editadas ou excluídas como qualquer outra.
+          </p>
+        </div>
+        <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
+          <p className="font-semibold mb-1">Categoria especial fica isolada</p>
+          <p className="text-blue-600 dark:text-blue-400">
+            Categorias especiais (presas a um mês específico) nunca entram nesse sistema de regras — nem criam regra automática, nem são sobrescritas por nenhuma regra. Uma vez que você marca uma transação com categoria especial, ela fica só ali, sem afetar nem ser afetada pelas outras.
+          </p>
+        </div>
+      </InfoBox>
 
       {/* Retroactive result banner */}
       {retroResult && retroResult.count === -1 && (
@@ -248,18 +320,35 @@ export default function RulesPage() {
         </div>
       )}
       {retroResult && retroResult.count !== -1 && (
-        <div className={`border rounded-xl p-4 flex items-start gap-3 ${retroResult.schemaWarning ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800' : 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800'}`}>
-          <CheckCircle2 className={`h-5 w-5 shrink-0 mt-0.5 ${retroResult.schemaWarning ? 'text-amber-500' : 'text-emerald-500'}`} />
+        <div className={`border rounded-xl p-4 flex items-start gap-3 ${
+          retroResult.error ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+          : retroResult.schemaWarning ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+          : 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800'
+        }`}>
+          {retroResult.error
+            ? <X className="h-5 w-5 shrink-0 mt-0.5 text-red-500" />
+            : <CheckCircle2 className={`h-5 w-5 shrink-0 mt-0.5 ${retroResult.schemaWarning ? 'text-amber-500' : 'text-emerald-500'}`} />
+          }
           <div className="flex-1">
-            <p className={`text-sm font-semibold ${retroResult.schemaWarning ? 'text-amber-800 dark:text-amber-300' : 'text-emerald-800 dark:text-emerald-300'}`}>
-              {retroResult.schemaWarning ? 'Regra salva parcialmente' : 'Regra salva!'}
+            <p className={`text-sm font-semibold ${
+              retroResult.error ? 'text-red-800 dark:text-red-300'
+              : retroResult.schemaWarning ? 'text-amber-800 dark:text-amber-300'
+              : 'text-emerald-800 dark:text-emerald-300'
+            }`}>
+              {retroResult.error ? 'Regra salva, mas o histórico não foi atualizado' : retroResult.schemaWarning ? 'Regra salva parcialmente' : 'Regra salva!'}
             </p>
-            <p className={`text-xs mt-0.5 ${retroResult.schemaWarning ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-              {retroResult.schemaWarning
-                ? 'Categoria e palavra-chave foram salvas. Para salvar o tipo de correspondência e conta, execute migration_rules.sql no SQL Editor do Supabase.'
-                : retroResult.count > 0
-                  ? `${retroResult.count} transação${retroResult.count !== 1 ? 'ões' : ''} anterior${retroResult.count !== 1 ? 'es' : ''} atualizada${retroResult.count !== 1 ? 's' : ''} com a categoria correta.`
-                  : `Nenhuma transação anterior encontrada para "${retroResult.keyword}".`}
+            <p className={`text-xs mt-0.5 ${
+              retroResult.error ? 'text-red-600 dark:text-red-400'
+              : retroResult.schemaWarning ? 'text-amber-600 dark:text-amber-400'
+              : 'text-emerald-600 dark:text-emerald-400'
+            }`}>
+              {retroResult.error
+                ? retroResult.error
+                : retroResult.schemaWarning
+                  ? 'Categoria e palavra-chave foram salvas. Para salvar o tipo de correspondência e conta, execute migration_rules.sql no SQL Editor do Supabase.'
+                  : retroResult.count > 0
+                    ? `${retroResult.count} transação${retroResult.count !== 1 ? 'ões' : ''} anterior${retroResult.count !== 1 ? 'es' : ''} atualizada${retroResult.count !== 1 ? 's' : ''} com a categoria correta.`
+                    : `Nenhuma transação anterior encontrada para "${retroResult.keyword}".`}
             </p>
           </div>
           <button onClick={() => setRetroResult(null)} className={`transition-colors ${retroResult.schemaWarning ? 'text-amber-400 hover:text-amber-600' : 'text-emerald-400 hover:text-emerald-600'}`}><X className="h-4 w-4" /></button>
@@ -292,18 +381,36 @@ export default function RulesPage() {
       ) : grouped.length === 0 ? (
         <p className="text-center text-sm text-slate-400 py-10">Nenhuma regra encontrada para &ldquo;{search}&rdquo;</p>
       ) : (
-        <div className="space-y-3">
-          {grouped.map(([category, catRules]) => (
-            <CategoryGroup
-              key={category}
-              category={category}
-              rules={catRules}
-              boardMap={boardMap}
-              onToggle={(id, active) => updateRule(id, { active })}
-              onEdit={openEdit}
-              onDelete={setDeleteTarget}
-            />
-          ))}
+        <div className="space-y-6">
+          {SECTION_ORDER.map(key => {
+            const entries = groupedBySection[key]
+            if (entries.length === 0) return null
+            const { label, icon: Icon, iconColor, iconBg, help } = SECTION_META[key]
+            return (
+              <section key={key} className="space-y-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <div className={cn('h-7 w-7 rounded-lg flex items-center justify-center', iconBg)}>
+                      <Icon className={cn('h-4 w-4', iconColor)} />
+                    </div>
+                    <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">{label}</h2>
+                  </div>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 ml-9">{help}</p>
+                </div>
+                {entries.map(([category, catRules]) => (
+                  <CategoryGroup
+                    key={category}
+                    category={category}
+                    rules={catRules}
+                    boardMap={boardMap}
+                    onToggle={(id, active) => updateRule(id, { active })}
+                    onEdit={openEdit}
+                    onDelete={setDeleteTarget}
+                  />
+                ))}
+              </section>
+            )
+          })}
         </div>
       )}
 

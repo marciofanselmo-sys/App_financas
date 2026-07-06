@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -8,10 +8,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { MoreVertical, Pencil, Trash2, ArrowRightLeft, RefreshCw } from 'lucide-react'
-import { Transaction, TransactionBoard } from '@/types'
+import { MoreVertical, Pencil, Trash2, ArrowRightLeft, RefreshCw, Tag, X as XIcon } from 'lucide-react'
+import { Transaction, TransactionBoard, Category } from '@/types'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
+import { categoriesForTransactions } from '@/lib/special-category-filter'
+import { installmentLabel } from '@/utils/format-installment'
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
@@ -25,17 +27,86 @@ interface TransactionTableProps {
   onToggleRecurring?: (tx: Transaction) => Promise<void>
   boards?: TransactionBoard[]
   currentBoardId?: string
+  categories?: Category[]
+  onBulkCategoryChange?: (ids: string[], category: string) => Promise<void>
+  onBulkMove?: (ids: string[], boardId: string) => Promise<void>
+  onBulkDelete?: (ids: string[]) => Promise<void>
 }
 
-export function TransactionTable({ transactions, onEdit, onDelete, onMove, onToggleRecurring, boards, currentBoardId }: TransactionTableProps) {
+export function TransactionTable({
+  transactions, onEdit, onDelete, onMove, onToggleRecurring, boards, currentBoardId,
+  categories, onBulkCategoryChange, onBulkMove, onBulkDelete,
+}: TransactionTableProps) {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [moveTx, setMoveTx] = useState<Transaction | null>(null)
   const [selectedBoardId, setSelectedBoardId] = useState('')
   const [moving, setMoving] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkCategory, setBulkCategory] = useState('')
+  const [applyingBulk, setApplyingBulk] = useState(false)
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false)
+  const [bulkMoveBoardId, setBulkMoveBoardId] = useState('')
+  const [bulkMoving, setBulkMoving] = useState(false)
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   const otherBoards = (boards ?? []).filter(b => b.id !== currentBoardId)
+  const selectionEnabled = !!onBulkCategoryChange
+  const allSelected = transactions.length > 0 && selected.size === transactions.length
+  const selectedTransactions = transactions.filter(t => selected.has(t.id))
+  const bulkCategoryOptions = categoriesForTransactions(categories ?? [], selectedTransactions)
+
+  // Nunca deixa a seleção "grudada" entre filtros diferentes (mês, busca, conta) —
+  // sem isso, uma seleção antiga podia ser aplicada por engano numa lista diferente
+  // da que está na tela.
+  useEffect(() => {
+    setSelected(new Set())
+  }, [transactions])
+
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(transactions.map(t => t.id)))
+  }
+
+  function toggleOne(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  async function applyBulkCategory() {
+    if (!onBulkCategoryChange || !bulkCategory || selected.size === 0) return
+    setApplyingBulk(true)
+    await onBulkCategoryChange(Array.from(selected), bulkCategory)
+    setApplyingBulk(false)
+    setBulkConfirmOpen(false)
+    setSelected(new Set())
+    setBulkCategory('')
+  }
+
+  async function applyBulkMove() {
+    if (!onBulkMove || !bulkMoveBoardId || selected.size === 0) return
+    setBulkMoving(true)
+    await onBulkMove(Array.from(selected), bulkMoveBoardId)
+    setBulkMoving(false)
+    setBulkMoveOpen(false)
+    setSelected(new Set())
+    setBulkMoveBoardId('')
+  }
+
+  async function applyBulkDelete() {
+    if (!onBulkDelete || selected.size === 0) return
+    setBulkDeleting(true)
+    await onBulkDelete(Array.from(selected))
+    setBulkDeleting(false)
+    setBulkDeleteOpen(false)
+    setSelected(new Set())
+  }
 
   async function confirmMove() {
     if (!moveTx || !selectedBoardId || !onMove) return
@@ -65,13 +136,82 @@ export function TransactionTable({ transactions, onEdit, onDelete, onMove, onTog
 
   return (
     <>
+      {/* Barra de ação em massa */}
+      {selectionEnabled && selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl px-4 py-3 mb-3">
+          <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+            {selected.size} selecionada{selected.size !== 1 ? 's' : ''}
+          </span>
+          <Select value={bulkCategory} onValueChange={v => setBulkCategory(v ?? '')}>
+            <SelectTrigger className="w-48 h-9 bg-white dark:bg-slate-800">
+              <SelectValue placeholder="Mudar categoria para..." />
+            </SelectTrigger>
+            <SelectContent>
+              {bulkCategoryOptions.map(c => (
+                <SelectItem key={c.id} value={c.name}>
+                  <span className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                    {c.name}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button size="sm" onClick={() => setBulkConfirmOpen(true)} disabled={!bulkCategory || applyingBulk} className="gap-1.5">
+            <Tag className="h-3.5 w-3.5" />
+            Aplicar
+          </Button>
+
+          {onBulkMove && otherBoards.length > 0 && (
+            <Button
+              size="sm" variant="outline"
+              onClick={() => { setBulkMoveBoardId(''); setBulkMoveOpen(true) }}
+              className="gap-1.5 bg-white dark:bg-slate-800"
+            >
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+              Mover para conta
+            </Button>
+          )}
+
+          {onBulkDelete && (
+            <Button
+              size="sm" variant="outline"
+              onClick={() => setBulkDeleteOpen(true)}
+              className="gap-1.5 bg-white dark:bg-slate-800 text-red-600 hover:text-red-700 border-red-200 hover:bg-red-50 dark:border-red-900/50 dark:hover:bg-red-900/20"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Excluir
+            </Button>
+          )}
+
+          <button
+            onClick={() => setSelected(new Set())}
+            className="text-xs text-blue-500 hover:text-blue-700 dark:hover:text-blue-200 flex items-center gap-1 ml-auto"
+          >
+            <XIcon className="h-3.5 w-3.5" /> Cancelar seleção
+          </button>
+        </div>
+      )}
+
       <div className="rounded-lg border border-slate-100 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-800">
         <Table className="table-fixed">
           <TableHeader>
             <TableRow className="bg-slate-50 dark:bg-slate-700/50">
+              {selectionEnabled && (
+                <TableHead className="w-8">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    className="h-4 w-4 rounded border-slate-300 dark:border-slate-600 accent-blue-600 cursor-pointer"
+                    aria-label="Selecionar todas"
+                  />
+                </TableHead>
+              )}
               <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400">Descrição</TableHead>
               <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden sm:table-cell w-28">Categoria</TableHead>
               <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden md:table-cell w-36">Data</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden md:table-cell w-24">Parcelas</TableHead>
               <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden lg:table-cell w-28">Recorrência</TableHead>
               <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 w-24">Tipo</TableHead>
               <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 text-right w-28">Valor</TableHead>
@@ -81,6 +221,17 @@ export function TransactionTable({ transactions, onEdit, onDelete, onMove, onTog
           <TableBody>
             {transactions.map((tx) => (
               <TableRow key={tx.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-700/30">
+                {selectionEnabled && (
+                  <TableCell>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(tx.id)}
+                      onChange={() => toggleOne(tx.id)}
+                      className="h-4 w-4 rounded border-slate-300 dark:border-slate-600 accent-blue-600 cursor-pointer"
+                      aria-label={`Selecionar ${tx.description}`}
+                    />
+                  </TableCell>
+                )}
                 <TableCell className="font-medium text-slate-700 dark:text-slate-200 text-sm truncate overflow-hidden">{tx.description}</TableCell>
                 <TableCell className="hidden sm:table-cell">
                   <Badge variant="secondary" className="text-xs font-normal">
@@ -89,6 +240,9 @@ export function TransactionTable({ transactions, onEdit, onDelete, onMove, onTog
                 </TableCell>
                 <TableCell className="text-slate-500 dark:text-slate-400 text-sm hidden md:table-cell">
                   {format(new Date(tx.date + 'T00:00:00'), "dd 'de' MMM, yyyy", { locale: ptBR })}
+                </TableCell>
+                <TableCell className="text-slate-500 dark:text-slate-400 text-sm hidden md:table-cell">
+                  {installmentLabel(tx)}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell">
                   {onToggleRecurring && (
@@ -210,6 +364,74 @@ export function TransactionTable({ transactions, onEdit, onDelete, onMove, onTog
             </Button>
             <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
               {deleting ? 'Excluindo...' : 'Excluir'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkConfirmOpen} onOpenChange={v => { if (!v) setBulkConfirmOpen(false) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Mudar categoria em massa</DialogTitle>
+            <DialogDescription>
+              Isso vai mudar a categoria de <strong>{selected.size} transaç{selected.size !== 1 ? 'ões' : 'ão'}</strong> selecionada{selected.size !== 1 ? 's' : ''} para <strong>&ldquo;{bulkCategory}&rdquo;</strong>. Só as transações marcadas com checkbox agora serão alteradas.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setBulkConfirmOpen(false)} disabled={applyingBulk}>
+              Cancelar
+            </Button>
+            <Button onClick={applyBulkCategory} disabled={applyingBulk}>
+              {applyingBulk ? 'Aplicando...' : `Mudar ${selected.size} transaç${selected.size !== 1 ? 'ões' : 'ão'}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkMoveOpen} onOpenChange={v => { if (!v) setBulkMoveOpen(false) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Mover em massa</DialogTitle>
+            <DialogDescription>
+              Selecione a conta de destino para <strong>{selected.size} transaç{selected.size !== 1 ? 'ões' : 'ão'}</strong> selecionada{selected.size !== 1 ? 's' : ''}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <Label className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-2 block">
+              Conta de destino
+            </Label>
+            <Select value={bulkMoveBoardId} onValueChange={v => v && setBulkMoveBoardId(v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione uma conta..." />
+              </SelectTrigger>
+              <SelectContent>
+                {otherBoards.map(b => (
+                  <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setBulkMoveOpen(false)} disabled={bulkMoving}>Cancelar</Button>
+            <Button onClick={applyBulkMove} disabled={!bulkMoveBoardId || bulkMoving}>
+              {bulkMoving ? 'Movendo...' : `Mover ${selected.size} transaç${selected.size !== 1 ? 'ões' : 'ão'}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkDeleteOpen} onOpenChange={v => { if (!v) setBulkDeleteOpen(false) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Excluir em massa</DialogTitle>
+            <DialogDescription>
+              Essa ação não pode ser desfeita. <strong>{selected.size} transaç{selected.size !== 1 ? 'ões' : 'ão'}</strong> selecionada{selected.size !== 1 ? 's' : ''} será{selected.size !== 1 ? 'ão' : ''} removida{selected.size !== 1 ? 's' : ''} permanentemente.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setBulkDeleteOpen(false)} disabled={bulkDeleting}>Cancelar</Button>
+            <Button variant="destructive" onClick={applyBulkDelete} disabled={bulkDeleting}>
+              {bulkDeleting ? 'Excluindo...' : `Excluir ${selected.size} transaç${selected.size !== 1 ? 'ões' : 'ão'}`}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { ImportCSVModal } from '@/components/transactions/import-csv-modal'
 import { Button } from '@/components/ui/button'
@@ -8,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label'
 import {
   Upload, FileText, CheckCircle, Zap, ShieldCheck,
-  FileSpreadsheet, Building2, CreditCard,
+  FileSpreadsheet, Building2, CreditCard, AlertTriangle, File,
 } from 'lucide-react'
 
 const FORMATS = [
@@ -39,6 +40,15 @@ const FORMATS = [
     description: 'CSV exportado diretamente do C6 Bank (conta corrente ou fatura do cartão de crédito).',
     examples: ['C6 Conta', 'C6 Cartão'],
   },
+  {
+    id: 'pdf',
+    icon: File,
+    iconBg: 'bg-amber-50 dark:bg-amber-500/10',
+    iconColor: 'text-amber-600 dark:text-amber-400',
+    title: 'PDF de fatura ou extrato',
+    description: 'Fatura de cartão ou extrato de conta em PDF — o app lê o texto do arquivo direto no navegador. Só funciona com PDF gerado digitalmente (não com foto/scan).',
+    examples: ['Inter', 'Mercado Pago', 'Itaú'],
+  },
 ]
 
 const STEPS = [
@@ -48,7 +58,7 @@ const STEPS = [
 ]
 
 export default function ImportPage() {
-  const { boards } = useTransactionBoards()
+  const { boards, loading: boardsLoading } = useTransactionBoards()
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedBoard, setSelectedBoard] = useState<string>('')
   const [imported, setImported] = useState(0)
@@ -149,32 +159,52 @@ export default function ImportPage() {
           <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Iniciar importação</p>
         </div>
 
-        {boards.length > 0 && (
-          <div className="space-y-2">
-            <Label className="text-xs text-slate-500">Conta de destino (opcional)</Label>
-            <Select value={selectedBoard} onValueChange={v => setSelectedBoard(v ?? '')}>
-              <SelectTrigger className="max-w-xs">
-                <SelectValue placeholder="Nenhuma (avulso)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">Nenhuma (avulso)</SelectItem>
-                {boards.map(b => (
-                  <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-slate-400">As transações importadas serão associadas a esta conta.</p>
+        {boardsLoading ? (
+          <div className="h-11 bg-slate-100 dark:bg-slate-700 rounded-xl animate-pulse" />
+        ) : boards.length === 0 ? (
+          <div className="flex items-start gap-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-xl p-4">
+            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Crie uma conta antes de importar</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5 leading-relaxed">
+                Toda transação importada precisa estar vinculada a uma conta ou cartão. Crie sua primeira conta em Contas e Cartões e volte aqui para importar o extrato.
+              </p>
+              <Link
+                href="/transactions"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-800 dark:text-amber-300 hover:underline mt-2"
+              >
+                Criar conta agora →
+              </Link>
+            </div>
           </div>
-        )}
+        ) : (
+          <>
+            <div className="space-y-2">
+              <Label className="text-xs text-slate-500">Conta de destino</Label>
+              <Select value={selectedBoard} onValueChange={v => setSelectedBoard(v ?? '')}>
+                <SelectTrigger className="max-w-xs">
+                  <SelectValue placeholder="Nenhuma (avulso)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Nenhuma (avulso)</SelectItem>
+                  {boards.map(b => (
+                    <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-400">As transações importadas serão associadas a esta conta.</p>
+            </div>
 
-        <Button
-          size="lg"
-          className="w-full gap-2 text-base"
-          onClick={() => setModalOpen(true)}
-        >
-          <Upload className="h-5 w-5" />
-          Selecionar arquivo para importar
-        </Button>
+            <Button
+              size="lg"
+              className="w-full gap-2 text-base"
+              onClick={() => setModalOpen(true)}
+            >
+              <Upload className="h-5 w-5" />
+              Selecionar arquivo para importar
+            </Button>
+          </>
+        )}
       </div>
 
       <ImportCSVModal

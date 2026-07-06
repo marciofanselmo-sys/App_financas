@@ -1,13 +1,15 @@
 import { Transaction } from '@/types'
+import { installmentLabel } from './format-installment'
 
 export function exportToCSV(transactions: Transaction[], filename = 'transacoes') {
-  const headers = ['Descrição', 'Valor', 'Data', 'Tipo', 'Categoria']
+  const headers = ['Descrição', 'Valor', 'Data', 'Parcelas', 'Tipo', 'Categoria']
 
   const rows = transactions.map((t) => [
     `"${t.description.replace(/"/g, '""')}"`,
     String(t.amount),
     t.date,
-    t.type === 'receita' ? 'Receita' : 'Despesa',
+    installmentLabel(t),
+    t.type === 'receita' ? 'Receita' : t.type === 'transferencia' ? 'Transferência' : 'Despesa',
     t.category,
   ])
 

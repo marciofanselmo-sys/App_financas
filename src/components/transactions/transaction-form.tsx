@@ -8,19 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Transaction, TransactionType } from '@/types'
 import { useCategories } from '@/hooks/use-categories'
+import { categoriesForDate, isCategoryUsableForDate } from '@/lib/special-category-filter'
+import { addMonths } from '@/utils/add-months'
 import { X } from 'lucide-react'
 
 type TransactionData = Omit<Transaction, 'id' | 'user_id' | 'created_at'>
-
-function addMonths(dateStr: string, months: number): string {
-  const [y, m, d] = dateStr.split('-').map(Number)
-  const totalMonths = (m - 1) + months
-  const newYear = y + Math.floor(totalMonths / 12)
-  const newMonth = (totalMonths % 12) + 1
-  const lastDay = new Date(newYear, newMonth, 0).getDate()
-  const newDay = Math.min(d, lastDay)
-  return `${newYear}-${String(newMonth).padStart(2, '0')}-${String(newDay).padStart(2, '0')}`
-}
 
 interface TransactionFormProps {
   open: boolean
@@ -47,8 +39,7 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
   const [installmentCount, setInstallmentCount] = useState(2)
   const tagRef = useRef<HTMLInputElement>(null)
 
-  const isTransfer = type === 'transferencia'
-  const filteredCategories = categories.filter(c => c.type === type || c.type === 'ambos')
+  const filteredCategories = categoriesForDate(categories, date).filter(c => c.type === type || c.type === 'ambos')
   const isNewTransaction = !initialData
   const canInstallment = isNewTransaction && type === 'despesa' && !!onSubmitBatch
 
@@ -69,9 +60,11 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
 
   useEffect(() => {
     if (!category || categories.length === 0) return
-    const still = categories.find(c => c.name === category && (c.type === type || c.type === 'ambos'))
+    const still = categories.find(c =>
+      c.name === category && (c.type === type || c.type === 'ambos') && isCategoryUsableForDate(c, date)
+    )
     if (!still) setCategory('')
-  }, [type, categories, category])
+  }, [type, date, categories, category])
 
   function addTag(raw: string) {
     const tag = raw.trim().toLowerCase()
@@ -99,13 +92,13 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
 
     const amountNum = parseFloat(amount.replace(',', '.'))
     if (isNaN(amountNum) || amountNum <= 0) { setError('Informe um valor válido.'); return }
-    if (!isTransfer && !category) { setError('Selecione uma categoria.'); return }
+    if (!category) { setError('Selecione uma categoria.'); return }
 
     const baseData = {
       description,
       amount: amountNum,
       type,
-      category: isTransfer ? 'Transferência' : category,
+      category,
       tags,
       board_id: initialData?.board_id ?? boardId ?? null,
     }
@@ -253,35 +246,33 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
             </div>
           )}
 
-          {!isTransfer && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Categoria</Label>
-                <a href="/categories" className="text-xs text-blue-600 hover:underline">
-                  + Gerenciar categorias
-                </a>
-              </div>
-              <Select value={category} onValueChange={v => setCategory(v ?? '')}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione uma categoria..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {filteredCategories.length === 0 ? (
-                    <SelectItem value="__empty__" disabled>Nenhuma categoria disponível</SelectItem>
-                  ) : (
-                    filteredCategories.map(cat => (
-                      <SelectItem key={cat.id} value={cat.name}>
-                        <div className="flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                          {cat.name}
-                        </div>
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Categoria</Label>
+              <a href="/categories" className="text-xs text-blue-600 hover:underline">
+                + Gerenciar categorias
+              </a>
             </div>
-          )}
+            <Select value={category} onValueChange={v => setCategory(v ?? '')}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione uma categoria..." />
+              </SelectTrigger>
+              <SelectContent>
+                {filteredCategories.length === 0 ? (
+                  <SelectItem value="__empty__" disabled>Nenhuma categoria disponível</SelectItem>
+                ) : (
+                  filteredCategories.map(cat => (
+                    <SelectItem key={cat.id} value={cat.name}>
+                      <div className="flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                        {cat.name}
+                      </div>
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
 
           {/* Tags / Etiquetas */}
           <div className="space-y-2">

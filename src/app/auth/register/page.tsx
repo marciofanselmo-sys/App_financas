@@ -28,6 +28,7 @@ const BENEFITS = [
 
 export default function RegisterPage() {
   const router = useRouter()
+  const [name, setName]                     = useState('')
   const [email, setEmail]                   = useState('')
   const [password, setPassword]             = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -49,7 +50,11 @@ export default function RegisterPage() {
 
     setLoading(true)
     const supabase = createClient()
-    const { error } = await supabase.auth.signUp({ email, password })
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: name.trim() } },
+    })
 
     if (error) {
       setError('Erro ao criar conta. Tente novamente.')
@@ -117,7 +122,7 @@ export default function RegisterPage() {
           <div className="bg-white/8 border border-white/10 rounded-2xl p-4 backdrop-blur-sm space-y-3.5 max-w-xs">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-white/70 uppercase tracking-wide">Resumo do mês</span>
-              <span className="text-[11px] text-blue-300/70">Junho 2026</span>
+              <span className="text-[11px] text-blue-300/70">Julho 2026</span>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div className="bg-white/8 rounded-xl p-2.5">
@@ -168,15 +173,7 @@ export default function RegisterPage() {
             <span className="font-bold text-slate-800 dark:text-slate-100">FinanceApp</span>
           </div>
           <div className="hidden lg:block" />
-          <div className="flex items-center gap-3">
-            <ThemeToggle />
-            <Link
-              href="/auth/login"
-              className="text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-            >
-              Entrar
-            </Link>
-          </div>
+          <ThemeToggle />
         </div>
 
         {/* Área do formulário */}
@@ -207,6 +204,22 @@ export default function RegisterPage() {
               )}
 
               <div className="space-y-1.5">
+                <Label htmlFor="name" className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Nome
+                </Label>
+                <Input
+                  id="name"
+                  type="text"
+                  placeholder="Seu nome"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  required
+                  autoComplete="name"
+                  className="h-11 rounded-xl bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800 transition-colors"
+                />
+              </div>
+
+              <div className="space-y-1.5">
                 <Label htmlFor="email" className="text-sm font-medium text-slate-700 dark:text-slate-300">
                   E-mail
                 </Label>
@@ -217,6 +230,7 @@ export default function RegisterPage() {
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   required
+                  autoComplete="email"
                   className="h-11 rounded-xl bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800 transition-colors"
                 />
               </div>

@@ -6,6 +6,7 @@ import { Transaction, TransactionType } from '@/types'
 
 export interface RecurringItem {
   description: string
+  descriptionVariants: string[]
   category: string
   type: TransactionType
   avgAmount: number
@@ -114,6 +115,7 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
     // ── Recurring (non-installment) ───────────────────────────────
     const recurMap = new Map<string, {
       original: string
+      variants: Set<string>
       category: string
       type: TransactionType
       amounts: number[]
@@ -126,14 +128,17 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
 
     for (const t of txs) {
       if (extractInstallment(t)) continue
-      if (t.type !== 'despesa') continue
 
-      const key = t.description.toLowerCase().trim()
+      // A chave inclui o tipo — sem isso, uma despesa e uma transferência com a
+      // mesma descrição (ex: "Investimento") virariam um único grupo errado
+      // depois que passamos a detectar recorrência nos três tipos.
+      const key = `${t.type}|${t.description.toLowerCase().trim()}`
       const month = t.date.substring(0, 7)
 
       if (!recurMap.has(key)) {
         recurMap.set(key, {
           original: t.description,
+          variants: new Set(),
           category: t.category,
           type: t.type,
           amounts: [],
@@ -147,6 +152,7 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
       const g = recurMap.get(key)!
       g.amounts.push(t.amount)
       g.months.add(month)
+      g.variants.add(t.description)
       if (t.is_recurring) g.is_recurring = true
       if (t.date > g.lastDate) {
         g.lastDate = t.date
@@ -160,6 +166,7 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
       const avgAmount = g.amounts.reduce((a, b) => a + b, 0) / g.months.size
       recurringList.push({
         description: g.original,
+        descriptionVariants: Array.from(g.variants),
         category: g.category,
         type: g.type,
         avgAmount,
@@ -185,5 +192,39 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
 
   function refetch() { setTick(t => t + 1) }
 
-  return { recurring, installments, loading, refetch }
+  // Remove um parcelamento da detecção automática, sem apagar as transações:
+  // limpa as colunas de parcela (formato novo) e o sufixo "(X/Y)" (formato legado).
+  async function dismissInstallment(item: InstallmentItem): Promise<boolean> {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return false
+
+    const { error: e1 } = await supabase
+      .from('transactions')
+      .update({ installment_current: null, installment_total: null })
+      .eq('user_id', user.id)
+      .eq('description', item.description)
+      .eq('installment_total', item.totalInstallments)
+
+    const { data: legacyRows, error: e2select } = await supabase
+      .from('transactions')
+      .select('id, description')
+      .eq('user_id', user.id)
+      .like('description', `${item.description}%(%/${item.totalInstallments})`)
+
+    let e2 = e2select
+    for (const row of legacyRows ?? []) {
+      const stripped = row.description.replace(/\s*\(\d+\/\d+\)$/, '').trim()
+      if (stripped !== item.description) continue
+      const { error } = await supabase.from('transactions').update({ description: stripped }).eq('id', row.id)
+      if (error) e2 = error
+    }
+
+    if (e1) console.error('[dismissInstallment] erro (formato novo):', e1.message)
+    if (e2) console.error('[dismissInstallment] erro (formato legado):', e2.message)
+
+    return !e1 && !e2
+  }
+
+  return { recurring, installments, loading, refetch, dismissInstallment }
 }

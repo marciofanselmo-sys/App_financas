@@ -7,7 +7,7 @@ import { Users, Activity, BarChart2, Clock, RefreshCw, Shield, Eye } from 'lucid
 import { format, subDays, startOfDay } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
-const ADMIN_EMAIL = 'marcio.fanselmo@gmail.com'
+const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? ''
 const ACTIVE_MINUTES = 15
 const RETENTION_DAYS = 30
 

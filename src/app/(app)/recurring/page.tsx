@@ -1,12 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { useRecurring } from '@/hooks/use-recurring'
+import { useRecurring, InstallmentItem } from '@/hooks/use-recurring'
 import { useCategories } from '@/hooks/use-categories'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { createClient } from '@/lib/supabase/client'
-import { CreditCard, Calendar, TrendingDown, CheckCircle, Plus, X } from 'lucide-react'
+import { CreditCard, Calendar, TrendingDown, CheckCircle, Plus, X, Trash2 } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
+import { InfoBox } from '@/components/ui/info-box'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -65,7 +66,7 @@ const EMPTY_FORM: ManualForm = {
 }
 
 export default function RecurringPage() {
-  const { installments, loading, refetch } = useRecurring()
+  const { installments, loading, refetch, dismissInstallment } = useRecurring()
   const { categories } = useCategories()
   const { boards } = useTransactionBoards()
 
@@ -73,6 +74,17 @@ export default function RecurringPage() {
   const [form, setForm] = useState<ManualForm>(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [removeTarget, setRemoveTarget] = useState<InstallmentItem | null>(null)
+  const [removing, setRemoving] = useState(false)
+
+  async function handleRemove() {
+    if (!removeTarget) return
+    setRemoving(true)
+    await dismissInstallment(removeTarget)
+    setRemoving(false)
+    setRemoveTarget(null)
+    refetch()
+  }
 
   const expenseCategories = categories.filter(c => c.type === 'despesa' || c.type === 'ambos')
 
@@ -141,6 +153,24 @@ export default function RecurringPage() {
         </Button>
       </div>
 
+      <InfoBox id="recurring-como-funciona">
+        <p className="text-blue-600 dark:text-blue-400">
+          Esta aba reúne todas as compras parceladas que o app encontrou nas suas transações (via importação de extrato ou lançamento manual). Ela não é uma lista do mês atual — é um acompanhamento das parcelas <strong>em andamento</strong>, olhando do primeiro pagamento até o último, independente de qual mês você está vendo agora.
+        </p>
+        <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
+          <p className="font-semibold mb-1">O que os valores em cima significam?</p>
+          <p className="text-blue-600 dark:text-blue-400">
+            <strong>Parcelas / mês</strong> é a soma do valor de UMA parcela de cada compra ativa — ou seja, quanto sai do seu bolso todo mês, recorrentemente, até cada parcelamento terminar. Não é só do mês atual: se um parcelamento começou em janeiro e vai até dezembro, esse valor conta com ele em todos esses meses.
+          </p>
+        </div>
+        <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
+          <p className="font-semibold mb-1">Total comprometido</p>
+          <p className="text-blue-600 dark:text-blue-400">
+            Já esse é o valor que ainda falta pagar no total, somando todas as parcelas futuras (a partir de hoje) de todos os parcelamentos ativos — sua dívida restante em parcelas, de uma vez só.
+          </p>
+        </div>
+      </InfoBox>
+
       {/* Summary cards */}
       {installments.length > 0 && (
         <div className="grid grid-cols-2 gap-3">
@@ -197,9 +227,19 @@ export default function RecurringPage() {
                         {item.category}
                       </span>
                     </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{fmt(item.monthlyAmount)}</p>
-                      <p className="text-xs text-slate-400">por mês</p>
+                    <div className="text-right shrink-0 flex items-start gap-2">
+                      <div>
+                        <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{fmt(item.monthlyAmount)}</p>
+                        <p className="text-xs text-slate-400">por mês</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setRemoveTarget(item)}
+                        title="Remover da lista de parcelamentos"
+                        className="text-slate-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-colors shrink-0 mt-0.5"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                   </div>
 
@@ -357,6 +397,25 @@ export default function RecurringPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* REMOVE INSTALLMENT CONFIRM */}
+      <Dialog open={!!removeTarget} onOpenChange={v => { if (!v) setRemoveTarget(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Remover parcelamento</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-500 dark:text-slate-400 pt-2">
+            Remover <strong>&ldquo;{removeTarget?.description}&rdquo;</strong> da lista de Cartões &amp; Parcelas?
+            A transação continua no seu histórico normalmente — ela só deixa de ser contada como parcelamento ativo.
+          </p>
+          <div className="flex gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => setRemoveTarget(null)} className="flex-1">Cancelar</Button>
+            <Button type="button" variant="destructive" disabled={removing} onClick={handleRemove} className="flex-1">
+              {removing ? 'Removendo...' : 'Remover'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

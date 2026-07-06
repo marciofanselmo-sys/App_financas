@@ -54,6 +54,7 @@ export function PeriodFilter({ month, year, onMonthChange, onYearChange }: Perio
       <div className="flex items-center gap-1 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl shadow-sm">
         {/* Seta anterior */}
         <button
+          type="button"
           onClick={prev}
           className="flex items-center justify-center h-9 w-9 rounded-l-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors"
           aria-label="Mês anterior"
@@ -63,6 +64,7 @@ export function PeriodFilter({ month, year, onMonthChange, onYearChange }: Perio
 
         {/* Label clicável */}
         <button
+          type="button"
           onClick={() => setPickerOpen(o => !o)}
           className="flex items-center gap-1.5 px-2 py-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 transition-colors min-w-[130px] justify-center"
         >
@@ -72,6 +74,7 @@ export function PeriodFilter({ month, year, onMonthChange, onYearChange }: Perio
 
         {/* Seta próxima */}
         <button
+          type="button"
           onClick={next}
           className="flex items-center justify-center h-9 w-9 rounded-r-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors"
           aria-label="Próximo mês"
@@ -86,6 +89,7 @@ export function PeriodFilter({ month, year, onMonthChange, onYearChange }: Perio
           {/* Seletor de ano */}
           <div className="flex items-center justify-between mb-3">
             <button
+              type="button"
               onClick={() => onYearChange(year - 1)}
               className="h-7 w-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/[0.08] transition-colors"
             >
@@ -93,6 +97,7 @@ export function PeriodFilter({ month, year, onMonthChange, onYearChange }: Perio
             </button>
             <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{year}</span>
             <button
+              type="button"
               onClick={() => onYearChange(year + 1)}
               className="h-7 w-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/[0.08] transition-colors"
             >
@@ -109,6 +114,7 @@ export function PeriodFilter({ month, year, onMonthChange, onYearChange }: Perio
               return (
                 <button
                   key={m}
+                  type="button"
                   onClick={() => selectMonth(m, year)}
                   className={cn(
                     'py-2 px-1 rounded-xl text-xs font-medium transition-all',

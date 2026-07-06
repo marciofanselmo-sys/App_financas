@@ -98,13 +98,17 @@ export default function DashboardPage() {
   const activeInstallments = installments.filter(i => i.remaining > 0)
   const totalMonthlyInstallments = activeInstallments.reduce((s, i) => s + i.monthlyAmount, 0)
 
-  // Apenas os fixos que o usuário confirmou na aba Recorrências, com agrupamento por subcategoria
-  const groupedRecurring = useMemo(() => buildGroupedRecurring(recurring), [recurring])
+  // Apenas os fixos que o usuário confirmou na aba Recorrências, com agrupamento por subcategoria.
+  // "Gasto fixo" aqui é só despesa — recorrência também detecta receita e
+  // transferência (usadas em /fixos), mas esse card do dashboard é sobre gasto.
+  const despesaRecurring = useMemo(() => recurring.filter(r => r.type === 'despesa'), [recurring])
+  const groupedRecurring = useMemo(() => buildGroupedRecurring(despesaRecurring), [despesaRecurring])
   const confirmedRecurring = useMemo(
     () => groupedRecurring.filter(i => decisions.get(i.key) === 'confirmed'),
     [groupedRecurring, decisions],
   )
   const totalMonthlyRecurring = confirmedRecurring.reduce((s, r) => s + r.avgAmount, 0)
+  const pendingRecurringCount = groupedRecurring.filter(i => !decisions.has(i.key)).length
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -139,11 +143,11 @@ export default function DashboardPage() {
       )}
 
       {/* Primeiros passos */}
-      {!loading && !boardsLoading && (
+      {!loading && !boardsLoading && !recurringLoading && !decisionsLoading && (
         <NextActionCard
           hasTransactions={transactions.length > 0}
           hasBoards={boards.length > 0}
-          pendingRecurring={0}
+          pendingRecurring={pendingRecurringCount}
           activeInstallments={activeInstallments.length}
         />
       )}

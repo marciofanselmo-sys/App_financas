@@ -113,8 +113,58 @@ export function useCategories() {
 
   async function deleteCategory(id: string) {
     const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Não autenticado.' }
+
+    const target = categories.find(c => c.id === id)
+    if (!target) return { error: 'Categoria não encontrada.' }
+
+    if (target.name.toLowerCase() === 'outros') {
+      return { error: 'A categoria "Outros" não pode ser excluída — ela é o destino padrão de outras categorias.' }
+    }
+
+    const oldName = target.name
+    // No fluxo de merge, esta categoria já foi renomeada para o nome da categoria
+    // destino antes de chegar aqui — nesse caso não cascateia (a outra categoria
+    // ainda usa esse nome normalmente).
+    const stillUsedByAnother = categories.some(c => c.id !== id && c.name === oldName)
+
     const { error } = await supabase.from('categories').delete().eq('id', id)
     if (error) return { error: error.message }
+
+    if (!stillUsedByAnother) {
+      // 1. Transações: reatribui para "Outros"
+      await supabase
+        .from('transactions')
+        .update({ category: 'Outros' })
+        .eq('user_id', user.id)
+        .eq('category', oldName)
+
+      // 2. Regras automáticas: reatribui para "Outros"
+      await supabase
+        .from('categorization_rules')
+        .update({ category: 'Outros' })
+        .eq('user_id', user.id)
+        .eq('category', oldName)
+
+      // 3. Planejamento: remove a chave do JSON category_limits
+      const { data: plans } = await supabase
+        .from('budget_plans')
+        .select('id, category_limits')
+        .eq('user_id', user.id)
+
+      for (const plan of plans ?? []) {
+        const limits = plan.category_limits as Record<string, number>
+        if (!(oldName in limits)) continue
+        const updated = { ...limits }
+        delete updated[oldName]
+        await supabase
+          .from('budget_plans')
+          .update({ category_limits: updated })
+          .eq('id', plan.id)
+      }
+    }
+
     setCategories(prev => prev.filter(c => c.id !== id))
     return { error: null }
   }

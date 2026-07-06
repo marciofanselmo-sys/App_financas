@@ -2,24 +2,27 @@
 
 import { useState } from 'react'
 import { useCategories } from '@/hooks/use-categories'
-import { Category, CategoryType, CATEGORY_COLORS } from '@/types'
+import { Category, CategoryType, CATEGORY_COLORS, TRANSFER_CATEGORY_COLOR, SpecialCategoryDate } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Pencil, Trash2, Tag, RotateCcw } from 'lucide-react'
+import { SpecialDatesPicker, MONTH_NAMES } from '@/components/categories/special-dates-picker'
+import { Plus, Pencil, Trash2, Tag, RotateCcw, Sparkles } from 'lucide-react'
 
 const TYPE_LABELS: Record<CategoryType, string> = {
   receita: 'Receita',
   despesa: 'Despesa',
+  transferencia: 'Transferência',
   ambos: 'Ambos',
 }
 
 const TYPE_BADGE: Record<CategoryType, string> = {
   receita: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400',
   despesa: 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400',
+  transferencia: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400',
   ambos:   'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
 }
 
@@ -27,9 +30,14 @@ interface FormState {
   name: string
   type: CategoryType
   color: string
+  special: boolean
+  specialDates: SpecialCategoryDate[]
 }
 
-const EMPTY_FORM: FormState = { name: '', type: 'despesa', color: CATEGORY_COLORS[0] }
+const EMPTY_FORM: FormState = {
+  name: '', type: 'despesa', color: CATEGORY_COLORS[0],
+  special: false, specialDates: [],
+}
 
 export default function CategoriesPage() {
   const { categories, loading, createCategory, updateCategory, deleteCategory, seedDefaults } = useCategories()
@@ -41,6 +49,7 @@ export default function CategoriesPage() {
   const [formError, setFormError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
   const [seeding, setSeeding] = useState(false)
   const [seedError, setSeedError] = useState('')
 
@@ -51,9 +60,21 @@ export default function CategoriesPage() {
     setFormOpen(true)
   }
 
+  function openCreateSpecial() {
+    const today = new Date()
+    setEditing(null)
+    setForm({ ...EMPTY_FORM, special: true, specialDates: [{ month: today.getMonth() + 1, year: today.getFullYear() }] })
+    setFormError('')
+    setFormOpen(true)
+  }
+
   function openEdit(cat: Category) {
     setEditing(cat)
-    setForm({ name: cat.name, type: cat.type, color: cat.color })
+    setForm({
+      name: cat.name, type: cat.type, color: cat.color,
+      special: !!(cat.special_dates && cat.special_dates.length > 0),
+      specialDates: cat.special_dates ?? [],
+    })
     setFormError('')
     setFormOpen(true)
   }
@@ -61,12 +82,19 @@ export default function CategoriesPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim()) { setFormError('Nome obrigatório.'); return }
+    if (form.special && form.specialDates.length === 0) { setFormError('Adicione pelo menos um mês para a categoria especial.'); return }
     setSaving(true)
     setFormError('')
 
+    const payload = {
+      name: form.name,
+      type: form.type,
+      color: form.type === 'transferencia' ? TRANSFER_CATEGORY_COLOR : form.color,
+      special_dates: form.special ? form.specialDates : [],
+    }
     const { error } = editing
-      ? await updateCategory(editing.id, form)
-      : await createCategory(form)
+      ? await updateCategory(editing.id, payload)
+      : await createCategory(payload)
 
     if (error) {
       setFormError(
@@ -83,9 +111,11 @@ export default function CategoriesPage() {
   async function confirmDelete() {
     if (!deleteTarget) return
     setDeleting(true)
-    await deleteCategory(deleteTarget.id)
-    setDeleteTarget(null)
+    setDeleteError('')
+    const { error } = await deleteCategory(deleteTarget.id)
     setDeleting(false)
+    if (error) { setDeleteError(error); return }
+    setDeleteTarget(null)
   }
 
   async function handleSeedDefaults() {
@@ -96,8 +126,17 @@ export default function CategoriesPage() {
     setSeeding(false)
   }
 
-  const receitas = categories.filter(c => c.type === 'receita' || c.type === 'ambos')
-  const despesas = categories.filter(c => c.type === 'despesa' || c.type === 'ambos')
+  const regularCategories = categories.filter(c => !(c.special_dates && c.special_dates.length > 0))
+  const receitas = regularCategories.filter(c => c.type === 'receita' || c.type === 'ambos')
+  const despesas = regularCategories.filter(c => c.type === 'despesa' || c.type === 'ambos')
+  const transferencias = regularCategories.filter(c => c.type === 'transferencia' || c.type === 'ambos')
+  const specialCategories = categories
+    .filter(c => c.special_dates && c.special_dates.length > 0)
+    .sort((a, b) => {
+      const aMin = a.special_dates![0]
+      const bMin = b.special_dates![0]
+      return (bMin.year - aMin.year) || (bMin.month - aMin.month)
+    })
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
@@ -151,11 +190,13 @@ export default function CategoriesPage() {
       ) : (
         <div className="space-y-6">
           {[
-            { label: 'Receitas', items: receitas },
-            { label: 'Despesas', items: despesas },
-          ].map(({ label, items }) => (
+            { label: 'Receitas', items: receitas, help: 'Dinheiro que entra: salário, freelance, vendas... Conta como ganho real no saldo, no dashboard e nos relatórios.' },
+            { label: 'Despesas', items: despesas, help: 'Dinheiro que sai de verdade: contas, compras, assinaturas... Conta como gasto real no saldo, no planejamento e nos relatórios.' },
+            { label: 'Transferências', items: transferencias, help: 'Movimentação entre suas próprias contas — não é ganho nem gasto real (ex: pagar a fatura do cartão pela conta corrente, ou aplicar num investimento). Por isso fica fora dos totais de receita/despesa: o gasto de verdade já foi contado individualmente na fatura, por exemplo, e somar a transferência também duplicaria o valor. Categorizar ajuda só a organizar pra onde o dinheiro foi.' },
+          ].map(({ label, items, help }) => (
             <div key={label}>
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">{label}</h2>
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">{label}</h2>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mb-3">{help}</p>
               {items.length === 0 ? (
                 <p className="text-sm text-slate-400 dark:text-slate-500 py-2">Nenhuma categoria de {label.toLowerCase()}</p>
               ) : (
@@ -181,14 +222,16 @@ export default function CategoriesPage() {
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(cat)}>
                           <Pencil className="h-3.5 w-3.5 text-slate-400" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-                          onClick={() => setDeleteTarget(cat)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        {cat.name.toLowerCase() !== 'outros' && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                            onClick={() => { setDeleteError(''); setDeleteTarget(cat) }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -198,6 +241,63 @@ export default function CategoriesPage() {
           ))}
         </div>
       )}
+
+      {/* CATEGORIAS ESPECIAIS — separadas da lista principal, presas a um mês/ano */}
+      <div className="border-t border-slate-200 dark:border-slate-700 pt-6">
+        <div className="flex items-center justify-between gap-4 mb-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+              <Sparkles className="h-4 w-4 text-violet-500" />
+              Categorias especiais
+            </h2>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+              Para organizar um gasto ou evento único de um mês específico (ex: &ldquo;Reforma Banheiro&rdquo;, &ldquo;Viagem&rdquo;)
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={openCreateSpecial} className="gap-2 shrink-0">
+            <Plus className="h-4 w-4" /> Nova especial
+          </Button>
+        </div>
+
+        {specialCategories.length === 0 ? (
+          <p className="text-sm text-slate-400 dark:text-slate-500 py-2">Nenhuma categoria especial criada ainda.</p>
+        ) : (
+          <div className="space-y-2">
+            {specialCategories.map(cat => (
+              <div
+                key={cat.id}
+                className="flex items-center gap-3 bg-white dark:bg-slate-800 rounded-xl px-4 py-3 shadow-sm border border-violet-100 dark:border-violet-900/40"
+              >
+                <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: cat.color + '25' }}>
+                  <Sparkles className="h-4 w-4" style={{ color: cat.color }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-slate-700 dark:text-slate-200 text-sm">{cat.name}</p>
+                  <p className="text-xs text-violet-500 dark:text-violet-400 mt-0.5">
+                    {cat.special_dates!.map(d => `${MONTH_NAMES[d.month - 1]}/${d.year}`).join(', ')}
+                  </p>
+                </div>
+                <Badge className={`text-xs shrink-0 border-0 ${TYPE_BADGE[cat.type]}`}>
+                  {TYPE_LABELS[cat.type]}
+                </Badge>
+                <div className="flex gap-1 shrink-0">
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(cat)}>
+                    <Pencil className="h-3.5 w-3.5 text-slate-400" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    onClick={() => { setDeleteError(''); setDeleteTarget(cat) }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* FORM MODAL */}
       <Dialog open={formOpen} onOpenChange={v => { if (!v) setFormOpen(false) }}>
@@ -226,36 +326,76 @@ export default function CategoriesPage() {
 
             <div className="space-y-2">
               <Label>Tipo</Label>
-              <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v as CategoryType }))}>
+              <Select
+                value={form.type}
+                onValueChange={v => setForm(f => ({
+                  ...f,
+                  type: v as CategoryType,
+                  color: v === 'transferencia' ? TRANSFER_CATEGORY_COLOR : f.color,
+                }))}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="despesa">Despesa</SelectItem>
                   <SelectItem value="receita">Receita</SelectItem>
+                  <SelectItem value="transferencia">Transferência</SelectItem>
                   <SelectItem value="ambos">Ambos</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label>Cor</Label>
-              <div className="flex flex-wrap gap-2 pt-1">
-                {CATEGORY_COLORS.map(color => (
-                  <button
-                    key={color}
-                    type="button"
-                    onClick={() => setForm(f => ({ ...f, color }))}
-                    className="h-7 w-7 rounded-full border-2 transition-transform hover:scale-110"
-                    style={{
-                      backgroundColor: color,
-                      borderColor: form.color === color ? '#1e293b' : 'transparent',
-                      outline: form.color === color ? '2px solid white' : 'none',
-                      outlineOffset: '-3px',
-                    }}
-                  />
-                ))}
+            {form.type === 'transferencia' ? (
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                Categorias de transferência usam sempre a cor cinza padrão, a mesma já usada pra representar transferência no resto do app.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <Label>Cor</Label>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {CATEGORY_COLORS.map(color => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, color }))}
+                      className="h-7 w-7 rounded-full border-2 transition-transform hover:scale-110"
+                      style={{
+                        backgroundColor: color,
+                        borderColor: form.color === color ? '#1e293b' : 'transparent',
+                        outline: form.color === color ? '2px solid white' : 'none',
+                        outlineOffset: '-3px',
+                      }}
+                    />
+                  ))}
+                </div>
               </div>
+            )}
+
+            <div className="border-t border-slate-100 dark:border-slate-700 pt-3 space-y-2">
+              <button
+                type="button"
+                onClick={() => setForm(f => ({ ...f, special: !f.special }))}
+                className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300"
+              >
+                <span className={`h-5 w-9 rounded-full flex items-center px-0.5 transition-colors ${form.special ? 'bg-violet-500 justify-end' : 'bg-slate-200 dark:bg-slate-600 justify-start'}`}>
+                  <span className="h-4 w-4 rounded-full bg-white shadow" />
+                </span>
+                <Sparkles className="h-3.5 w-3.5 text-violet-500" />
+                Categoria especial (só vale em meses específicos)
+              </button>
+
+              {form.special && (
+                <div className="pt-1 space-y-1.5">
+                  <SpecialDatesPicker
+                    dates={form.specialDates}
+                    onChange={d => setForm(f => ({ ...f, specialDates: d }))}
+                  />
+                  <p className="text-xs text-slate-400 dark:text-slate-500">
+                    Não aparece na lista principal — fica na seção &ldquo;Categorias especiais&rdquo; no final da página. Você pode adicionar mais meses depois, editando a categoria.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2 pt-2">
@@ -277,8 +417,13 @@ export default function CategoriesPage() {
             <DialogTitle>Excluir categoria</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-slate-500 dark:text-slate-400 pt-2">
-            Excluir <strong>&ldquo;{deleteTarget?.name}&rdquo;</strong>? As transações com essa categoria não serão afetadas.
+            Excluir <strong>&ldquo;{deleteTarget?.name}&rdquo;</strong>? As transações, regras e limites de planejamento com essa categoria serão movidos automaticamente para &ldquo;Outros&rdquo;.
           </p>
+          {deleteError && (
+            <p className="text-xs text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2 mt-2">
+              {deleteError}
+            </p>
+          )}
           <div className="flex gap-2 pt-2">
             <Button variant="outline" onClick={() => setDeleteTarget(null)} className="flex-1">Cancelar</Button>
             <Button variant="destructive" onClick={confirmDelete} disabled={deleting} className="flex-1">

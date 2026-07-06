@@ -186,19 +186,18 @@ const SECTIONS: Section[] = [
         title: 'Detalhe de uma categoria (clique na barra)',
         body: [
           'Ao clicar em uma categoria, um painel lateral abre com todos os lançamentos daquele grupo no mês.',
-          'Direto neste painel você pode:',
-          '• Mudar a categoria de qualquer lançamento individualmente (dropdown ao lado do valor).',
-          '• Criar uma regra automática clicando em "⚡ virar regra" — a regra salva e já recategoriza o histórico.',
-          '> Exemplo: você vê "UBER EATS" classificado como "Transporte". Muda para "Alimentação" e clica "virar regra" → o app cria a regra "UBER EATS → Alimentação" e corrige automaticamente todas as outras ocorrências anteriores.',
+          'Direto neste painel você pode mudar a categoria de qualquer lançamento individualmente (dropdown ao lado do valor).',
+          'Se a nova categoria for uma categoria normal (não especial), o app cria/atualiza automaticamente uma regra de categorização e já corrige todas as outras transações com esse nome exato — sem precisar de nenhum botão extra.',
+          '> Exemplo: você vê "UBER EATS" classificado como "Transporte". Muda para "Alimentação" → o app já cria a regra "UBER EATS → Alimentação" e corrige automaticamente todas as outras ocorrências anteriores.',
         ],
-        tip: 'Use o "virar regra" sempre que perceber uma categoria errada numa importação. A regra vai evitar retrabalho em todas as importações futuras.',
+        tip: 'Categoria especial (presa a um mês específico) nunca entra nessa automação — muda só aquela transação, fica isolada.',
       },
       {
         title: 'Entradas por categoria',
         body: [
           'A seção abaixo das despesas mostra as receitas separadas por categoria (Salário, Freelance, Aluguel recebido, etc.).',
           '> Exemplo: Salário R$ 7.200 (85%) · Freelance R$ 1.300 (15%).',
-          'Clique em qualquer categoria de receita para ver os detalhes e criar regras também.',
+          'Clique em qualquer categoria de receita para ver os detalhes.',
         ],
       },
       {
@@ -363,9 +362,9 @@ const SECTIONS: Section[] = [
           'O app calcula a média dos valores dos lançamentos agrupados e exibe um único card consolidado.',
           '',
           'Como criar e aplicar — passo a passo:',
-          '1. Vá em Configurações → Subcategorias → clique "+ Criar".',
-          '2. Dê um nome ao grupo, ex: "Aluguel", "Internet" ou "Condomínio".',
-          '3. Volte para Recorrências → abra o card de um dos lançamentos do grupo.',
+          '1. Vá em Configurações → Subcategorias.',
+          '2. Dê um nome ao grupo (ex: "Aluguel", "Internet" ou "Condomínio") e escolha o tipo — Despesa, Receita ou Transferência — e clique "Criar".',
+          '3. Volte para Recorrências → abra o card de um dos lançamentos do grupo (do mesmo tipo da subcategoria).',
           '4. Clique em "+ subcat." e escolha o nome criado.',
           '5. Faça o mesmo para as outras variações do mesmo gasto.',
           '6. Pronto: os cards se unem em um único card com o nome da subcategoria e a média calculada automaticamente.',
@@ -528,10 +527,10 @@ const SECTIONS: Section[] = [
         title: 'Categorias — criar e editar',
         body: [
           'Em Configurações → Categorias você gerencia todas as categorias usadas no app:',
-          '• Criar: clique em "+ Nova categoria". Defina nome, cor e tipo (Despesa, Receita ou Ambos).',
+          '• Criar: clique em "+ Nova categoria". Defina nome, cor e tipo (Despesa, Receita, Transferência ou Ambos). Categorias de transferência usam sempre a mesma cor cinza, sem opção de escolher.',
           '• Editar: clique no lápis ao lado de qualquer categoria para mudar nome ou cor.',
           '• Mesclar: ao excluir uma categoria que tem transações, você pode mesclar (mover) todas as transações para outra categoria antes.',
-          '• Excluir: remove a categoria. Transações associadas ficam sem categoria.',
+          '• Excluir: remove a categoria. Transações, regras e limites de planejamento associados são movidos automaticamente para "Outros" (que por isso não pode ser excluída).',
           '> Sugestão de categorias de despesa: Alimentação, Moradia, Transporte, Saúde, Educação, Lazer, Assinatura, Vestuário, Pets.',
           '> Sugestão de categorias de receita: Salário, Freelance, Aluguel Recebido, Dividendos, Outros.',
         ],
@@ -544,8 +543,8 @@ const SECTIONS: Section[] = [
           'Servem para agrupar cobranças que chegam com nomes diferentes no extrato, mas representam o mesmo gasto fixo.',
           '> Problema: o aluguel chega como "PIX JOAO DA SILVA" em um mês e "PIX IMOV PREMIUM" em outro. Sem agrupamento, aparecem como 2 gastos diferentes.',
           '> Solução: crie a subcategoria "Aluguel" em Configurações → Subcategorias. Em Recorrências, aplique a subcategoria nos dois cards. Eles viram um único card consolidado.',
-          'Para criar: Configurações → Subcategorias → "+ Criar" → dê um nome → Criar.',
-          'Para aplicar: em Recorrências → card do gasto → "+ subcat." → escolha a subcategoria.',
+          'Para criar: Configurações → Subcategorias → dê um nome, escolha o tipo (Despesa, Receita ou Transferência) → "Criar".',
+          'Para aplicar: em Recorrências → card do gasto → "+ subcat." → escolha a subcategoria. Só aparecem as subcategorias do mesmo tipo do card (uma despesa não pode ganhar subcategoria de receita, por exemplo).',
         ],
       },
       {
@@ -566,7 +565,7 @@ const SECTIONS: Section[] = [
           '> "SPOTIFY" → Assinatura',
           '> "AMAZON" → Compras Online',
         ],
-        tip: 'Você também pode criar regras diretamente da aba Análise: clique em uma categoria → clique em "⚡ virar regra" ao lado de qualquer transação. Isso cria a regra E recategoriza o histórico ao mesmo tempo.',
+        tip: 'Você não precisa criar a regra manualmente pra corrigir uma transação errada: mude a categoria dela em qualquer lugar do app (Contas e Cartões ou Análise) e o app já cria/atualiza a regra automaticamente, com uma etiqueta "Automática" em Configurações → Regras.',
       },
       {
         title: 'Regras — ordem e prioridade',
@@ -593,7 +592,7 @@ const QUICK_LINKS = [
   { icon: FileText,     label: 'Exportar PDF',         id: 'relatorios'     },
   { icon: RefreshCw,    label: 'Recorrências',         id: 'fixos'          },
   { icon: CreditCard,   label: 'Parcelas',             id: 'parcelas'       },
-  { icon: BarChart2,    label: 'Criar regra pelo gráfico', id: 'analise'    },
+  { icon: BarChart2,    label: 'Corrigir categoria pelo gráfico', id: 'analise' },
 ]
 
 // ── Primeiros passos ──────────────────────────────────────────────────────────

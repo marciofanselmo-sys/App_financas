@@ -37,6 +37,10 @@ export function useTransactions(filters?: TransactionFilters) {
       query = query.eq('category', filters.category)
     }
 
+    if (filters?.type) {
+      query = query.eq('type', filters.type)
+    }
+
     if (filters?.search) {
       query = query.ilike('description', `%${filters.search}%`)
     }
@@ -59,7 +63,7 @@ export function useTransactions(filters?: TransactionFilters) {
     }
     setLoading(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters?.month, filters?.year, filters?.category, filters?.search, filters?.board_id, filters?.tag, filters?.exclude_board_ids?.join(',')])
+  }, [filters?.month, filters?.year, filters?.category, filters?.type, filters?.search, filters?.board_id, filters?.tag, filters?.exclude_board_ids?.join(',')])
 
   useEffect(() => {
     fetchTransactions()

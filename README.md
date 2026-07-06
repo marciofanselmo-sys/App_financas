@@ -29,6 +29,8 @@ App web para controle completo das finanças pessoais: contas, transações, par
 - Campos: valor, data, descrição, categoria, conta, tag, tipo de parcelamento, marcação de recorrência
 - Busca e filtros por categoria, tipo e conta
 - Edição e exclusão inline
+- **Seleção múltipla em massa**: dentro de uma conta (Contas e Cartões), marque várias transações com checkbox e aplique de uma vez: mudar categoria, mover para outra conta ou excluir — cada ação pede confirmação mostrando a quantidade de transações afetadas
+- **Editar categoria vira regra automática**: ao trocar a categoria de uma transação para uma categoria normal, o sistema cria/atualiza automaticamente uma regra (badge "Automática" em `/settings/rules`) e aplica a mesma mudança em todas as transações passadas com a descrição exata. Categorias especiais nunca entram nesse mecanismo — nem geram regra, nem são sobrescritas por uma
 - Exportação das transações para CSV
 
 ### Importação de Extratos
@@ -36,16 +38,18 @@ App web para controle completo das finanças pessoais: contas, transações, par
 - **OFX / QFX**: formato padrão bancário com maior precisão de dados (Itaú, Bradesco, Santander, Caixa, BB, Inter)
 - **C6 Bank**: layout específico da conta corrente e fatura do cartão
 - Fluxo de revisão antes de salvar: categorização automática por regras + edição manual de cada item importado
+- **Detecção automática de transferências**: descrições iniciadas por "Transferência", "Transf", "TED" ou "DOC" são marcadas como tipo Transferência (não entram como receita/despesa real). PIX é tratado como transação normal, pois pode ser tanto um gasto real quanto uma transferência entre contas próprias
+- **Herança de categoria por histórico**: ao importar, uma descrição já categorizada antes puxa a mesma categoria automaticamente — mas esse histórico nunca considera categorias especiais, evitando que uma associação especial pontual "vaze" para outras transações com descrição parecida
 
 ### Categorização Automática
-- Regras baseadas em palavra-chave: ao criar uma regra, ela pode ser aplicada retroativamente a transações já importadas
-- Criação de regras direto da tela de Analytics (ao clicar em uma transação sem categoria)
+- Regras baseadas em palavra-chave: ao criar uma regra em `/settings/rules`, ela pode ser aplicada retroativamente a transações já importadas
+- **Criação automática ao editar**: não é preciso criar regra manualmente na maioria dos casos — editar a categoria de uma transação (em Transações ou Analytics) já cria a regra sozinha (veja acima). O botão de criar regra manual existe apenas em `/settings/rules`
 
 ### Analytics (Análise Mensal)
 - Gráficos de gastos e receitas por categoria
 - Filtro por conta específica ou visão geral (excluindo contas não pinadas)
 - Filtro de período (mês/ano)
-- Drill-down: clicar em uma categoria abre a lista de transações daquele grupo
+- Drill-down: clicar em uma categoria abre a lista de transações daquele grupo, com descrição/data, seletor de categoria e valor lado a lado para recategorizar rapidamente
 
 ### Relatórios
 Quatro tipos de relatório, todos com filtro por conta:
@@ -59,12 +63,14 @@ Quatro tipos de relatório, todos com filtro por conta:
 - Agrupamento por subcategoria (ex: "Mercado" agrupa Hortifruti, Pão de Açúcar, Carrefour)
 - Ações por item: confirmar como fixo, ignorar ou ocultar
 - Gestão de subcategorias para agrupamento personalizado
+- **Cartões & Parcelas sempre contam como fixo:** os parcelamentos ativos aparecem como um grupo próprio no topo da tela, somados automaticamente ao total "Fixos confirmados / mês" — sem precisar de confirmação manual e sempre recalculado com base no mês atual
 
 ### Parcelas Ativas
 - Lista de compras parceladas em andamento com progresso (X/Y parcelas)
 - Badges de status: "Última parcela", "Quase acabando", "Longo prazo"
 - Cadastro manual de parcelamentos (para parcelas não importadas)
 - Filtro por conta
+- **Remover da lista de parcelamentos:** ícone de lixeira em cada card, com confirmação — não apaga a transação, só limpa os campos de parcela (`installment_current`/`installment_total`, ou o sufixo `(X/Y)` legado), fazendo o item deixar de ser detectado como parcelamento
 
 ### Metas Financeiras
 - Tipos de meta: Reserva de Emergência, Investimento, Carro, Viagem, Quitar Dívida, Imóvel, Personalizada
@@ -74,18 +80,25 @@ Quatro tipos de relatório, todos com filtro por conta:
   - **OFX**: importação de saldo bancário para atualizar reserva/conta
 
 ### Planejamento Orçamentário
-- Templates de orçamento: Equilibrado (50/30/20), Investidor (45/25/30), Quitar Dívidas, Personalizado
+- Templates de orçamento: Equilibrado (30% poupança/investimento), Investidor (40%), Quitar Dívidas (10%), Personalizado
+- Três campos no topo: **Receita prevista**, **Gastos Previstos (Recorrência)** e **Poupança/Investimento previsto** (soma Investimento + Reserva/Reserva de emergência) — unificado em 2026-07-01
+- **Gastos Previstos (Recorrência)**: campo somente leitura, puxado do mesmo total de "Fixos confirmados / mês" de `/fixos` (recorrências confirmadas + Cartões & Parcelas ativos). Antes de salvar, mostra uma prévia ao vivo; ao clicar em "Salvar Planejamento", o valor é **travado** (congelado) naquele momento e fica gravado com aquele mês específico — não muda mais sozinho depois. Esse valor não aparece na tabela Planejado × Realizado (é só referência no formulário)
 - Definição de limite por categoria
 - Comparação planejado vs realizado para o mês selecionado
 - Indicadores visuais de status por categoria (dentro do limite, próximo, estourado)
+- **Repetição automática:** ao salvar um planejamento, ele passa a valer também para os meses seguintes que ainda não têm plano próprio (a tela avisa quando o valor exibido foi herdado). Meses anteriores e meses futuros já configurados individualmente não são alterados.
 
 ### Configurações
 - **Categorias**: criar, editar, excluir e restaurar categorias padrão
+- **Excluir categoria cascateia para "Outros"**: transações, regras de categorização e limites de planejamento que apontavam para a categoria excluída são automaticamente reatribuídos à categoria "Outros" (que não pode ser excluída, por ser o destino padrão). Usar "Mesclar" (→) em vez de excluir se quiser mover para uma categoria específica
+- **Categorias especiais**: seção separada no final da tela de Categorias, para organizar um gasto/evento preso a um ou mais meses/anos específicos (ex: "Viagem" válida em fevereiro E março/2026 — não precisa duplicar a categoria por mês). Só aparecem como opção ao categorizar transações dentro dos meses configurados; em outros meses ficam invisíveis nos seletores de categoria. Nunca entram no sistema de regras automáticas nem no histórico de herança por descrição — isoladas por design, pra não "vazar" pra outras transações
 - **Subcategorias**: agrupamento de gastos recorrentes por rótulo personalizado
-- **Regras de categorização**: mapeamento automático de descrição → categoria
+- **Regras de categorização**: mapeamento automático de descrição → categoria, com badge "Automática" para regras criadas ao editar a categoria de uma transação (veja Transações)
 
 ### Autenticação
 - Login e cadastro com design split-screen (painel de marca + formulário)
+- Barra superior sem links de navegação cruzada entre login/cadastro — apenas o toggle de tema
+- Cadastro com campo **Nome**, salvo em `user_metadata.full_name` no Supabase Auth
 - Sessão persistente via Supabase Auth
 - Proteção de rotas por middleware (usuário não logado vai para o login)
 
@@ -108,16 +121,18 @@ npm install
 ```bash
 cp .env.example .env.local
 ```
-Preencha `.env.local` com suas credenciais do Supabase (Settings → API no painel do Supabase):
+Preencha `.env.local` com suas credenciais do Supabase (Settings → API no painel do Supabase) e o e-mail do owner:
 ```
 NEXT_PUBLIC_SUPABASE_URL=sua_url_aqui
-NEXT_PUBLIC_SUPABASE_ANON_KEY=sua_chave_aqui
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sua_chave_aqui
+NEXT_PUBLIC_ADMIN_EMAIL=seu@email.com
 ```
+`NEXT_PUBLIC_ADMIN_EMAIL` controla quem tem acesso ao painel `/admin` — sem ela, o item de menu e a rota ficam bloqueados mesmo para o dono do app.
 
 > **Segurança:** `.env.local` está no `.gitignore` e nunca deve ser commitado. A segurança dos dados é garantida pelas políticas de Row Level Security (RLS) no banco.
 
 ### 3. Criar tabelas no Supabase
-No SQL Editor do Supabase, execute o conteúdo de `src/lib/supabase/schema.sql`.
+No SQL Editor do Supabase, execute o conteúdo de `src/lib/supabase/schema.sql` e, em seguida, todos os arquivos `migration_*.sql`/`migration-*.sql` da mesma pasta (várias tabelas/colunas foram adicionadas depois do schema inicial — regras, parcelas, subcategorias, categorias especiais, etc).
 
 ### 4. Rodar em desenvolvimento
 ```bash
@@ -141,7 +156,8 @@ Configure em Dashboard → Project → Settings → Environment Variables:
 | Variável | Onde encontrar |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Settings → API → Project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Settings → API → anon public |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase → Settings → API → anon/publishable key |
+| `NEXT_PUBLIC_ADMIN_EMAIL` | E-mail do owner do SaaS — libera acesso ao painel `/admin` |
 
 ---
 

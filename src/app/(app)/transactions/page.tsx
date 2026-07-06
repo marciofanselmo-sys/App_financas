@@ -10,8 +10,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Plus, Pencil, Trash2, Wallet, Pin, PinOff, ArrowRight, ChevronRight } from 'lucide-react'
+import { Plus, Pencil, Trash2, Wallet, Pin, PinOff, ArrowRight, ChevronRight, AlertTriangle } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
+import { createClient } from '@/lib/supabase/client'
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
@@ -39,7 +40,6 @@ const ACCOUNT_TEMPLATES: AccountTemplate[] = [
   { id: 'cartao-credito',   label: 'Cartão de Crédito', description: 'Crédito e compras parceladas', icon: 'credit-card',  color: '#8b5cf6', type: 'saida',  suggestedName: 'Cartão de Crédito' },
   { id: 'carteira-digital', label: 'Carteira Digital',  description: 'PicPay, Mercado Pago, PayPal', icon: 'wallet',       color: '#06b6d4', type: 'ambos',  suggestedName: 'Carteira Digital'  },
   { id: 'poupanca',         label: 'Poupança',          description: 'Reserva de emergência', icon: 'piggy-bank',    color: '#10b981', type: 'ambos',  suggestedName: 'Poupança'          },
-  { id: 'investimentos',    label: 'Investimentos',     description: 'CDB, ações, fundos', icon: 'trending-up',   color: '#22c55e', type: 'ambos',  suggestedName: 'Investimentos'     },
   { id: 'dinheiro-fisico',  label: 'Dinheiro Físico',   description: 'Espécie e carteira', icon: 'coins',         color: '#f59e0b', type: 'ambos',  suggestedName: 'Dinheiro Físico'   },
   { id: 'outro',            label: 'Outro',             description: 'Personalizado', icon: 'wallet',       color: BOARD_COLORS[2], type: 'ambos', suggestedName: '' },
 ]
@@ -69,7 +69,8 @@ const EMPTY_FORM: FormState = {
 export default function TransactionsPage() {
   const router = useRouter()
   const now = new Date()
-  const { boards, loading, createBoard, updateBoard, deleteBoard } = useTransactionBoards()
+  const { boards: allBoards, loading, createBoard, updateBoard, deleteBoard } = useTransactionBoards()
+  const boards = allBoards.filter(b => !b.is_investment)
   const { transactions } = useTransactions({ month: now.getMonth() + 1, year: now.getFullYear() })
 
   const [formOpen, setFormOpen] = useState(false)
@@ -77,6 +78,33 @@ export default function TransactionsPage() {
   const [editing, setEditing] = useState<TransactionBoard | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [deleteTarget, setDeleteTarget] = useState<TransactionBoard | null>(null)
+  const [deleteStep, setDeleteStep] = useState<1 | 2>(1)
+  const [deleteTxCount, setDeleteTxCount] = useState<number | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+
+  async function openDeleteConfirm(board: TransactionBoard) {
+    setDeleteTarget(board)
+    setDeleteStep(1)
+    setDeleteError('')
+    setDeleteTxCount(null)
+    const supabase = createClient()
+    const { count } = await supabase
+      .from('transactions')
+      .select('id', { count: 'exact', head: true })
+      .eq('board_id', board.id)
+    setDeleteTxCount(count ?? 0)
+  }
+
+  async function confirmDeleteFinal() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    setDeleteError('')
+    const { error } = await deleteBoard(deleteTarget.id)
+    setDeleting(false)
+    if (error) { setDeleteError(error); return }
+    setDeleteTarget(null)
+  }
 
   function openCreate() {
     setEditing(null)
@@ -111,6 +139,7 @@ export default function TransactionsPage() {
       icon: form.icon as TransactionBoard['icon'],
       description: form.description || undefined,
       type: form.type,
+      is_investment: false,
       show_on_dashboard: editing?.show_on_dashboard ?? false,
     }
     if (editing) updateBoard(editing.id, data)
@@ -203,7 +232,7 @@ export default function TransactionsPage() {
                         <Pencil className="h-3.5 w-3.5 text-slate-400" />
                       </button>
                       <button
-                        onClick={() => setDeleteTarget(board)}
+                        onClick={() => openDeleteConfirm(board)}
                         className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                       >
                         <Trash2 className="h-3.5 w-3.5 text-slate-400 hover:text-red-500" />
@@ -401,17 +430,55 @@ export default function TransactionsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* DELETE CONFIRM */}
+      {/* DELETE CONFIRM — duas etapas, porque isso apaga transações de verdade */}
       <Dialog open={!!deleteTarget} onOpenChange={v => { if (!v) setDeleteTarget(null) }}>
         <DialogContent className="sm:max-w-sm">
-          <DialogHeader><DialogTitle>Excluir conta</DialogTitle></DialogHeader>
-          <p className="text-sm text-slate-500 dark:text-slate-400 pt-2">
-            Excluir <strong>&ldquo;{deleteTarget?.name}&rdquo;</strong>? Os lançamentos vinculados a ela serão desvinculados (não apagados).
-          </p>
-          <div className="flex gap-2 pt-2">
-            <Button variant="outline" onClick={() => setDeleteTarget(null)} className="flex-1">Cancelar</Button>
-            <Button variant="destructive" onClick={() => { deleteBoard(deleteTarget!.id); setDeleteTarget(null) }} className="flex-1">Excluir</Button>
-          </div>
+          {deleteStep === 1 ? (
+            <>
+              <DialogHeader><DialogTitle>Excluir conta</DialogTitle></DialogHeader>
+              <p className="text-sm text-slate-500 dark:text-slate-400 pt-2">
+                Excluir <strong>&ldquo;{deleteTarget?.name}&rdquo;</strong>?
+              </p>
+              <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-xl p-3.5 mt-2">
+                <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  {deleteTxCount === null
+                    ? 'Contando lançamentos vinculados...'
+                    : <>Isso vai apagar <strong>permanentemente {deleteTxCount} lançamento{deleteTxCount !== 1 ? 's' : ''}</strong> vinculado{deleteTxCount !== 1 ? 's' : ''} a essa conta, junto com a conta em si. Não pode ser desfeito.</>
+                  }
+                </p>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button variant="outline" onClick={() => setDeleteTarget(null)} className="flex-1">Cancelar</Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => setDeleteStep(2)}
+                  disabled={deleteTxCount === null}
+                  className="flex-1"
+                >
+                  Continuar
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <DialogHeader><DialogTitle>Tem certeza mesmo?</DialogTitle></DialogHeader>
+              <p className="text-sm text-slate-500 dark:text-slate-400 pt-2">
+                Última confirmação: você está prestes a excluir <strong>&ldquo;{deleteTarget?.name}&rdquo;</strong> e apagar definitivamente {deleteTxCount} lançamento{deleteTxCount !== 1 ? 's' : ''}. Essa ação é <strong>irreversível</strong>.
+              </p>
+              {deleteError && (
+                <p className="text-xs text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2 mt-2">
+                  {deleteError}
+                </p>
+              )}
+              <div className="flex gap-2 pt-2">
+                <Button variant="outline" onClick={() => setDeleteStep(1)} disabled={deleting} className="flex-1">Voltar</Button>
+                <Button variant="destructive" onClick={confirmDeleteFinal} disabled={deleting} className="flex-1">
+                  {deleting ? 'Excluindo...' : 'Sim, excluir tudo'}
+                </Button>
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

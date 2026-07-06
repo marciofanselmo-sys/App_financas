@@ -4,12 +4,14 @@ import { useState, useEffect } from 'react'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useCategories } from '@/hooks/use-categories'
 import { useBudgetPlan } from '@/hooks/use-budget-plan'
+import { useRecurringMonthlyTotal } from '@/hooks/use-recurring-monthly-total'
+import { categoriesForDate } from '@/lib/special-category-filter'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { CheckCircle, AlertTriangle, XCircle, TrendingUp, PiggyBank, Save, ClipboardList, Plus, X, Sparkles } from 'lucide-react'
+import { CheckCircle, AlertTriangle, XCircle, TrendingUp, PiggyBank, Save, ClipboardList, Plus, X, Sparkles, RefreshCw } from 'lucide-react'
 
 interface PlanTemplate {
   id: string
@@ -118,6 +120,13 @@ export default function PlanningPage() {
   const { transactions } = useTransactions({ month, year })
   const { categories } = useCategories()
   const { plan, loading, savePlan } = useBudgetPlan(month, year)
+  const { total: recurringMonthlyTotal, loading: recurringLoading } = useRecurringMonthlyTotal()
+
+  // "Gastos Previstos" trava (snapshot) no valor do momento do save — não
+  // recalcula sozinho depois. Antes do primeiro save do mês, mostra uma
+  // prévia ao vivo do total de recorrências confirmadas + parcelas ativas.
+  const hasExpensesSnapshot = !!plan && plan.expenses_target > 0
+  const expensesTargetDisplay = hasExpensesSnapshot ? plan!.expenses_target : recurringMonthlyTotal
 
   const [expectedIncome, setExpectedIncome] = useState('')
   const [investmentTarget, setInvestmentTarget] = useState('')
@@ -143,7 +152,10 @@ export default function PlanningPage() {
     setSaved(false)
   }, [plan, month, year])
 
-  const expenseCategories = categories.filter(c => c.type === 'despesa' || c.type === 'ambos')
+  // Categoria especial só entra na lista se for válida no mês/ano do plano
+  // sendo editado — mesmo filtro usado no resto do app pra seleção de categoria.
+  const planDateStr = `${year}-${String(month).padStart(2, '0')}-01`
+  const expenseCategories = categoriesForDate(categories, planDateStr).filter(c => c.type === 'despesa' || c.type === 'ambos')
 
   // Categorias já no plano (aparecem no form)
   const activeCategoryNames = Object.keys(categoryLimits)
@@ -189,6 +201,7 @@ export default function PlanningPage() {
     await savePlan({
       month, year,
       expected_income: parseNum(expectedIncome),
+      expenses_target: expensesTargetDisplay,
       investment_target: parseNum(investmentTarget),
       reserve_target: parseNum(reserveTarget),
       category_limits: limits,
@@ -288,14 +301,27 @@ export default function PlanningPage() {
               </div>
             )}
 
-            {/* Receita + Investimento + Reserva */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Receita + Gastos Previstos + Investimento + Reserva */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="space-y-1.5">
                 <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
                   <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
                   Receita prevista
                 </Label>
                 <CurrencyInput value={expectedIncome} onChange={setExpectedIncome} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                  <RefreshCw className="h-3.5 w-3.5 text-violet-500" />
+                  Gastos Previstos
+                  <span className="text-[10px] text-slate-400">{hasExpensesSnapshot ? '(recorrência)' : '(prévia)'}</span>
+                </Label>
+                <Input
+                  type="text"
+                  readOnly
+                  value={recurringLoading ? '...' : new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(expensesTargetDisplay)}
+                  className="bg-slate-50 dark:bg-slate-700/50 cursor-default text-slate-500 dark:text-slate-400"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">

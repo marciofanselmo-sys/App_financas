@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, ArrowLeftRight, CalendarCheck, Target,
   MoreHorizontal, BarChart2, CreditCard, RefreshCw, FileText,
-  Settings, LogOut, X, TrendingUp, HelpCircle, UserCircle,
+  Settings, LogOut, X, TrendingUp, HelpCircle, UserCircle, PiggyBank,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/theme-toggle'
 
@@ -22,6 +22,7 @@ const PRIMARY = [
 
 // Secondary items shown in the "Mais" drawer
 const SECONDARY = [
+  { href: '/investments', label: 'Investimentos',     icon: PiggyBank    },
   { href: '/analytics',   label: 'Análise',           icon: BarChart2    },
   { href: '/recurring',   label: 'Cartões & Parc.',   icon: CreditCard   },
   { href: '/fixos',       label: 'Recorrências',      icon: RefreshCw    },

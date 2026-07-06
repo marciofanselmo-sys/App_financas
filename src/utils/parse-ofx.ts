@@ -1,4 +1,6 @@
 import { TransactionType } from '@/types'
+import { isTransferDescription } from './detect-transfer'
+import { stripEmbeddedDate } from './strip-embedded-date'
 
 interface OFXTransaction {
   description: string
@@ -64,7 +66,7 @@ function cleanDescription(raw: string): string {
   }
 
   // Remove datas embutidas no meio/fim: "10/06", "10/06/2026", "10/06/26"
-  s = s.replace(/\s+\d{2}\/\d{2}(\/\d{2,4})?\b/g, '')
+  s = stripEmbeddedDate(s)
 
   // Remove códigos numéricos longos no fim (IDs de transação)
   s = s.replace(/\s+\d{6,}$/g, '')
@@ -151,7 +153,9 @@ function buildTransaction(memo: string, amountRaw: string, dateRaw: string): OFX
   const amount = parseFloat(amountRaw.replace(',', '.'))
   if (isNaN(amount) || amount === 0) return null
 
-  const type: TransactionType = amount > 0 ? 'receita' : 'despesa'
+  const type: TransactionType = isTransferDescription(memo)
+    ? 'transferencia'
+    : (amount > 0 ? 'receita' : 'despesa')
   const absAmount = Math.abs(amount)
   const date = parseOFXDate(dateRaw)
 

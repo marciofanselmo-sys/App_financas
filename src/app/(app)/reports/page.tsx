@@ -15,6 +15,7 @@ import {
 import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/components/ui/button'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
+import { installmentLabel } from '@/utils/format-installment'
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -199,6 +200,7 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
               <thead className={thead}>
                 <tr>
                   <th className={`text-left px-4 py-2.5 ${th}`}>Data</th>
+                  <th className={`text-left px-4 py-2.5 ${th}`}>Parcelas</th>
                   <th className={`text-left px-4 py-2.5 ${th}`}>Descrição</th>
                   <th className={`text-left px-4 py-2.5 ${th}`}>Categoria</th>
                   <th className={`text-right px-4 py-2.5 ${th}`}>Valor</th>
@@ -210,10 +212,13 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
                     <td className="px-4 py-2 text-slate-500 dark:text-slate-400 print:text-slate-500 whitespace-nowrap text-xs">
                       {new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
                     </td>
+                    <td className="px-4 py-2 text-slate-500 dark:text-slate-400 print:text-slate-500 whitespace-nowrap text-xs">
+                      {installmentLabel(t)}
+                    </td>
                     <td className="px-4 py-2 text-slate-700 dark:text-slate-300 print:text-slate-700 max-w-[200px] truncate">{t.description}</td>
                     <td className="px-4 py-2 text-slate-500 dark:text-slate-400 print:text-slate-500 text-xs">{t.category}</td>
-                    <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap ${t.type === 'receita' ? 'text-emerald-600 dark:text-emerald-400 print:text-emerald-600' : 'text-red-500'}`}>
-                      {t.type === 'receita' ? '+' : '-'}{fmt(Number(t.amount))}
+                    <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap ${t.type === 'receita' ? 'text-emerald-600 dark:text-emerald-400 print:text-emerald-600' : t.type === 'transferencia' ? 'text-slate-400 dark:text-slate-500 print:text-slate-400' : 'text-red-500'}`}>
+                      {t.type === 'receita' ? '+' : t.type === 'transferencia' ? '' : '-'}{fmt(Number(t.amount))}
                     </td>
                   </tr>
                 ))}
@@ -477,7 +482,10 @@ function FixedChargesReport({ boardId, excludeBoardIds }: { boardId: string; exc
   )
   const { decisions, loading: decisionsLoading } = useRecurringDecisions()
 
-  const allItems   = useMemo(() => buildGroupedItems(recurring), [recurring])
+  // "Gastos Fixos" é só despesa — recorrência também detecta receita e
+  // transferência (usadas em /fixos), mas esse relatório é especificamente de gasto.
+  const despesaRecurring = useMemo(() => recurring.filter(r => r.type === 'despesa'), [recurring])
+  const allItems   = useMemo(() => buildGroupedItems(despesaRecurring), [despesaRecurring])
   const confirmed  = allItems.filter(i => decisions.get(i.key) === 'confirmed')
   const pending    = allItems.filter(i => !decisions.has(i.key))
   const totalMonthly = confirmed.reduce((s, i) => s + i.avgAmount, 0)

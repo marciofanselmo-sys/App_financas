@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { Category, TransactionType } from '@/types'
+import { isCategoryUsableForDate } from '@/lib/special-category-filter'
 
 export type MatchType = 'contains' | 'starts_with' | 'ends_with' | 'exact'
 
@@ -14,6 +16,7 @@ export interface CategorizationRule {
   board_id: string | null
   active: boolean
   created_at: string
+  auto_created?: boolean
 }
 
 function matchesRule(description: string, rule: CategorizationRule): boolean {
@@ -27,52 +30,114 @@ function matchesRule(description: string, rule: CategorizationRule): boolean {
   }
 }
 
+// Se a categoria da regra for especial (presa a meses específicos), a regra só
+// vale para transações cuja data caia em um dos meses configurados nela.
+function ruleUsableForDate(rule: CategorizationRule, date: string, categories: Category[]): boolean {
+  const cat = categories.find(c => c.name === rule.category)
+  if (!cat) return true
+  return isCategoryUsableForDate(cat, date)
+}
+
+// Uma regra só pode ser aplicada a uma transação do mesmo tipo da sua categoria
+// alvo (receita/despesa/transferência) — "ambos" (ex: "Outros") vale pra qualquer
+// tipo. Evita que uma descrição igual por coincidência (ex: "Ajuste") em contextos
+// diferentes espalhe categoria de transferência pra despesa ou vice-versa.
+function ruleUsableForType(rule: CategorizationRule, type: TransactionType, categories: Category[]): boolean {
+  const cat = categories.find(c => c.name === rule.category)
+  if (!cat) return true
+  return cat.type === type || cat.type === 'ambos'
+}
+
 export function applyUserRules(
   description: string,
-  rules: CategorizationRule[]
+  date: string,
+  rules: CategorizationRule[],
+  categories: Category[],
+  type: TransactionType
 ): { category: string | null; board_id: string | null } {
   for (const rule of rules) {
-    if (rule.active && matchesRule(description, rule)) {
+    if (
+      rule.active &&
+      matchesRule(description, rule) &&
+      ruleUsableForDate(rule, date, categories) &&
+      ruleUsableForType(rule, type, categories)
+    ) {
       return { category: rule.category, board_id: rule.board_id ?? null }
     }
   }
   return { category: null, board_id: null }
 }
 
-export async function applyRuleToExisting(rule: {
-  keyword: string; match_type: string; category: string; board_id: string | null
-}): Promise<number> {
+export async function applyRuleToExisting(
+  rule: { keyword: string; match_type: string; category: string; board_id: string | null },
+  categories: Category[]
+): Promise<{ count: number; error?: string }> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return 0
+  if (!user) return { count: 0 }
 
-  const { data: txs } = await supabase
-    .from('transactions')
-    .select('id, description')
-    .eq('user_id', user.id)
+  const targetCategory = categories.find(c => c.name === rule.category)
+  // Categoria especial nunca é sobrescrita por uma regra — uma vez que uma
+  // transação está numa categoria especial, ela fica isolada (só muda por edição manual).
+  const specialCategoryNames = new Set(
+    categories.filter(c => c.special_dates && c.special_dates.length > 0).map(c => c.name)
+  )
 
-  if (!txs?.length) return 0
+  // Busca paginada — o Supabase limita a 1000 linhas por consulta por padrão,
+  // então sem paginação transações além desse limite seriam ignoradas em silêncio.
+  const txs: { id: string; description: string; date: string; category: string; type: string }[] = []
+  const PAGE = 1000
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('id, description, date, category, type')
+      .eq('user_id', user.id)
+      .range(from, from + PAGE - 1)
+    if (error) {
+      console.error('[applyRuleToExisting] select error:', error.message, '| code:', error.code)
+      return { count: 0, error: error.message }
+    }
+    if (!data?.length) break
+    txs.push(...data)
+    if (data.length < PAGE) break
+  }
+
+  if (!txs.length) return { count: 0 }
 
   const kw = rule.keyword.toUpperCase()
   const ids = txs
     .filter(t => {
+      if (specialCategoryNames.has(t.category)) return false
       const desc = t.description.toUpperCase()
-      switch (rule.match_type) {
-        case 'starts_with': return desc.startsWith(kw)
-        case 'ends_with':   return desc.endsWith(kw)
-        case 'exact':       return desc === kw
-        default:            return desc.includes(kw)
-      }
+      const descMatches = (() => {
+        switch (rule.match_type) {
+          case 'starts_with': return desc.startsWith(kw)
+          case 'ends_with':   return desc.endsWith(kw)
+          case 'exact':       return desc === kw
+          default:            return desc.includes(kw)
+        }
+      })()
+      if (!descMatches) return false
+      if (!targetCategory) return true
+      if (targetCategory.type !== 'ambos' && targetCategory.type !== t.type) return false
+      return isCategoryUsableForDate(targetCategory, t.date)
     })
     .map(t => t.id)
 
-  if (!ids.length) return 0
+  if (!ids.length) return { count: 0 }
 
   const update: Record<string, unknown> = { category: rule.category }
   if (rule.board_id) update.board_id = rule.board_id
 
   const { error } = await supabase.from('transactions').update(update).in('id', ids)
-  return error ? 0 : ids.length
+  if (error) {
+    console.error('[applyRuleToExisting] update error:', error.message, '| code:', error.code, '| details:', error.details)
+    const friendly = error.code === '23514'
+      ? 'Categoria não permitida pelo banco de dados. Rode a migração migration_categories.sql no Supabase.'
+      : error.message
+    return { count: 0, error: friendly }
+  }
+  return { count: ids.length }
 }
 
 export function useRules() {
@@ -193,5 +258,74 @@ export function useRules() {
     setRules(prev => prev.filter(r => r.id !== id))
   }
 
-  return { rules, loading, createRule, updateRule, deleteRule }
+  // Toda vez que uma transação é recategorizada manualmente para uma categoria
+  // NORMAL, cria (ou atualiza) uma regra de correspondência exata pela descrição
+  // e aplica retroativamente — assim a mudança "gruda" em todas as transações com
+  // esse nome exato, sem precisar criar a regra manualmente. Categoria especial
+  // nunca entra aqui: fica isolada, só muda por edição manual, transação por transação.
+  // Faz o insert/update direto (não reusa createRule/updateRule) para expor o erro
+  // real do Postgres em vez de engolir silenciosamente.
+  async function syncCategoryToRule(
+    description: string,
+    category: string,
+    categories: Category[]
+  ): Promise<{ applied: number; error?: string }> {
+    const targetCategory = categories.find(c => c.name === category)
+    const isSpecial = !!(targetCategory?.special_dates && targetCategory.special_dates.length > 0)
+    if (isSpecial) return { applied: 0 }
+
+    const kw = description.trim().toUpperCase()
+    if (!kw) return { applied: 0 }
+
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { applied: 0, error: 'Não autenticado.' }
+
+    const existing = rules.find(r => r.match_type === 'exact' && r.keyword.toUpperCase() === kw)
+
+    let rule: CategorizationRule
+    if (existing) {
+      const { data, error } = await supabase
+        .from('categorization_rules')
+        .update({ category, auto_created: true })
+        .eq('id', existing.id)
+        .select()
+        .single()
+      if (error || !data) {
+        console.error('[syncCategoryToRule] update error:', error?.message, '| code:', error?.code, '| details:', error?.details)
+        return { applied: 0, error: error?.message }
+      }
+      rule = data as CategorizationRule
+      setRules(prev => prev.map(r => (r.id === rule.id ? rule : r)))
+    } else {
+      const { data, error } = await supabase
+        .from('categorization_rules')
+        .insert({
+          id: crypto.randomUUID(),
+          user_id: user.id,
+          keyword: kw,
+          match_type: 'exact',
+          category,
+          board_id: null,
+          active: true,
+          auto_created: true,
+        })
+        .select()
+        .single()
+      if (error || !data) {
+        console.error('[syncCategoryToRule] insert error:', error?.message, '| code:', error?.code, '| details:', error?.details)
+        return { applied: 0, error: error?.message }
+      }
+      rule = data as CategorizationRule
+      setRules(prev => [...prev, rule])
+    }
+
+    const { count, error: applyError } = await applyRuleToExisting(
+      { keyword: rule.keyword, match_type: rule.match_type, category: rule.category, board_id: rule.board_id },
+      categories,
+    )
+    return { applied: count, error: applyError }
+  }
+
+  return { rules, loading, createRule, updateRule, deleteRule, syncCategoryToRule }
 }

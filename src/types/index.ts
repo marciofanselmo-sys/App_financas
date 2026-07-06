@@ -1,10 +1,15 @@
 export type TransactionType = 'receita' | 'despesa' | 'transferencia'
-export type CategoryType = 'receita' | 'despesa' | 'ambos'
+export type CategoryType = 'receita' | 'despesa' | 'transferencia' | 'ambos'
 export type BoardType = 'entrada' | 'saida' | 'ambos'
 export type BoardIconKey =
   | 'wallet' | 'credit-card' | 'building' | 'shopping-cart'
   | 'home' | 'briefcase' | 'piggy-bank' | 'trending-up'
   | 'receipt' | 'car' | 'coins' | 'dollar-sign'
+
+export interface SpecialCategoryDate {
+  month: number
+  year: number
+}
 
 export interface Category {
   id: string
@@ -13,6 +18,10 @@ export interface Category {
   type: CategoryType
   color: string
   created_at: string
+  // Categoria especial: só é uma opção válida em transações cuja data caia em um
+  // dos meses/anos desta lista (ex: "Viagem" em fevereiro/2026 e março/2026).
+  // Lista vazia = categoria normal, sempre disponível.
+  special_dates?: SpecialCategoryDate[]
 }
 
 export interface TransactionBoard {
@@ -23,7 +32,9 @@ export interface TransactionBoard {
   icon: BoardIconKey
   description?: string
   type: BoardType
+  is_investment: boolean
   show_on_dashboard: boolean
+  last_position_import?: BoardPositionImport
   created_at: string
 }
 
@@ -44,10 +55,19 @@ export interface Transaction {
   created_at: string
 }
 
+// Subcategoria: agrupador de gastos recorrentes exclusivo da aba Recorrências
+// (guardado em user_metadata, não é uma tabela). Tem um tipo fixo (igual
+// transação) pra só poder ser atribuída a itens recorrentes do mesmo tipo.
+export interface Subcategory {
+  name: string
+  type: TransactionType
+}
+
 export interface TransactionFilters {
   month?: number
   year?: number
   category?: string
+  type?: TransactionType
   search?: string
   board_id?: string
   tag?: string
@@ -79,8 +99,36 @@ export interface RICOPosition {
   allocation: string
   rentabilidade: string
   quantity?: string
+  avgPrice?: number
+  lastPrice?: number
   category: string    // ex: "Fundos Imobiliários", "Ações"
   subcategory: string // ex: "Fundos Listados", "Renda Variável Brasil"
+}
+
+// Rendimento/dividendo/JCP já provisionado pela corretora, com data prevista
+// de pagamento — ainda não caiu na conta, é um "a receber".
+export interface RICOProvento {
+  ticker: string
+  quantity: string
+  allocation: string
+  grossValue: number
+  netValue: number
+  event: string
+  paymentDate: string // YYYY-MM-DD
+  category: string
+  subcategory: string
+}
+
+// Snapshot de posição da carteira (PosicaoDetalhada.xlsx) importado numa
+// conta de investimento — mesmo formato usado em GoalImport, pra exibir a
+// mesma organização por categoria/subcategoria também em Investimentos.
+export interface BoardPositionImport {
+  patrimonio: number
+  totalInvestido: number
+  saldoDisponivel: number
+  positions: RICOPosition[]
+  proventos: RICOProvento[]
+  importedAt: string
 }
 
 export interface GoalImport {
@@ -143,3 +191,7 @@ export const CATEGORY_COLORS = [
   '#ec4899', '#f59e0b', '#ef4444', '#f97316',
   '#14b8a6', '#6366f1', '#84cc16', '#6b7280',
 ]
+
+// Cor fixa para categorias de transferência — mesmo cinza neutro usado em
+// toda a UI para representar transferência (tabelas, relatórios, "Outros").
+export const TRANSFER_CATEGORY_COLOR = '#6b7280'

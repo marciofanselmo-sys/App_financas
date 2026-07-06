@@ -5,10 +5,13 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
+import { useTransactionBoards } from '@/hooks/use-transaction-boards'
+import { BoardIcon } from '@/components/transactions/board-icon'
 import {
   LayoutDashboard, ArrowLeftRight, LogOut, TrendingUp, Settings,
   Tag, ChevronDown, Target, RefreshCw, BarChart2, CalendarCheck,
   Zap, CreditCard, FileText, HelpCircle, ChevronRight, Layers, Shield,
+  PiggyBank,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -27,6 +30,7 @@ const NAV_GROUPS = [
     label: 'Gestão',
     items: [
       { href: '/transactions', label: 'Contas e Cartões', icon: ArrowLeftRight },
+      { href: '/investments',  label: 'Investimentos',    icon: PiggyBank      },
       { href: '/planning',     label: 'Planejamento',     icon: CalendarCheck  },
       { href: '/goals',        label: 'Metas',            icon: Target         },
     ],
@@ -67,6 +71,45 @@ function NavItem({ href, label, icon: Icon, active }: {
   )
 }
 
+// ── Item de nav expansível (Contas e Cartões → lista de contas) ────────────────
+function NavItemExpandable({
+  href, label, icon: Icon, active, open, onToggle, children,
+}: {
+  href: string; label: string; icon: React.ElementType; active: boolean
+  open: boolean; onToggle: () => void; children: React.ReactNode
+}) {
+  return (
+    <div>
+      <div
+        className={cn(
+          'flex items-center rounded-xl text-sm font-medium transition-all duration-150',
+          active
+            ? 'bg-blue-500/10 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300'
+            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/80 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-slate-200'
+        )}
+      >
+        <Link href={href} className="flex-1 flex items-center gap-3 px-3 py-2 min-w-0">
+          <Icon className={cn('h-4 w-4 shrink-0', active ? 'text-blue-600 dark:text-blue-400' : '')} />
+          <span className="flex-1 truncate">{label}</span>
+        </Link>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="pr-3 pl-1 py-2 shrink-0"
+          aria-label={open ? 'Recolher contas' : 'Expandir contas'}
+        >
+          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform duration-200', open && 'rotate-180')} />
+        </button>
+      </div>
+      {open && (
+        <div className="pl-4 space-y-0.5 mt-0.5">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Sidebar ────────────────────────────────────────────────────────────────────
 export function Sidebar() {
   const pathname = usePathname()
@@ -75,6 +118,18 @@ export function Sidebar() {
   const [settingsOpen, setSettingsOpen] = useState(isInSettings)
   const [userEmail, setUserEmail] = useState('')
   const [userName, setUserName]   = useState('')
+  const { boards } = useTransactionBoards()
+
+  // Contas de investimento têm sua própria aba — o board-detail continua
+  // vivendo em /transactions/[boardId] pros dois casos (reuso da mesma tela),
+  // então o "em qual aba estou" precisa saber a QUAL board aquele id pertence,
+  // não só olhar o prefixo da URL.
+  const investmentBoards = boards.filter(b => b.is_investment)
+  const nonInvestmentBoards = boards.filter(b => !b.is_investment)
+  const isInInvestmentBoard = investmentBoards.some(b => pathname === `/transactions/${b.id}`)
+  const isInAccounts = (pathname === '/transactions' || pathname.startsWith('/transactions/')) && !isInInvestmentBoard
+  const isInInvestments = pathname === '/investments' || isInInvestmentBoard
+  const [accountsOpen, setAccountsOpen] = useState(isInAccounts)
 
   useEffect(() => {
     const supabase = createClient()
@@ -145,11 +200,49 @@ export function Sidebar() {
             </p>
             <div className="space-y-0.5">
               {group.items.map(item => (
-                <NavItem
-                  key={item.href}
-                  {...item}
-                  active={pathname === item.href}
-                />
+                item.href === '/transactions' ? (
+                  <NavItemExpandable
+                    key={item.href}
+                    href={item.href}
+                    label={item.label}
+                    icon={item.icon}
+                    active={isInAccounts}
+                    open={accountsOpen}
+                    onToggle={() => setAccountsOpen(o => !o)}
+                  >
+                    {nonInvestmentBoards.length === 0 ? (
+                      <p className="px-3 py-1.5 text-xs text-slate-400 dark:text-slate-500">Nenhuma conta criada</p>
+                    ) : (
+                      nonInvestmentBoards.map(board => (
+                        <Link
+                          key={board.id}
+                          href={`/transactions/${board.id}`}
+                          className={cn(
+                            'flex items-center gap-2.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all duration-150 min-w-0',
+                            pathname === `/transactions/${board.id}`
+                              ? 'bg-blue-500/10 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300'
+                              : 'text-slate-500 dark:text-slate-500 hover:bg-slate-100/80 dark:hover:bg-white/5 hover:text-slate-800 dark:hover:text-slate-300'
+                          )}
+                        >
+                          <BoardIcon icon={board.icon} className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">{board.name}</span>
+                        </Link>
+                      ))
+                    )}
+                  </NavItemExpandable>
+                ) : item.href === '/investments' ? (
+                  <NavItem
+                    key={item.href}
+                    {...item}
+                    active={isInInvestments}
+                  />
+                ) : (
+                  <NavItem
+                    key={item.href}
+                    {...item}
+                    active={pathname === item.href}
+                  />
+                )
               ))}
             </div>
           </div>
@@ -164,7 +257,7 @@ export function Sidebar() {
         />
 
         {/* Link Admin — só visível para o dono do SaaS */}
-        {userEmail === 'marcio.fanselmo@gmail.com' && (
+        {userEmail === (process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? '') && (
           <NavItem
             href="/admin"
             label="Admin"

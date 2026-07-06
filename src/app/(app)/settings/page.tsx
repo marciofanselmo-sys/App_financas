@@ -14,12 +14,14 @@ import { Plus, Pencil, Trash2, Tag, RotateCcw } from 'lucide-react'
 const TYPE_LABELS: Record<CategoryType, string> = {
   receita: 'Receita',
   despesa: 'Despesa',
+  transferencia: 'Transferência',
   ambos: 'Ambos',
 }
 
 const TYPE_BADGE: Record<CategoryType, string> = {
   receita: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400',
   despesa: 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400',
+  transferencia: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400',
   ambos:   'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
 }
 
