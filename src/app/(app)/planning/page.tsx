@@ -174,9 +174,22 @@ export default function PlanningPage() {
   const activeCategoryNames = activeKeys.filter(k => !isSubKey(k))
   const activeSubcategoryNames = activeKeys.filter(isSubKey).map(subName)
 
+  // Categorias já cobertas por uma subcategoria ativa no plano — uma
+  // categoria vinculada a uma subcategoria conta as mesmas transações
+  // (group_label) que a categoria conta sozinha (category), então oferecer
+  // as duas ao mesmo tempo duplicaria o "Realizado" na tabela Planejado ×
+  // Realizado pra um único gasto real.
+  const categoriesCoveredByActiveSubcategories = new Set(
+    subcategories
+      .filter(s => activeSubcategoryNames.includes(s.name))
+      .flatMap(s => s.categories ?? [])
+  )
+
   // Categorias disponíveis para adicionar — normais e isoladas em seletores
   // separados, mesmo padrão do resto do app.
-  const availableToAddAll = expenseCategories.filter(c => !activeCategoryNames.includes(c.name))
+  const availableToAddAll = expenseCategories.filter(c =>
+    !activeCategoryNames.includes(c.name) && !categoriesCoveredByActiveSubcategories.has(c.name)
+  )
   const availableToAddNormal = availableToAddAll.filter(c => !c.special_dates || c.special_dates.length === 0)
   const availableToAddSpecial = availableToAddAll.filter(c => (c.special_dates?.length ?? 0) > 0)
 
