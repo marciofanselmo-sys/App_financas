@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useCategories } from '@/hooks/use-categories'
+import { useSubcategories } from '@/hooks/use-subcategories'
 import { useBudgetPlan } from '@/hooks/use-budget-plan'
 import { useRecurringMonthlyTotal } from '@/hooks/use-recurring-monthly-total'
 import { categoriesForDate } from '@/lib/special-category-filter'
@@ -11,7 +12,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { CheckCircle, AlertTriangle, XCircle, TrendingUp, PiggyBank, Save, ClipboardList, Plus, X, Sparkles, RefreshCw } from 'lucide-react'
+import { CheckCircle, AlertTriangle, XCircle, TrendingUp, PiggyBank, Save, ClipboardList, Plus, X, Sparkles, RefreshCw, Tag } from 'lucide-react'
+
+// category_limits é um JSONB livre — subcategorias entram nele com essa chave
+// prefixada, pra não colidir com nomes de categoria e sem precisar de migração.
+const SUB_PREFIX = 'sub:'
+const subKey = (name: string) => `${SUB_PREFIX}${name}`
+const isSubKey = (key: string) => key.startsWith(SUB_PREFIX)
+const subName = (key: string) => key.slice(SUB_PREFIX.length)
 
 interface PlanTemplate {
   id: string
@@ -105,7 +113,9 @@ export default function PlanningPage() {
   const [year, setYear] = useState(now.getFullYear())
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [addingCategory, setAddingCategory] = useState(false)
+  const [addingSubcategory, setAddingSubcategory] = useState(false)
   const [templateOpen, setTemplateOpen] = useState(false)
 
   function applyTemplate(tpl: PlanTemplate) {
@@ -119,6 +129,7 @@ export default function PlanningPage() {
 
   const { transactions } = useTransactions({ month, year })
   const { categories } = useCategories()
+  const { subcategories } = useSubcategories()
   const { plan, loading, savePlan } = useBudgetPlan(month, year)
   const { total: recurringMonthlyTotal, loading: recurringLoading } = useRecurringMonthlyTotal()
 
@@ -157,11 +168,20 @@ export default function PlanningPage() {
   const planDateStr = `${year}-${String(month).padStart(2, '0')}-01`
   const expenseCategories = categoriesForDate(categories, planDateStr).filter(c => c.type === 'despesa' || c.type === 'ambos')
 
-  // Categorias já no plano (aparecem no form)
-  const activeCategoryNames = Object.keys(categoryLimits)
+  // Categorias e subcategorias já no plano (aparecem no form) — subcategorias
+  // ficam misturadas no mesmo mapa com a chave "sub:Nome".
+  const activeKeys = Object.keys(categoryLimits)
+  const activeCategoryNames = activeKeys.filter(k => !isSubKey(k))
+  const activeSubcategoryNames = activeKeys.filter(isSubKey).map(subName)
 
-  // Categorias disponíveis para adicionar
-  const availableToAdd = expenseCategories.filter(c => !activeCategoryNames.includes(c.name))
+  // Categorias disponíveis para adicionar — normais e isoladas em seletores
+  // separados, mesmo padrão do resto do app.
+  const availableToAddAll = expenseCategories.filter(c => !activeCategoryNames.includes(c.name))
+  const availableToAddNormal = availableToAddAll.filter(c => !c.special_dates || c.special_dates.length === 0)
+  const availableToAddSpecial = availableToAddAll.filter(c => (c.special_dates?.length ?? 0) > 0)
+
+  // Subcategorias disponíveis — só as de tipo despesa (planejamento só cobre gastos)
+  const availableSubcategories = subcategories.filter(s => s.type === 'despesa' && !activeSubcategoryNames.includes(s.name))
 
   // Valores realizados
   const actualIncome = transactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
@@ -176,11 +196,23 @@ export default function PlanningPage() {
   transactions.forEach(t => {
     actualByCategoryAll[t.category] = (actualByCategoryAll[t.category] || 0) + Number(t.amount)
   })
+  // Realizado por subcategoria — soma por group_label, independente da categoria
+  const actualByGroupLabel: Record<string, number> = {}
+  transactions.filter(t => t.type === 'despesa' && t.group_label).forEach(t => {
+    const label = t.group_label as string
+    actualByGroupLabel[label] = (actualByGroupLabel[label] || 0) + Number(t.amount)
+  })
 
   function addCategory(name: string | null) {
     if (!name) return
     setCategoryLimits(prev => ({ ...prev, [name]: '' }))
     setAddingCategory(false)
+  }
+
+  function addSubcategory(name: string | null) {
+    if (!name) return
+    setCategoryLimits(prev => ({ ...prev, [subKey(name)]: '' }))
+    setAddingSubcategory(false)
   }
 
   function removeCategory(name: string) {
@@ -191,14 +223,19 @@ export default function PlanningPage() {
     })
   }
 
+  function removeSubcategory(name: string) {
+    removeCategory(subKey(name))
+  }
+
   async function handleSave() {
     setSaving(true)
+    setSaveError(null)
     const limits: Record<string, number> = {}
     for (const [cat, val] of Object.entries(categoryLimits)) {
       const n = parseNum(val)
       if (n > 0) limits[cat] = n
     }
-    await savePlan({
+    const { error } = await savePlan({
       month, year,
       expected_income: parseNum(expectedIncome),
       expenses_target: expensesTargetDisplay,
@@ -207,6 +244,13 @@ export default function PlanningPage() {
       category_limits: limits,
     })
     setSaving(false)
+    // Antes disso, o "Salvo com sucesso!" aparecia mesmo quando o save falhava
+    // (ex: tabela budget_plans ausente num Supabase novo) — o erro do Supabase
+    // era descartado em silêncio e a tela dava falso positivo.
+    if (error) {
+      setSaveError(typeof error === 'string' ? error : (error as { message?: string })?.message || 'Erro ao salvar o planejamento.')
+      return
+    }
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }
@@ -219,6 +263,11 @@ export default function PlanningPage() {
   const tableCategories = expenseCategories.filter(c => parseNum(categoryLimits[c.name] ?? '') > 0)
   const totalPlanned = tableCategories.reduce((s, c) => s + parseNum(categoryLimits[c.name] ?? ''), 0)
 
+  // Subcategorias com limite > 0 — ficam de fora do Total Despesas porque são
+  // um recorte transversal (uma transação pode ter categoria E subcategoria ao
+  // mesmo tempo); somar junto contaria o mesmo gasto duas vezes.
+  const tableSubcategories = subcategories.filter(s => s.type === 'despesa' && parseNum(categoryLimits[subKey(s.name)] ?? '') > 0)
+
   // Investimento e Reserva linkados às categorias de mesmo nome
   const investActual = actualByCategoryAll['Investimento'] ?? 0
   const reserveActual =
@@ -226,7 +275,7 @@ export default function PlanningPage() {
     actualByCategory['Reserva de emergência'] ??
     0
 
-  const hasTable = tableCategories.length > 0 || incomeNum > 0 || investNum > 0 || reserveNum > 0
+  const hasTable = tableCategories.length > 0 || tableSubcategories.length > 0 || incomeNum > 0 || investNum > 0 || reserveNum > 0
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -341,13 +390,16 @@ export default function PlanningPage() {
               </div>
             </div>
 
+            {/* Limite por categoria + por subcategoria — lado a lado a partir de md */}
+            <div className="border-t border-slate-100 dark:border-slate-700 pt-5 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
+
             {/* Limite por categoria */}
-            <div className="border-t border-slate-100 dark:border-slate-700 pt-5 space-y-3">
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                   Limite por categoria
                 </p>
-                {availableToAdd.length > 0 && !addingCategory && (
+                {availableToAddAll.length > 0 && !addingCategory && (
                   <Button
                     variant="ghost" size="sm"
                     className="h-7 text-xs gap-1 text-blue-600 dark:text-blue-400 hover:text-blue-700"
@@ -366,16 +418,37 @@ export default function PlanningPage() {
                       <SelectValue placeholder="Selecione uma categoria..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {availableToAdd.map(c => (
-                        <SelectItem key={c.name} value={c.name}>
-                          <div className="flex items-center gap-2">
-                            <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
-                            {c.name}
-                          </div>
-                        </SelectItem>
-                      ))}
+                      {availableToAddNormal.length === 0 ? (
+                        <SelectItem value="__empty__" disabled>Nenhuma categoria disponível</SelectItem>
+                      ) : (
+                        availableToAddNormal.map(c => (
+                          <SelectItem key={c.name} value={c.name}>
+                            <div className="flex items-center gap-2">
+                              <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                              {c.name}
+                            </div>
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
+                  {availableToAddSpecial.length > 0 && (
+                    <Select onValueChange={addCategory}>
+                      <SelectTrigger className="flex-1 h-9 text-sm">
+                        <SelectValue placeholder="Categoria isolada..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableToAddSpecial.map(c => (
+                          <SelectItem key={c.name} value={c.name}>
+                            <div className="flex items-center gap-2">
+                              <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                              {c.name}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <Button variant="ghost" size="sm" className="h-9 px-2 text-slate-400 hover:text-slate-600" onClick={() => setAddingCategory(false)}>
                     <X className="h-4 w-4" />
                   </Button>
@@ -417,6 +490,83 @@ export default function PlanningPage() {
               )}
             </div>
 
+            {/* Limite por subcategoria (recorrência) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                  Limite por subcategoria
+                </p>
+                {availableSubcategories.length > 0 && !addingSubcategory && (
+                  <Button
+                    variant="ghost" size="sm"
+                    className="h-7 text-xs gap-1 text-blue-600 dark:text-blue-400 hover:text-blue-700"
+                    onClick={() => setAddingSubcategory(true)}
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Adicionar
+                  </Button>
+                )}
+              </div>
+
+              {addingSubcategory && (
+                <div className="flex items-center gap-2">
+                  <Select onValueChange={addSubcategory}>
+                    <SelectTrigger className="flex-1 h-9 text-sm">
+                      <SelectValue placeholder="Selecione uma subcategoria..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableSubcategories.length === 0 ? (
+                        <SelectItem value="__empty__" disabled>Nenhuma subcategoria disponível</SelectItem>
+                      ) : (
+                        availableSubcategories.map(s => (
+                          <SelectItem key={s.name} value={s.name}>
+                            <div className="flex items-center gap-2">
+                              <Tag className="h-3 w-3 text-slate-400 shrink-0" />
+                              {s.name}
+                            </div>
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="ghost" size="sm" className="h-9 px-2 text-slate-400 hover:text-slate-600" onClick={() => setAddingSubcategory(false)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+
+              {activeSubcategoryNames.length === 0 ? (
+                <p className="text-xs text-slate-400 dark:text-slate-500 py-2">
+                  Nenhuma subcategoria adicionada.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {activeSubcategoryNames.map(name => (
+                    <div key={name} className="flex items-center gap-3">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <Tag className="h-3 w-3 text-slate-400 shrink-0" />
+                        <span className="text-sm text-slate-700 dark:text-slate-200 truncate">{name}</span>
+                      </div>
+                      <CurrencyInput
+                        value={categoryLimits[subKey(name)] ?? ''}
+                        onChange={v => setCategoryLimits(prev => ({ ...prev, [subKey(name)]: v }))}
+                        placeholder="0,00"
+                        className="h-9 w-44 text-sm"
+                      />
+                      <Button
+                        variant="ghost" size="sm"
+                        className="h-8 w-8 p-0 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                        onClick={() => removeSubcategory(name)}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            </div>
+
             {/* Salvar */}
             <div className="flex items-center gap-3 pt-2 border-t border-slate-100 dark:border-slate-700">
               <Button onClick={handleSave} disabled={saving} className="gap-2">
@@ -426,6 +576,11 @@ export default function PlanningPage() {
               {saved && (
                 <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                   <CheckCircle className="h-3.5 w-3.5" /> Salvo com sucesso!
+                </span>
+              )}
+              {saveError && (
+                <span className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+                  <XCircle className="h-3.5 w-3.5 shrink-0" /> Não foi possível salvar: {saveError}
                 </span>
               )}
             </div>
@@ -491,6 +646,36 @@ export default function PlanningPage() {
                             <div className="flex items-center gap-2">
                               <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
                               <span className="text-xs text-slate-600 dark:text-slate-300">{cat.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-right text-xs text-slate-500 dark:text-slate-400">{fmt(planned)}</td>
+                          <td className="px-4 py-3 text-right text-xs font-semibold text-red-500">
+                            {actual > 0 ? fmt(actual) : <span className="text-slate-300 dark:text-slate-600">R$ 0,00</span>}
+                          </td>
+                          <td className="px-4 py-3 text-right text-xs font-semibold">
+                            <span className={diff <= 0 ? 'text-emerald-600' : 'text-red-500'}>
+                              {diff > 0 ? '+' : ''}{fmt(diff)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <StatusBadge planned={planned} actual={actual} />
+                          </td>
+                        </tr>
+                      )
+                    })}
+
+                    {/* Subcategorias — recorte transversal, fora do Total Despesas */}
+                    {tableSubcategories.map(sub => {
+                      const planned = parseNum(categoryLimits[subKey(sub.name)] ?? '')
+                      const actual = actualByGroupLabel[sub.name] ?? 0
+                      const diff = actual - planned
+                      return (
+                        <tr key={`sub:${sub.name}`} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                          <td className="px-6 py-3">
+                            <div className="flex items-center gap-2">
+                              <Tag className="h-3 w-3 text-slate-400 shrink-0" />
+                              <span className="text-xs text-slate-600 dark:text-slate-300">{sub.name}</span>
+                              <span className="text-[10px] text-slate-400 dark:text-slate-500">subcategoria</span>
                             </div>
                           </td>
                           <td className="px-4 py-3 text-right text-xs text-slate-500 dark:text-slate-400">{fmt(planned)}</td>
