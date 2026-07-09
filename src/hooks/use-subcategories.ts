@@ -132,6 +132,13 @@ export function useSubcategories() {
 
     if (e1 || e2) { console.error('Erro ao renomear:', e1 || e2); return false }
     setSubcategories(updated)
+    if (trimmed !== oldName) {
+      setCategoriesByLabel(prev => {
+        if (!(oldName in prev)) return prev
+        const { [oldName]: moved, ...rest } = prev
+        return { ...rest, [trimmed]: moved }
+      })
+    }
     return true
   }
 
@@ -152,6 +159,38 @@ export function useSubcategories() {
 
     if (e1 || e2) { console.error('Erro ao excluir:', e1 || e2); return false }
     setSubcategories(updated)
+    setCategoriesByLabel(prev => {
+      if (!(name in prev)) return prev
+      const { [name]: _removed, ...rest } = prev
+      return rest
+    })
+    return true
+  }
+
+  // Move todas as transações de uma categoria (do mesmo tipo da subcategoria)
+  // pra dentro do grupo — mesmo efeito de atribuir subcategoria uma a uma,
+  // mas em lote por categoria inteira.
+  async function assignCategoryToSubcategory(label: string, categoryName: string): Promise<boolean> {
+    const sub = subcategories.find(s => s.name === label)
+    if (!sub) return false
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return false
+
+    const { error } = await supabase
+      .from('transactions')
+      .update({ group_label: label })
+      .eq('user_id', user.id)
+      .eq('category', categoryName)
+      .eq('type', sub.type)
+
+    if (error) { console.error('Erro ao adicionar categoria à subcategoria:', error); return false }
+
+    setCategoriesByLabel(prev => {
+      const current = prev[label] ?? []
+      if (current.includes(categoryName)) return prev
+      return { ...prev, [label]: [...current, categoryName].sort((a, b) => a.localeCompare(b, 'pt-BR')) }
+    })
     return true
   }
 
@@ -178,6 +217,7 @@ export function useSubcategories() {
     renameSubcategory,
     deleteSubcategory,
     assignSubcategory,
+    assignCategoryToSubcategory,
     refetch: load,
   }
 }

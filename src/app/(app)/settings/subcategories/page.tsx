@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import { useSubcategories } from '@/hooks/use-subcategories'
 import { useCategories } from '@/hooks/use-categories'
-import { Subcategory, TransactionType } from '@/types'
+import { Category, Subcategory, TransactionType } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -28,24 +28,43 @@ const SECTION_META: Record<TransactionType, { label: string; icon: React.Element
 }
 
 export default function SubcategoriesPage() {
-  const { subcategories, loading, categoriesByLabel, createSubcategory, renameSubcategory, deleteSubcategory } = useSubcategories()
+  const { subcategories, loading, categoriesByLabel, createSubcategory, renameSubcategory, deleteSubcategory, assignCategoryToSubcategory } = useSubcategories()
   const { categories } = useCategories()
 
   function categoryColor(name: string): string {
     return categories.find(c => c.name === name)?.color ?? '#94a3b8'
   }
 
-  const [newName, setNewName]           = useState('')
-  const [newType, setNewType]           = useState<TransactionType>('despesa')
-  const [adding, setAdding]             = useState(false)
-  const [addError, setAddError]         = useState('')
-  const [editing, setEditing]           = useState<Subcategory | null>(null)
-  const [editValue, setEditValue]       = useState('')
-  const [editType, setEditType]         = useState<TransactionType>('despesa')
-  const [editError, setEditError]       = useState('')
-  const [saving, setSaving]             = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
-  const [deleting, setDeleting]         = useState(false)
+  const [newName, setNewName]                   = useState('')
+  const [newType, setNewType]                   = useState<TransactionType>('despesa')
+  const [adding, setAdding]                     = useState(false)
+  const [addError, setAddError]                 = useState('')
+  const [editing, setEditing]                   = useState<Subcategory | null>(null)
+  const [editValue, setEditValue]               = useState('')
+  const [editType, setEditType]                 = useState<TransactionType>('despesa')
+  const [editError, setEditError]               = useState('')
+  const [saving, setSaving]                     = useState(false)
+  const [deleteTarget, setDeleteTarget]         = useState<string | null>(null)
+  const [deleting, setDeleting]                 = useState(false)
+  const [addingCategory, setAddingCategory]     = useState(false)
+  const [addCategoryError, setAddCategoryError] = useState('')
+  const [addCategoryKey, setAddCategoryKey]     = useState(0)
+
+  const availableCategoriesToAdd: Category[] = useMemo(() => {
+    if (!editing) return []
+    const already = new Set(categoriesByLabel[editing.name] ?? [])
+    return categories.filter(c => (c.type === editType || c.type === 'ambos') && !already.has(c.name))
+  }, [categories, categoriesByLabel, editing, editType])
+
+  async function handleAddCategoryToGroup(categoryName: string) {
+    if (!editing) return
+    setAddingCategory(true)
+    setAddCategoryError('')
+    const ok = await assignCategoryToSubcategory(editing.name, categoryName)
+    if (!ok) setAddCategoryError('Erro ao adicionar categoria. Tente novamente.')
+    setAddingCategory(false)
+    setAddCategoryKey(k => k + 1)
+  }
 
   function nameCollidesWithCategory(name: string): boolean {
     return categories.some(c => c.name.toLowerCase() === name.toLowerCase())
@@ -237,6 +256,46 @@ export default function SubcategoriesPage() {
                           </div>
                         </form>
                         {editError && <p className="text-xs text-red-500 mt-1.5 ml-11">{editError}</p>}
+
+                        <div className="mt-3 ml-11 space-y-2">
+                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Categorias deste grupo</p>
+                          {(categoriesByLabel[s.name]?.length ?? 0) > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {categoriesByLabel[s.name].map(catName => (
+                                <span
+                                  key={catName}
+                                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300"
+                                >
+                                  <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: categoryColor(catName) }} />
+                                  {catName}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          <Select<string>
+                            key={addCategoryKey}
+                            onValueChange={v => { if (v) handleAddCategoryToGroup(v) }}
+                            disabled={addingCategory || availableCategoriesToAdd.length === 0}
+                          >
+                            <SelectTrigger className="h-8 text-xs w-full sm:w-64">
+                              <SelectValue
+                                placeholder={
+                                  addingCategory
+                                    ? 'Adicionando...'
+                                    : availableCategoriesToAdd.length === 0
+                                      ? 'Nenhuma categoria disponível'
+                                      : '+ Adicionar categoria ao grupo'
+                                }
+                              />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {availableCategoriesToAdd.map(c => (
+                                <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {addCategoryError && <p className="text-xs text-red-500">{addCategoryError}</p>}
+                        </div>
                       </>
                     ) : (
                       <>
@@ -247,7 +306,7 @@ export default function SubcategoriesPage() {
                           <p className="flex-1 text-sm font-medium text-slate-700 dark:text-slate-200">{s.name}</p>
                           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <Button variant="ghost" size="icon" className="h-8 w-8"
-                              onClick={() => { setEditing(s); setEditValue(s.name); setEditType(s.type); setEditError('') }}>
+                              onClick={() => { setEditing(s); setEditValue(s.name); setEditType(s.type); setEditError(''); setAddCategoryError('') }}>
                               <Pencil className="h-3.5 w-3.5 text-slate-400" />
                             </Button>
                             <Button variant="ghost" size="icon"
