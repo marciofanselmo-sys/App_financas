@@ -291,6 +291,14 @@ export default function PlanningPage() {
     tableCategories.reduce((s, c) => s + (actualByCategory[c.name] ?? 0), 0) +
     tableSubcategories.reduce((s, sub) => s + (actualByGroupLabel[sub.name] ?? 0), 0)
 
+  // Gasto real do período inteiro, rastreado ou não no plano — só contexto,
+  // nunca comparado direto contra totalPlanned (isso quebraria de novo o
+  // "Total Despesas" bater com a soma das linhas da tabela). Mostrado como
+  // nota abaixo da tabela quando existe gasto fora do que foi planejado, pra
+  // não parecer que o app "esqueceu" parte das despesas.
+  const totalDespesasPeriodo = transactions.filter(t => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0)
+  const untrackedExpenses = Math.max(0, totalDespesasPeriodo - actualExpenses)
+
   // Investimento linkado à categoria de mesmo nome
   const investActual = actualByCategoryAll['Investimento'] ?? 0
 
@@ -611,6 +619,7 @@ export default function PlanningPage() {
                 </p>
               </div>
             ) : (
+              <>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
@@ -757,6 +766,12 @@ export default function PlanningPage() {
                   )}
                 </table>
               </div>
+              {untrackedExpenses > 0 && (
+                <p className="text-xs text-slate-400 dark:text-slate-500 px-6 py-3 border-t border-slate-100 dark:border-slate-700">
+                  + {fmt(untrackedExpenses)} em despesas fora deste plano (categorias/subcategorias sem limite definido) — não entram no &ldquo;Total Despesas&rdquo; acima. Gasto real do período: {fmt(totalDespesasPeriodo)}.
+                </p>
+              )}
+              </>
             )}
           </div>
 
