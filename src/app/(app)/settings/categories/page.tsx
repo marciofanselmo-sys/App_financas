@@ -133,7 +133,7 @@ export default function CategoriesPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim()) { setFormError('Nome obrigatório.'); return }
-    if (form.special && form.specialDates.length === 0) { setFormError('Adicione pelo menos um mês para a categoria especial.'); return }
+    if (form.special && form.specialDates.length === 0) { setFormError('Adicione pelo menos um mês para a categoria isolada.'); return }
     setSaving(true); setFormError('')
     const payload = {
       name: form.name,
@@ -182,9 +182,14 @@ export default function CategoriesPage() {
   }
 
   const deleteCount = deleteTarget ? (usageCount[deleteTarget.name] ?? 0) : 0
-  const mergeTargets = mergeState
+  const mergeTargetsAll = mergeState
     ? categories.filter(c => c.id !== mergeState.from.id && c.type === mergeState.from.type)
     : []
+  // Normais e isoladas em seletores separados, mesmo padrão do resto do app —
+  // escolher em um desmarca o outro.
+  const mergeTargetsNormal = mergeTargetsAll.filter(c => !c.special_dates || c.special_dates.length === 0)
+  const mergeTargetsSpecial = mergeTargetsAll.filter(c => (c.special_dates?.length ?? 0) > 0)
+  const mergeToIsSpecial = mergeTargetsSpecial.some(c => c.id === mergeState?.toId)
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
@@ -220,7 +225,7 @@ export default function CategoriesPage() {
               className="pl-9"
             />
           </div>
-          <Select value={typeFilter} onValueChange={v => setTypeFilter(v ?? 'todos')}>
+          <Select value={typeFilter} onValueChange={v => setTypeFilter(v ?? 'todos')} items={TYPE_FILTER}>
             <SelectTrigger className="w-36">
               <SelectValue />
             </SelectTrigger>
@@ -321,19 +326,19 @@ export default function CategoriesPage() {
           <div>
             <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
               <Sparkles className="h-4 w-4 text-violet-500" />
-              Categorias especiais
+              Categorias isoladas
             </h2>
             <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
               Para organizar um gasto ou evento único de um mês específico (ex: &ldquo;Reforma Banheiro&rdquo;, &ldquo;Viagem&rdquo;)
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={openCreateSpecial} className="gap-2 shrink-0">
-            <Plus className="h-4 w-4" /> Nova especial
+            <Plus className="h-4 w-4" /> Nova isolada
           </Button>
         </div>
 
         {specialCategories.length === 0 ? (
-          <p className="text-sm text-slate-400 dark:text-slate-500 py-2">Nenhuma categoria especial criada ainda.</p>
+          <p className="text-sm text-slate-400 dark:text-slate-500 py-2">Nenhuma categoria isolada criada ainda.</p>
         ) : (
           <div className="space-y-2">
             {specialCategories.map(cat => {
@@ -396,8 +401,9 @@ export default function CategoriesPage() {
                   type: v as CategoryType,
                   color: v === 'transferencia' ? TRANSFER_CATEGORY_COLOR : f.color,
                 }))}
+                items={TYPE_LABELS}
               >
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="despesa">Despesa</SelectItem>
                   <SelectItem value="receita">Receita</SelectItem>
@@ -434,7 +440,7 @@ export default function CategoriesPage() {
                   <span className="h-4 w-4 rounded-full bg-white shadow" />
                 </span>
                 <Sparkles className="h-3.5 w-3.5 text-violet-500" />
-                Categoria especial (só vale em meses específicos)
+                Categoria isolada (só vale em meses específicos)
               </button>
 
               {form.special && (
@@ -444,7 +450,7 @@ export default function CategoriesPage() {
                     onChange={d => setForm(f => ({ ...f, specialDates: d }))}
                   />
                   <p className="text-xs text-slate-400 dark:text-slate-500">
-                    Não aparece na lista principal — fica na seção &ldquo;Categorias especiais&rdquo; no final da página. Você pode adicionar mais meses depois, editando a categoria.
+                    Não aparece na lista principal — fica na seção &ldquo;Categorias isoladas&rdquo; no final da página. Você pode adicionar mais meses depois, editando a categoria.
                   </p>
                 </div>
               )}
@@ -511,14 +517,36 @@ export default function CategoriesPage() {
               )}
               <div className="space-y-2">
                 <Label>Categoria destino</Label>
-                <Select value={mergeState.toId} onValueChange={v => setMergeState(s => s ? { ...s, toId: v ?? '' } : null)}>
-                  <SelectTrigger><SelectValue placeholder="Selecione a categoria destino..." /></SelectTrigger>
-                  <SelectContent>
-                    {mergeTargets.map(c => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className={mergeTargetsSpecial.length > 0 ? 'grid grid-cols-2 gap-2' : ''}>
+                  <Select
+                    value={mergeToIsSpecial ? '' : mergeState.toId}
+                    onValueChange={v => { if (v) setMergeState(s => s ? { ...s, toId: v } : null) }}
+                  >
+                    <SelectTrigger className="w-full"><SelectValue placeholder="Selecione a categoria destino..." /></SelectTrigger>
+                    <SelectContent>
+                      {mergeTargetsNormal.length === 0 ? (
+                        <SelectItem value="__empty__" disabled>Nenhuma categoria disponível</SelectItem>
+                      ) : (
+                        mergeTargetsNormal.map(c => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {mergeTargetsSpecial.length > 0 && (
+                    <Select
+                      value={mergeToIsSpecial ? mergeState.toId : ''}
+                      onValueChange={v => { if (v) setMergeState(s => s ? { ...s, toId: v } : null) }}
+                    >
+                      <SelectTrigger className="w-full"><SelectValue placeholder="Categoria isolada..." /></SelectTrigger>
+                      <SelectContent>
+                        {mergeTargetsSpecial.map(c => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
               </div>
               <div className="flex gap-2 pt-1">
                 <Button variant="outline" onClick={() => setMergeState(null)} className="flex-1">Cancelar</Button>

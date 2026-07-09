@@ -187,10 +187,10 @@ const SECTIONS: Section[] = [
         body: [
           'Ao clicar em uma categoria, um painel lateral abre com todos os lançamentos daquele grupo no mês.',
           'Direto neste painel você pode mudar a categoria de qualquer lançamento individualmente (dropdown ao lado do valor).',
-          'Se a nova categoria for uma categoria normal (não especial), o app cria/atualiza automaticamente uma regra de categorização e já corrige todas as outras transações com esse nome exato — sem precisar de nenhum botão extra.',
+          'Se a nova categoria for uma categoria normal (não isolada), o app cria/atualiza automaticamente uma regra de categorização e já corrige todas as outras transações com esse nome exato — sem precisar de nenhum botão extra.',
           '> Exemplo: você vê "UBER EATS" classificado como "Transporte". Muda para "Alimentação" → o app já cria a regra "UBER EATS → Alimentação" e corrige automaticamente todas as outras ocorrências anteriores.',
         ],
-        tip: 'Categoria especial (presa a um mês específico) nunca entra nessa automação — muda só aquela transação, fica isolada.',
+        tip: 'Categoria isolada (presa a um mês específico) nunca entra nessa automação — muda só aquela transação, fica isolada.',
       },
       {
         title: 'Entradas por categoria',

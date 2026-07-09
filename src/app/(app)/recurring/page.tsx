@@ -86,7 +86,12 @@ export default function RecurringPage() {
     refetch()
   }
 
-  const expenseCategories = categories.filter(c => c.type === 'despesa' || c.type === 'ambos')
+  const expenseCategoriesAll = categories.filter(c => c.type === 'despesa' || c.type === 'ambos')
+  // Normais e isoladas em seletores separados, mesmo padrão do resto do app —
+  // escolher em um desmarca o outro.
+  const expenseCategoriesNormal = expenseCategoriesAll.filter(c => !c.special_dates || c.special_dates.length === 0)
+  const expenseCategoriesSpecial = expenseCategoriesAll.filter(c => (c.special_dates?.length ?? 0) > 0)
+  const expenseCategoryIsSpecial = expenseCategoriesSpecial.some(c => c.name === form.category)
 
   const totalMonthly = installments
     .filter(i => i.remaining > 0)
@@ -345,23 +350,47 @@ export default function RecurringPage() {
 
             <div className="space-y-2">
               <Label>Categoria</Label>
-              <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v ?? '' }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione a categoria" />
-                </SelectTrigger>
-                <SelectContent>
-                  {expenseCategories.map(c => (
-                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className={expenseCategoriesSpecial.length > 0 ? 'grid grid-cols-2 gap-2' : ''}>
+                <Select
+                  value={expenseCategoryIsSpecial ? '' : form.category}
+                  onValueChange={v => { if (v) setForm(f => ({ ...f, category: v })) }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Selecione a categoria" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {expenseCategoriesNormal.length === 0 ? (
+                      <SelectItem value="__empty__" disabled>Nenhuma categoria disponível</SelectItem>
+                    ) : (
+                      expenseCategoriesNormal.map(c => (
+                        <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {expenseCategoriesSpecial.length > 0 && (
+                  <Select
+                    value={expenseCategoryIsSpecial ? form.category : ''}
+                    onValueChange={v => { if (v) setForm(f => ({ ...f, category: v })) }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Categoria isolada..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {expenseCategoriesSpecial.map(c => (
+                        <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
             </div>
 
             {boards.length > 0 && (
               <div className="space-y-2">
                 <Label>Conta (opcional)</Label>
                 <Select value={form.board_id} onValueChange={v => setForm(f => ({ ...f, board_id: v ?? '' }))}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="Nenhuma conta" />
                   </SelectTrigger>
                   <SelectContent>

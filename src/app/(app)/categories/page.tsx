@@ -82,7 +82,7 @@ export default function CategoriesPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim()) { setFormError('Nome obrigatório.'); return }
-    if (form.special && form.specialDates.length === 0) { setFormError('Adicione pelo menos um mês para a categoria especial.'); return }
+    if (form.special && form.specialDates.length === 0) { setFormError('Adicione pelo menos um mês para a categoria isolada.'); return }
     setSaving(true)
     setFormError('')
 
@@ -248,19 +248,19 @@ export default function CategoriesPage() {
           <div>
             <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
               <Sparkles className="h-4 w-4 text-violet-500" />
-              Categorias especiais
+              Categorias isoladas
             </h2>
             <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
               Para organizar um gasto ou evento único de um mês específico (ex: &ldquo;Reforma Banheiro&rdquo;, &ldquo;Viagem&rdquo;)
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={openCreateSpecial} className="gap-2 shrink-0">
-            <Plus className="h-4 w-4" /> Nova especial
+            <Plus className="h-4 w-4" /> Nova isolada
           </Button>
         </div>
 
         {specialCategories.length === 0 ? (
-          <p className="text-sm text-slate-400 dark:text-slate-500 py-2">Nenhuma categoria especial criada ainda.</p>
+          <p className="text-sm text-slate-400 dark:text-slate-500 py-2">Nenhuma categoria isolada criada ainda.</p>
         ) : (
           <div className="space-y-2">
             {specialCategories.map(cat => (
@@ -333,8 +333,9 @@ export default function CategoriesPage() {
                   type: v as CategoryType,
                   color: v === 'transferencia' ? TRANSFER_CATEGORY_COLOR : f.color,
                 }))}
+                items={TYPE_LABELS}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -382,7 +383,7 @@ export default function CategoriesPage() {
                   <span className="h-4 w-4 rounded-full bg-white shadow" />
                 </span>
                 <Sparkles className="h-3.5 w-3.5 text-violet-500" />
-                Categoria especial (só vale em meses específicos)
+                Categoria isolada (só vale em meses específicos)
               </button>
 
               {form.special && (
@@ -392,7 +393,7 @@ export default function CategoriesPage() {
                     onChange={d => setForm(f => ({ ...f, specialDates: d }))}
                   />
                   <p className="text-xs text-slate-400 dark:text-slate-500">
-                    Não aparece na lista principal — fica na seção &ldquo;Categorias especiais&rdquo; no final da página. Você pode adicionar mais meses depois, editando a categoria.
+                    Não aparece na lista principal — fica na seção &ldquo;Categorias isoladas&rdquo; no final da página. Você pode adicionar mais meses depois, editando a categoria.
                   </p>
                 </div>
               )}

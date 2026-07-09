@@ -7,6 +7,9 @@ import { Plus, X } from 'lucide-react'
 import { SpecialCategoryDate } from '@/types'
 
 const MONTH_NAMES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
+// Sem isso, o Select mostra o valor bruto ("7") em vez do nome do mês ("jul")
+// até o usuário abrir o dropdown pela primeira vez.
+const monthItems = MONTH_NAMES.map((name, i) => ({ value: String(i + 1), label: name }))
 
 interface SpecialDatesPickerProps {
   dates: SpecialCategoryDate[]
@@ -49,7 +52,7 @@ export function SpecialDatesPicker({ dates, onChange }: SpecialDatesPickerProps)
       )}
 
       <div className="flex items-center gap-2">
-        <Select value={String(month)} onValueChange={v => v && setMonth(Number(v))}>
+        <Select value={String(month)} onValueChange={v => v && setMonth(Number(v))} items={monthItems}>
           <SelectTrigger className="h-8 text-xs w-20"><SelectValue /></SelectTrigger>
           <SelectContent>
             {MONTH_NAMES.map((name, i) => (
