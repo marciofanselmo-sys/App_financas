@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Plus, Pencil, Trash2, Layers, RefreshCw, TrendingDown, TrendingUp, ArrowLeftRight } from 'lucide-react'
+import { Plus, Pencil, Trash2, Layers, RefreshCw, TrendingDown, TrendingUp, ArrowLeftRight, X } from 'lucide-react'
 import { InfoBox } from '@/components/ui/info-box'
 import { cn } from '@/lib/utils'
 
@@ -28,7 +28,7 @@ const SECTION_META: Record<TransactionType, { label: string; icon: React.Element
 }
 
 export default function SubcategoriesPage() {
-  const { subcategories, loading, categoriesByLabel, createSubcategory, renameSubcategory, deleteSubcategory, assignCategoryToSubcategory } = useSubcategories()
+  const { subcategories, loading, categoriesByLabel, createSubcategory, renameSubcategory, deleteSubcategory, assignCategoryToSubcategory, removeCategoryFromSubcategory } = useSubcategories()
   const { categories } = useCategories()
 
   function categoryColor(name: string): string {
@@ -49,6 +49,7 @@ export default function SubcategoriesPage() {
   const [addingCategory, setAddingCategory]     = useState(false)
   const [addCategoryError, setAddCategoryError] = useState('')
   const [addCategoryKey, setAddCategoryKey]     = useState(0)
+  const [removingCategory, setRemovingCategory] = useState<string | null>(null)
 
   const availableCategoriesToAdd: Category[] = useMemo(() => {
     if (!editing) return []
@@ -74,6 +75,15 @@ export default function SubcategoriesPage() {
     if (!ok) setAddCategoryError('Erro ao adicionar categoria. Tente novamente.')
     setAddingCategory(false)
     setAddCategoryKey(k => k + 1)
+  }
+
+  async function handleRemoveCategoryFromGroup(categoryName: string) {
+    if (!editing) return
+    setRemovingCategory(categoryName)
+    setAddCategoryError('')
+    const ok = await removeCategoryFromSubcategory(editing.name, categoryName)
+    if (!ok) setAddCategoryError('Erro ao remover categoria. Tente novamente.')
+    setRemovingCategory(null)
   }
 
   function nameCollidesWithCategory(name: string): boolean {
@@ -274,10 +284,18 @@ export default function SubcategoriesPage() {
                               {categoriesByLabel[s.name].map(catName => (
                                 <span
                                   key={catName}
-                                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300"
+                                  className="inline-flex items-center gap-1 text-xs pl-2 pr-1 py-0.5 rounded-full bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300"
                                 >
                                   <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: categoryColor(catName) }} />
                                   {catName}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveCategoryFromGroup(catName)}
+                                    disabled={removingCategory === catName}
+                                    className="rounded-full p-0.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
                                 </span>
                               ))}
                             </div>

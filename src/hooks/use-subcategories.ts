@@ -194,6 +194,30 @@ export function useSubcategories() {
     return true
   }
 
+  // Tira do grupo só as transações daquela categoria (desmarca group_label) —
+  // as outras categorias do grupo continuam intactas.
+  async function removeCategoryFromSubcategory(label: string, categoryName: string): Promise<boolean> {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return false
+
+    const { error } = await supabase
+      .from('transactions')
+      .update({ group_label: null })
+      .eq('user_id', user.id)
+      .eq('group_label', label)
+      .eq('category', categoryName)
+
+    if (error) { console.error('Erro ao remover categoria da subcategoria:', error); return false }
+
+    setCategoriesByLabel(prev => {
+      const current = prev[label]
+      if (!current) return prev
+      return { ...prev, [label]: current.filter(c => c !== categoryName) }
+    })
+    return true
+  }
+
   async function assignSubcategory(descriptions: string[], label: string | null): Promise<boolean> {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -218,6 +242,7 @@ export function useSubcategories() {
     deleteSubcategory,
     assignSubcategory,
     assignCategoryToSubcategory,
+    removeCategoryFromSubcategory,
     refetch: load,
   }
 }
