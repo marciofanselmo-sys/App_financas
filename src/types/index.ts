@@ -61,6 +61,10 @@ export interface Transaction {
 export interface Subcategory {
   name: string
   type: TransactionType
+  // Categorias atreladas a este grupo — qualquer transação com uma dessas
+  // categorias (do mesmo tipo) entra automaticamente no grupo, inclusive
+  // transações futuras/importadas depois da atribuição (ver use-subcategories.ts).
+  categories?: string[]
 }
 
 export interface TransactionFilters {
@@ -134,7 +138,7 @@ export interface BoardPositionImport {
 export interface GoalImport {
   importedAt: string
   patrimonio: number        // valor que vira currentAmount
-  source?: 'rico' | 'ofx'  // undefined = legado RICO
+  source?: 'rico' | 'ofx' | 'board'  // undefined = legado RICO
 
   // RICO-specific (source === 'rico' ou undefined)
   totalInvestido?: number
@@ -146,6 +150,14 @@ export interface GoalImport {
   accountType?: string
   availBalance?: number
   balanceDate?: string
+
+  // board-specific (source === 'board') — puxa só o patrimônio de uma conta de
+  // investimento já existente, sem trazer posições/proventos pro card da meta.
+  // boardId permite reatualizar com 1 clique depois; boardName é uma foto do
+  // nome no momento do vínculo, pra continuar exibindo algo coerente mesmo se
+  // a conta for renomeada ou excluída depois.
+  boardId?: string
+  boardName?: string
 }
 
 export type GoalType = 'reserva' | 'investimento' | 'carro' | 'viagem' | 'divida' | 'imovel' | 'personalizada'

@@ -29,20 +29,17 @@ export function useSubcategories() {
       .eq('user_id', user.id)
       .not('group_label', 'is', null)
 
-    // Quais categorias aparecem nas transações de cada subcategoria (só pra exibição).
-    const categorySets = new Map<string, Set<string>>()
+    // Só usado pra migrar dados antigos que ainda não tinham `categories`
+    // persistido (ver abaixo) — depois da migração, `categories` de cada
+    // subcategoria é a fonte da verdade, não mais derivado das transações.
+    const derivedCategoriesByLabel = new Map<string, Set<string>>()
     for (const row of txRows ?? []) {
       const label = row.group_label as string | null
       const category = row.category as string | null
       if (!label || !category) continue
-      if (!categorySets.has(label)) categorySets.set(label, new Set())
-      categorySets.get(label)!.add(category)
+      if (!derivedCategoriesByLabel.has(label)) derivedCategoriesByLabel.set(label, new Set())
+      derivedCategoriesByLabel.get(label)!.add(category)
     }
-    const categoriesByLabelResult: Record<string, string[]> = {}
-    for (const [label, set] of categorySets) {
-      categoriesByLabelResult[label] = [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'))
-    }
-    setCategoriesByLabel(categoriesByLabelResult)
 
     // Vota o tipo mais comum entre as transações que já usam cada rótulo —
     // usado só pra migrar dados antigos (formato de string pura, sem tipo).
@@ -61,15 +58,22 @@ export function useSubcategories() {
       return (Object.entries(v) as [TransactionType, number][]).sort((a, b) => b[1] - a[1])[0][0]
     }
 
-    // Migração: entradas antigas eram strings puras (sem tipo). Só acontece
-    // uma vez — depois disso o tipo fica gravado e não é mais recalculado.
+    // Migração: entradas antigas eram strings puras (sem tipo), e entradas de
+    // antes dessa mudança não tinham `categories`. Em ambos os casos, herda
+    // as categorias já observadas nas transações desse grupo até aqui — pra
+    // não perder o que já estava funcionando quando essa mudança for ao ar.
     let migrated = false
     const migratedMeta: Subcategory[] = rawMeta.map(item => {
       if (typeof item === 'string') {
         migrated = true
-        return { name: item, type: inferType(item) }
+        return { name: item, type: inferType(item), categories: [...(derivedCategoriesByLabel.get(item) ?? [])] }
       }
-      return item as Subcategory
+      const sub = item as Subcategory
+      if (!sub.categories) {
+        migrated = true
+        return { ...sub, categories: [...(derivedCategoriesByLabel.get(sub.name) ?? [])] }
+      }
+      return sub
     })
 
     // Rótulos que existem em transações mas nunca foram formalmente criados
@@ -77,7 +81,7 @@ export function useSubcategories() {
     const metaNames = new Set(migratedMeta.map(s => s.name))
     for (const label of new Set((txRows ?? []).map(r => r.group_label as string).filter(Boolean))) {
       if (!metaNames.has(label)) {
-        migratedMeta.push({ name: label, type: inferType(label) })
+        migratedMeta.push({ name: label, type: inferType(label), categories: [...(derivedCategoriesByLabel.get(label) ?? [])] })
         migrated = true
       }
     }
@@ -88,7 +92,35 @@ export function useSubcategories() {
       await supabase.auth.updateUser({ data: { subcategories: finalList } })
     }
 
+    // Categorias atreladas a cada subcategoria — a fonte da verdade agora é o
+    // que está persistido em `categories`, não mais o que já foi observado
+    // nas transações (isso é o que permite uma transação nova, com uma
+    // categoria já atrelada, entrar sozinha no grupo, via sync abaixo).
+    const categoriesByLabelResult: Record<string, string[]> = {}
+    for (const sub of finalList) {
+      categoriesByLabelResult[sub.name] = [...(sub.categories ?? [])].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+    }
+    setCategoriesByLabel(categoriesByLabelResult)
     setSubcategories(finalList)
+
+    // Sincroniza: qualquer transação cuja categoria esteja atrelada a uma
+    // subcategoria entra no grupo — cobre tanto dados antigos quanto
+    // transações novas (import, categorização manual) que nunca passaram
+    // pela tela de Subcategorias. Roda toda vez que a página carrega, mesma
+    // ideia de "rede de segurança" já usada em /fixos pra is_recurring.
+    await Promise.all(
+      finalList
+        .filter(sub => sub.categories && sub.categories.length > 0)
+        .map(sub =>
+          supabase
+            .from('transactions')
+            .update({ group_label: sub.name })
+            .eq('user_id', user.id)
+            .eq('type', sub.type)
+            .in('category', sub.categories!)
+        )
+    )
+
     setLoading(false)
   }, [])
 
@@ -121,7 +153,7 @@ export function useSubcategories() {
     if (!user) return false
 
     const updated = sortSubcategories(
-      subcategories.map(s => s.name === oldName ? { name: trimmed, type: newType } : s)
+      subcategories.map(s => s.name === oldName ? { ...s, name: trimmed, type: newType } : s)
     )
 
     const [{ error: e1 }, { error: e2 }] = await Promise.all([
@@ -178,6 +210,18 @@ export function useSubcategories() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return false
 
+    // Persiste a categoria na subcategoria — é essa lista que faz uma
+    // transação nova (import, categorização manual) entrar sozinha no grupo
+    // depois, sem precisar passar de novo por aqui.
+    const currentCategories = sub.categories ?? []
+    if (!currentCategories.includes(categoryName)) {
+      const updatedCategories = [...currentCategories, categoryName].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+      const updatedSubcategories = subcategories.map(s => s.name === label ? { ...s, categories: updatedCategories } : s)
+      const { error: metaError } = await supabase.auth.updateUser({ data: { subcategories: updatedSubcategories } })
+      if (metaError) { console.error('Erro ao vincular categoria à subcategoria:', metaError); return false }
+      setSubcategories(updatedSubcategories)
+    }
+
     const { error } = await supabase
       .from('transactions')
       .update({ group_label: label })
@@ -211,9 +255,19 @@ export function useSubcategories() {
   // Tira do grupo só as transações daquela categoria (desmarca group_label) —
   // as outras categorias do grupo continuam intactas.
   async function removeCategoryFromSubcategory(label: string, categoryName: string): Promise<boolean> {
+    const sub = subcategories.find(s => s.name === label)
+    if (!sub) return false
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return false
+
+    // Tira do mapeamento persistido primeiro — sem isso, o sync de
+    // categoria (que roda a cada load) devolveria a categoria pro grupo
+    // na próxima vez que a página carregasse.
+    const updatedCategories = (sub.categories ?? []).filter(c => c !== categoryName)
+    const updatedSubcategories = subcategories.map(s => s.name === label ? { ...s, categories: updatedCategories } : s)
+    const { error: metaError } = await supabase.auth.updateUser({ data: { subcategories: updatedSubcategories } })
+    if (metaError) { console.error('Erro ao desvincular categoria da subcategoria:', metaError); return false }
 
     const { error } = await supabase
       .from('transactions')
@@ -224,6 +278,7 @@ export function useSubcategories() {
 
     if (error) { console.error('Erro ao remover categoria da subcategoria:', error); return false }
 
+    setSubcategories(updatedSubcategories)
     setCategoriesByLabel(prev => {
       const current = prev[label]
       if (!current) return prev
