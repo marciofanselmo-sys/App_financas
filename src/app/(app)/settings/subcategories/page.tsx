@@ -28,8 +28,12 @@ const SECTION_META: Record<TransactionType, { label: string; icon: React.Element
 }
 
 export default function SubcategoriesPage() {
-  const { subcategories, loading, createSubcategory, renameSubcategory, deleteSubcategory } = useSubcategories()
+  const { subcategories, loading, categoriesByLabel, createSubcategory, renameSubcategory, deleteSubcategory } = useSubcategories()
   const { categories } = useCategories()
+
+  function categoryColor(name: string): string {
+    return categories.find(c => c.name === name)?.color ?? '#94a3b8'
+  }
 
   const [newName, setNewName]           = useState('')
   const [newType, setNewType]           = useState<TransactionType>('despesa')
@@ -198,10 +202,7 @@ export default function SubcategoriesPage() {
                 {items.map(s => (
                   <div
                     key={s.name}
-                    className={cn(
-                      'bg-white dark:bg-slate-800 rounded-xl px-4 py-3 shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors group',
-                      editing?.name !== s.name && 'flex items-center gap-3'
-                    )}
+                    className="bg-white dark:bg-slate-800 rounded-xl px-4 py-3 shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors group"
                   >
                     {editing?.name === s.name ? (
                       <>
@@ -239,21 +240,36 @@ export default function SubcategoriesPage() {
                       </>
                     ) : (
                       <>
-                        <div className="h-8 w-8 rounded-lg bg-violet-50 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
-                          <Layers className="h-4 w-4 text-violet-500" />
+                        <div className="flex items-center gap-3">
+                          <div className="h-8 w-8 rounded-lg bg-violet-50 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
+                            <Layers className="h-4 w-4 text-violet-500" />
+                          </div>
+                          <p className="flex-1 text-sm font-medium text-slate-700 dark:text-slate-200">{s.name}</p>
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button variant="ghost" size="icon" className="h-8 w-8"
+                              onClick={() => { setEditing(s); setEditValue(s.name); setEditType(s.type); setEditError('') }}>
+                              <Pencil className="h-3.5 w-3.5 text-slate-400" />
+                            </Button>
+                            <Button variant="ghost" size="icon"
+                              className="h-8 w-8 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                              onClick={() => setDeleteTarget(s.name)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </div>
-                        <p className="flex-1 text-sm font-medium text-slate-700 dark:text-slate-200">{s.name}</p>
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button variant="ghost" size="icon" className="h-8 w-8"
-                            onClick={() => { setEditing(s); setEditValue(s.name); setEditType(s.type); setEditError('') }}>
-                            <Pencil className="h-3.5 w-3.5 text-slate-400" />
-                          </Button>
-                          <Button variant="ghost" size="icon"
-                            className="h-8 w-8 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-                            onClick={() => setDeleteTarget(s.name)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
+                        {(categoriesByLabel[s.name]?.length ?? 0) > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-2 ml-11">
+                            {categoriesByLabel[s.name].map(catName => (
+                              <span
+                                key={catName}
+                                className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300"
+                              >
+                                <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: categoryColor(catName) }} />
+                                {catName}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </>
                     )}
                   </div>

@@ -11,6 +11,7 @@ function sortSubcategories(list: Subcategory[]): Subcategory[] {
 export function useSubcategories() {
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
   const [loading, setLoading] = useState(true)
+  const [categoriesByLabel, setCategoriesByLabel] = useState<Record<string, string[]>>({})
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -23,9 +24,24 @@ export function useSubcategories() {
 
     const { data: txRows } = await supabase
       .from('transactions')
-      .select('group_label, type')
+      .select('group_label, type, category')
       .eq('user_id', user.id)
       .not('group_label', 'is', null)
+
+    // Quais categorias aparecem nas transações de cada subcategoria (só pra exibição).
+    const categorySets = new Map<string, Set<string>>()
+    for (const row of txRows ?? []) {
+      const label = row.group_label as string | null
+      const category = row.category as string | null
+      if (!label || !category) continue
+      if (!categorySets.has(label)) categorySets.set(label, new Set())
+      categorySets.get(label)!.add(category)
+    }
+    const categoriesByLabelResult: Record<string, string[]> = {}
+    for (const [label, set] of categorySets) {
+      categoriesByLabelResult[label] = [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+    }
+    setCategoriesByLabel(categoriesByLabelResult)
 
     // Vota o tipo mais comum entre as transações que já usam cada rótulo —
     // usado só pra migrar dados antigos (formato de string pura, sem tipo).
@@ -157,6 +173,7 @@ export function useSubcategories() {
   return {
     subcategories,
     loading,
+    categoriesByLabel,
     createSubcategory,
     renameSubcategory,
     deleteSubcategory,
