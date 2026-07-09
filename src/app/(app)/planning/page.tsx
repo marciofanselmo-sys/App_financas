@@ -192,7 +192,6 @@ export default function PlanningPage() {
 
   // Valores realizados
   const actualIncome = transactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
-  const actualExpenses = transactions.filter(t => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0)
 
   const actualByCategory: Record<string, number> = {}
   transactions.filter(t => t.type === 'despesa').forEach(t => {
@@ -282,6 +281,15 @@ export default function PlanningPage() {
   const totalPlanned =
     tableCategories.reduce((s, c) => s + parseNum(categoryLimits[c.name] ?? ''), 0) +
     tableSubcategories.reduce((s, sub) => s + parseNum(categoryLimits[subKey(sub.name)] ?? ''), 0)
+
+  // Realizado do Total Despesas soma só as mesmas linhas que aparecem na
+  // tabela acima (categorias/subcategorias com limite > 0), não o gasto total
+  // do período — senão a linha "Total Despesas" não batia com a soma visível
+  // das linhas mostradas (categoria fora do plano empurrava o total pra cima
+  // sem aparecer em lugar nenhum da tabela, parecendo conta errada).
+  const actualExpenses =
+    tableCategories.reduce((s, c) => s + (actualByCategory[c.name] ?? 0), 0) +
+    tableSubcategories.reduce((s, sub) => s + (actualByGroupLabel[sub.name] ?? 0), 0)
 
   // Investimento linkado à categoria de mesmo nome
   const investActual = actualByCategoryAll['Investimento'] ?? 0
