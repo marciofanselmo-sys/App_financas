@@ -135,6 +135,7 @@ function ItemCard({
   onSelectSubcategory: (label: string | null) => Promise<void>
 }) {
   const [saving, setSaving] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const isPending = decision === null
   const borderCls = item.isGroup
     ? 'border-violet-200 dark:border-violet-800/50'
@@ -149,7 +150,14 @@ function ItemCard({
   }
 
   return (
-    <div className={cn('bg-white dark:bg-slate-800 rounded-2xl border shadow-sm p-4 group', borderCls)}>
+    <div
+      className={cn(
+        'bg-white dark:bg-slate-800 rounded-2xl border shadow-sm p-4 group',
+        item.isGroup && 'cursor-pointer',
+        borderCls
+      )}
+      onClick={item.isGroup ? () => setExpanded(v => !v) : undefined}
+    >
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0 flex items-start gap-3 flex-1">
           <div className={cn(
@@ -181,18 +189,23 @@ function ItemCard({
                   <span className="text-slate-300 dark:text-slate-600 text-xs select-none">›</span>
                 </>
               )}
-              <SubcategoryDropdown
-                value={item.subcategory}
-                subcategories={subcategories}
-                onSelect={handleSelect}
-                saving={saving}
-              />
+              <div onClick={e => e.stopPropagation()}>
+                <SubcategoryDropdown
+                  value={item.subcategory}
+                  subcategories={subcategories}
+                  onSelect={handleSelect}
+                  saving={saving}
+                />
+              </div>
               {item.isGroup && (
-                <span className="text-xs text-slate-400">· {item.descriptions.length} descrições</span>
+                <span className="flex items-center gap-0.5 text-xs text-slate-400">
+                  · {item.descriptions.length} descrições
+                  <ChevronDown className={cn('h-3 w-3 transition-transform', expanded && 'rotate-180')} />
+                </span>
               )}
             </div>
 
-            {item.isGroup && (
+            {item.isGroup && expanded && (
               <div className="mt-2 space-y-0.5">
                 {item.descriptions.map(d => (
                   <p key={d} className="text-xs text-slate-400 dark:text-slate-500 truncate">• {d}</p>
@@ -215,7 +228,7 @@ function ItemCard({
           {!isPending && item.isGroup && (
             <button
               type="button"
-              onClick={onUndo}
+              onClick={e => { e.stopPropagation(); onUndo() }}
               title="Desfazer confirmação"
               className="mt-1 inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"
             >
@@ -225,7 +238,7 @@ function ItemCard({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+      <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100 dark:border-slate-700" onClick={e => e.stopPropagation()}>
         {isPending ? (
           <>
             <Button size="sm" variant="outline"
