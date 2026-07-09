@@ -295,7 +295,18 @@ function parseC6Credit(content: string): PreviewRow[] {
         installment_current = parseInt(parcelaMatch[1])
         installment_total = parseInt(parcelaMatch[2])
       }
-      return { description, amount: isNaN(amount) ? 0 : amount, date, type, category, installment_current, installment_total, valid: errors.length === 0, errors }
+      // A fatura do C6 repete a MESMA "Data de Compra" em todas as parcelas do
+      // plano — a parcela 3/12 da fatura de agosto vem datada do dia da compra.
+      // Sem ajuste, importar a fatura seguinte "puxava" a parcela projetada de
+      // volta pro mês da compra (o handleImport atualiza a data por slot),
+      // empilhando parcelas no mesmo mês. Desloca (parcela − 1) meses pra cada
+      // parcela cair no mês em que é cobrada — batendo exatamente com o slot
+      // projetado por computeMissingInstallments. (O parser do Inter resolve o
+      // mesmo problema usando a data de vencimento da fatura.)
+      const effectiveDate = installment_current && installment_current > 1 && date
+        ? addMonths(date, installment_current - 1)
+        : date
+      return { description, amount: isNaN(amount) ? 0 : amount, date: effectiveDate, type, category, installment_current, installment_total, valid: errors.length === 0, errors }
     })
 }
 
@@ -373,14 +384,18 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
     return 'Outros'
   }
 
-  // Apply user-defined rules as last fallback (after prefix + keyword rules)
+  // Regra do usuário tem prioridade MÁXIMA — inclusive sobre a categoria
+  // sugerida pelo banco (ex: coluna "Categoria" da fatura C6). Antes, regras só
+  // rodavam em linhas "Outros", então o mapeamento do banco ganhava da regra
+  // criada quando o usuário recategorizou a mesma descrição — e a categorização
+  // "não pegava" nas importações seguintes. Sem regra que case, a sugestão do
+  // banco continua valendo.
   const enhanceWithUserRules = useCallback((rows: PreviewRow[]): PreviewRow[] => {
     if (!rules.length) return rows
-    return rows.map(r =>
-      r.category === 'Outros'
-        ? { ...r, category: applyUserRules(r.description, r.date, rules, categories, r.type).category ?? 'Outros' }
-        : r
-    )
+    return rows.map(r => {
+      const ruleCategory = applyUserRules(r.description, r.date, rules, categories, r.type).category
+      return ruleCategory ? { ...r, category: ruleCategory } : r
+    })
   }, [rules, categories])
 
   function reset() {
@@ -717,10 +732,34 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
       historyMap.set(h.description.toLowerCase(), h.category)
     }
 
-    let valid = preview.filter(r => r.valid).map(r => ({
-      ...r,
-      category: r.category === 'Outros' ? (historyMap.get(r.description.toLowerCase()) ?? r.category) : r.category,
-    }))
+    // Subcategoria (group_label) por histórico — mesma ideia da categoria acima,
+    // mas pra recorrência: antes, atribuir uma subcategoria em /fixos só valia
+    // pras transações que já existiam; uma importação nova com a mesma descrição
+    // vinha sem subcategoria nenhuma até o usuário visitar /fixos de novo (a
+    // sincronização de lá só roda no client, ao abrir a página). Herdando aqui,
+    // a transação nova já chega com a subcategoria certa, sem esse passo extra.
+    //
+    // Chave é descrição + categoria (não só descrição) — uma descrição genérica
+    // pode se repetir em compras diferentes; exigir a categoria igual também é
+    // uma segunda confirmação de que é "a mesma coisa de sempre". E categoria
+    // "Outros" nunca herda subcategoria: se o sistema nem reconheceu a categoria
+    // (ficou em "Outros"), não tem confiança suficiente pra herdar a
+    // subcategoria também — fica pro usuário decidir na revisão manual.
+    const { data: subcategoryHistoryData } = await supabase
+      .from('transactions').select('description, category, group_label').eq('user_id', user.id).not('group_label', 'is', null)
+    const subcategoryHistoryMap = new Map<string, string>()
+    for (const h of subcategoryHistoryData ?? []) {
+      if (!h.group_label) continue
+      subcategoryHistoryMap.set(`${h.description.toLowerCase()}|${h.category}`, h.group_label)
+    }
+
+    let valid = preview.filter(r => r.valid).map(r => {
+      const resolvedCategory = r.category === 'Outros' ? (historyMap.get(r.description.toLowerCase()) ?? r.category) : r.category
+      const resolvedSubcategory = resolvedCategory === 'Outros'
+        ? r.subcategory
+        : (r.subcategory ?? subcategoryHistoryMap.get(`${r.description.toLowerCase()}|${resolvedCategory}`))
+      return { ...r, category: resolvedCategory, subcategory: resolvedSubcategory }
+    })
 
     // Corrige parcelas "fantasma": se já existe uma transação no mesmo "slot"
     // do plano (descrição + total de parcelas + número da parcela) com valor
@@ -893,7 +932,8 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
     for (const item of toUpdate) {
       await supabase.from('transactions').update({ category: reviewCategories[item.id] }).eq('id', item.id)
       // Categoria normal: regra automática cuida de propagar pro histórico e
-      // futuras importações (categoria especial nunca entra aqui).
+      // futuras importações (categoria especial nunca entra aqui). Transferência
+      // também entra normalmente (decisão revertida em 2026-07-08).
       const syncResult = await syncCategoryToRule(item.description, reviewCategories[item.id], categories)
       if (syncResult.error) console.error('[handleSaveReview] syncCategoryToRule falhou:', syncResult.error)
     }
@@ -1239,21 +1279,43 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Select
-                          value={reviewCategories[item.id] ?? 'Outros'}
-                          onValueChange={v => setReviewCategories(prev => ({ ...prev, [item.id]: v ?? 'Outros' }))}
-                        >
-                          <SelectTrigger className="h-8 text-xs w-36">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {categoriesForDate(categories, item.date)
-                              .filter(c => c.type === item.type || c.type === 'ambos')
-                              .map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                      {(() => {
+                        // Normais e isoladas em seletores separados, mesmo padrão do
+                        // resto do app — escolher em um desmarca o outro.
+                        const usable = categoriesForDate(categories, item.date).filter(c => c.type === item.type || c.type === 'ambos')
+                        const normalOpts = usable.filter(c => !c.special_dates || c.special_dates.length === 0)
+                        const specialOpts = usable.filter(c => (c.special_dates?.length ?? 0) > 0)
+                        const current = reviewCategories[item.id] ?? 'Outros'
+                        const isSpecial = specialOpts.some(c => c.name === current)
+                        return (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <Select
+                              value={isSpecial ? '' : current}
+                              onValueChange={v => { if (v) setReviewCategories(prev => ({ ...prev, [item.id]: v })) }}
+                            >
+                              <SelectTrigger className="h-8 text-xs w-32">
+                                <SelectValue placeholder="Categoria" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {normalOpts.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            {specialOpts.length > 0 && (
+                              <Select
+                                value={isSpecial ? current : ''}
+                                onValueChange={v => { if (v) setReviewCategories(prev => ({ ...prev, [item.id]: v })) }}
+                              >
+                                <SelectTrigger className="h-8 text-xs w-28">
+                                  <SelectValue placeholder="Isolada" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {specialOpts.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </div>
+                        )
+                      })()}
                     </div>
                   )
                 })}

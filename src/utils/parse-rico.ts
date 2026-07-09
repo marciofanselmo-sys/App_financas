@@ -112,6 +112,24 @@ export function parseRICOXLSX(buffer: ArrayBuffer): RICOData {
       continue
     }
 
+    // Renda Fixa: linha de dados tem nome descritivo completo em vez de ticker
+    // (ex: "CDB BANCO XP S.A. - JUL/2028") — nunca bate no regex de ticker
+    // abaixo, então ficava de fora da posição importada. Detecta pelo contexto
+    // (dentro da categoria "Renda Fixa") em vez de tentar casar um formato de
+    // nome. Sem rentabilidade/preço médio aqui: "Taxa a mercado" (ex: "100% CDI")
+    // não é uma rentabilidade percentual, mostrar como uma coloriria errado.
+    if (currentCategory === 'Renda Fixa' && !inProventos && cell0 && String(row[1] ?? '').includes('R$')) {
+      positions.push({
+        ticker: cell0,
+        value: parseBRL(row[1]),
+        allocation: String(row[2] ?? ''),
+        rentabilidade: '',
+        category: currentCategory,
+        subcategory: currentSubcategory,
+      })
+      continue
+    }
+
     // Linha de dados: ticker = letras maiúsculas + dígitos (CMIG4, XPML11, IVVB11...)
     if (/^[A-Z]{3,6}\d{1,2}$/.test(cell0) && row[1]) {
       if (inProventos) {
