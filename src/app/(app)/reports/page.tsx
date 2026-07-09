@@ -5,12 +5,15 @@ import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useRecurring } from '@/hooks/use-recurring'
 import { useRecurringDecisions } from '@/hooks/use-recurring-decisions'
+import { useSubcategories } from '@/hooks/use-subcategories'
 import { useBudgetPlan } from '@/hooks/use-budget-plan'
 import { useCategories } from '@/hooks/use-categories'
+import { buildDisplayItems } from '@/lib/recurring-groups'
+import { subKey } from '@/lib/plan-keys'
 import { calcHealthScore, scoreConfig } from '@/components/dashboard/summary-cards'
 import {
   Printer, CalendarDays, BarChart2, CreditCard, RefreshCw, CheckCircle,
-  ChevronLeft, ChevronRight, TrendingUp,
+  ChevronLeft, ChevronRight, TrendingUp, Tag,
 } from 'lucide-react'
 import { CategorySummary, PositionsBreakdown, ProventosBreakdown } from '@/components/investments/rico-position-summary'
 import { BoardIcon } from '@/components/transactions/board-icon'
@@ -99,6 +102,20 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
       }))
   }, [transactions, expenses, categories])
 
+  // Recorte transversal por subcategoria (Recorrências) — uma transação já
+  // conta na categoria dela em byCategory; isso é só informativo, não soma
+  // no total de despesas, mesmo princípio usado em /planning.
+  const bySubcategory = useMemo(() => {
+    const map: Record<string, number> = {}
+    transactions.filter(t => t.type === 'despesa' && t.group_label).forEach(t => {
+      const label = t.group_label as string
+      map[label] = (map[label] ?? 0) + Number(t.amount)
+    })
+    return Object.entries(map)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, amount]) => ({ name, amount, pct: expenses > 0 ? amount / expenses : 0 }))
+  }, [transactions, expenses])
+
   const categoryLimits = plan?.category_limits ?? {}
   const hasPlanned = Object.keys(categoryLimits).some(k => (categoryLimits[k] ?? 0) > 0)
 
@@ -170,6 +187,47 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
                   <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">100%</td>
                   {hasPlanned && <td />}
                 </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Gastos por subcategoria — recorte transversal, fora do total */}
+      {bySubcategory.length > 0 && (
+        <div>
+          <h3 className={secTitle}>Gastos por Subcategoria</h3>
+          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 -mt-2 mb-3">
+            Recorte transversal (Recorrências) — uma transação já conta na categoria dela acima; isso não soma no total de despesas.
+          </p>
+          <div className={table}>
+            <table className="w-full text-sm">
+              <thead className={thead}>
+                <tr>
+                  <th className={`text-left px-4 py-2.5 ${th}`}>Subcategoria</th>
+                  <th className={`text-right px-4 py-2.5 ${th}`}>Valor</th>
+                  <th className={`text-right px-4 py-2.5 ${th}`}>% Despesas</th>
+                  {hasPlanned && <th className={`text-right px-4 py-2.5 ${th}`}>Planejado</th>}
+                </tr>
+              </thead>
+              <tbody className={tdiv}>
+                {bySubcategory.map(sub => (
+                  <tr key={sub.name} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+                    <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300 print:text-slate-700">
+                      <div className="flex items-center gap-2">
+                        <Tag className="h-3 w-3 text-slate-400 shrink-0" />
+                        {sub.name}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(sub.amount)}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{fmtPct(sub.pct)}</td>
+                    {hasPlanned && (
+                      <td className="px-4 py-2.5 text-right text-slate-400 dark:text-slate-500 print:text-slate-400">
+                        {categoryLimits[subKey(sub.name)] ? fmt(Number(categoryLimits[subKey(sub.name)])) : '—'}
+                      </td>
+                    )}
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -262,6 +320,17 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
     const map: Record<string, number> = {}
     transactions.filter(t => t.type === 'despesa').forEach(t => {
       map[t.category] = (map[t.category] ?? 0) + Number(t.amount)
+    })
+    return Object.entries(map).sort((a, b) => b[1] - a[1])
+  }, [transactions])
+
+  // Recorte transversal por subcategoria — mesmo princípio do relatório
+  // Mensal: não soma no total, uma transação já conta na categoria dela.
+  const bySubcategory = useMemo(() => {
+    const map: Record<string, number> = {}
+    transactions.filter(t => t.type === 'despesa' && t.group_label).forEach(t => {
+      const label = t.group_label as string
+      map[label] = (map[label] ?? 0) + Number(t.amount)
     })
     return Object.entries(map).sort((a, b) => b[1] - a[1])
   }, [transactions])
@@ -372,6 +441,44 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
           </div>
         </div>
       )}
+
+      {bySubcategory.length > 0 && (
+        <div>
+          <h3 className={secTitle}>Despesas por Subcategoria no Ano</h3>
+          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 -mt-2 mb-3">
+            Recorte transversal (Recorrências) — uma transação já conta na categoria dela acima; isso não soma no total de despesas.
+          </p>
+          <div className={table}>
+            <table className="w-full text-sm">
+              <thead className={thead}>
+                <tr>
+                  <th className={`text-left px-4 py-2.5 ${th}`}>Subcategoria</th>
+                  <th className={`text-right px-4 py-2.5 ${th}`}>Total</th>
+                  <th className={`text-right px-4 py-2.5 ${th}`}>Média/mês</th>
+                  <th className={`text-right px-4 py-2.5 ${th}`}>% Total</th>
+                </tr>
+              </thead>
+              <tbody className={tdiv}>
+                {bySubcategory.map(([name, amount]) => (
+                  <tr key={name} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+                    <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300 print:text-slate-700">
+                      <div className="flex items-center gap-2">
+                        <Tag className="h-3 w-3 text-slate-400 shrink-0" />
+                        {name}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(amount)}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{fmt(amount / 12)}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">
+                      {totalExpenses > 0 ? fmtPct(amount / totalExpenses) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -457,44 +564,50 @@ function InstallmentsReport({ boardId, excludeBoardIds }: { boardId: string; exc
 }
 
 // ── Relatório de Gastos Fixos ─────────────────────────────────────────────────
-function buildGroupedItems(recurring: import('@/hooks/use-recurring').RecurringItem[]) {
-  const grouped = new Map<string, typeof recurring>()
-  const singles: typeof recurring = []
-  for (const r of recurring) {
-    const label = r.group_label?.trim() || null
-    if (label) { grouped.set(label, [...(grouped.get(label) ?? []), r]) }
-    else { singles.push(r) }
-  }
-  const items: { key: string; name: string; avgAmount: number; monthsCount: number; lastDate: string; category: string; isGroup: boolean; descriptions: string[] }[] = []
-  for (const [label, members] of grouped.entries()) {
-    const totalCount = members.reduce((s, r) => s + r.monthsCount, 0)
-    const avgAmount = totalCount > 0 ? members.reduce((s, r) => s + r.avgAmount * r.monthsCount, 0) / totalCount : 0
-    const lastDate = members.reduce((max, r) => r.lastDate > max ? r.lastDate : max, '')
-    items.push({ key: `group:${label}`, name: label, avgAmount, monthsCount: totalCount, lastDate, category: members[0]?.category ?? '', isGroup: true, descriptions: members.map(r => r.description) })
-  }
-  for (const r of singles) {
-    items.push({ key: r.description.toLowerCase(), name: r.description, avgAmount: r.avgAmount, monthsCount: r.monthsCount, lastDate: r.lastDate, category: r.category, isGroup: false, descriptions: [r.description] })
-  }
-  return items.sort((a, b) => b.monthsCount - a.monthsCount || b.avgAmount - a.avgAmount)
-}
-
 function FixedChargesReport({ boardId, excludeBoardIds }: { boardId: string; excludeBoardIds: string[] }) {
   const { recurring, loading } = useRecurring(
     boardId === 'all' ? excludeBoardIds : undefined,
     boardId !== 'all' ? boardId : undefined,
   )
   const { decisions, loading: decisionsLoading } = useRecurringDecisions()
+  const { categoriesByLabel, loading: subLoading } = useSubcategories()
+  const { categories } = useCategories()
+
+  function categoryColor(name: string): string {
+    return categories.find(c => c.name === name)?.color ?? '#94a3b8'
+  }
 
   // "Gastos Fixos" é só despesa — recorrência também detecta receita e
   // transferência (usadas em /fixos), mas esse relatório é especificamente de gasto.
+  // Mesmo motor de agrupamento/média de /fixos (buildDisplayItems) — antes esse
+  // relatório tinha uma cópia própria e desatualizada dessa lógica, com a
+  // mesma diluição de média de grupo já corrigida em /fixos em 2026-07-09.
   const despesaRecurring = useMemo(() => recurring.filter(r => r.type === 'despesa'), [recurring])
-  const allItems   = useMemo(() => buildGroupedItems(despesaRecurring), [despesaRecurring])
+  const allItems   = useMemo(() => buildDisplayItems(despesaRecurring, new Map()), [despesaRecurring])
   const confirmed  = allItems.filter(i => decisions.get(i.key) === 'confirmed')
   const pending    = allItems.filter(i => !decisions.has(i.key))
   const totalMonthly = confirmed.reduce((s, i) => s + i.avgAmount, 0)
   const fmtDate      = (d: string) => { const [y, m, day] = d.split('-'); return `${day}/${m}/${y}` }
 
-  if (loading || decisionsLoading) return <div className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</div>
+  // Card de grupo mostra as categorias reais atreladas à subcategoria em vez
+  // de item.category (que seria só a categoria do primeiro membro do grupo).
+  function categoryCell(item: ReturnType<typeof buildDisplayItems>[number]) {
+    if (!item.isGroup) return item.category
+    const cats = item.subcategory ? categoriesByLabel[item.subcategory] ?? [] : []
+    if (cats.length === 0) return '—'
+    return (
+      <div className="flex flex-wrap gap-1">
+        {cats.map(catName => (
+          <span key={catName} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700/50 text-[11px]">
+            <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: categoryColor(catName) }} />
+            {catName}
+          </span>
+        ))}
+      </div>
+    )
+  }
+
+  if (loading || decisionsLoading || subLoading) return <div className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</div>
 
   return (
     <div className="space-y-6">
@@ -539,7 +652,7 @@ function FixedChargesReport({ boardId, excludeBoardIds }: { boardId: string; exc
                         <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">{item.descriptions.join(', ')}</div>
                       )}
                     </td>
-                    <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400 print:text-slate-500 text-xs">{item.category}</td>
+                    <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400 print:text-slate-500 text-xs">{categoryCell(item)}</td>
                     <td className="px-4 py-2.5 text-center text-slate-500 dark:text-slate-400 print:text-slate-500">{item.monthsCount}x</td>
                     <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{fmtDate(item.lastDate)}</td>
                     <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(item.avgAmount)}</td>
@@ -579,7 +692,7 @@ function FixedChargesReport({ boardId, excludeBoardIds }: { boardId: string; exc
                         <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">{item.descriptions.join(', ')}</div>
                       )}
                     </td>
-                    <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400 print:text-slate-500 text-xs">{item.category}</td>
+                    <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400 print:text-slate-500 text-xs">{categoryCell(item)}</td>
                     <td className="px-4 py-2.5 text-center text-slate-500 dark:text-slate-400 print:text-slate-500">{item.monthsCount}</td>
                     <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(item.avgAmount)}</td>
                   </tr>

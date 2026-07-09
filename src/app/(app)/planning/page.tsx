@@ -7,19 +7,13 @@ import { useSubcategories } from '@/hooks/use-subcategories'
 import { useBudgetPlan } from '@/hooks/use-budget-plan'
 import { useRecurringMonthlyTotal } from '@/hooks/use-recurring-monthly-total'
 import { categoriesForDate } from '@/lib/special-category-filter'
+import { subKey, isSubKey, subName } from '@/lib/plan-keys'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CheckCircle, AlertTriangle, XCircle, TrendingUp, PiggyBank, Save, ClipboardList, Plus, X, Sparkles, RefreshCw, Tag } from 'lucide-react'
-
-// category_limits é um JSONB livre — subcategorias entram nele com essa chave
-// prefixada, pra não colidir com nomes de categoria e sem precisar de migração.
-const SUB_PREFIX = 'sub:'
-const subKey = (name: string) => `${SUB_PREFIX}${name}`
-const isSubKey = (key: string) => key.startsWith(SUB_PREFIX)
-const subName = (key: string) => key.slice(SUB_PREFIX.length)
 
 interface PlanTemplate {
   id: string
