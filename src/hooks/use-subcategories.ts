@@ -212,11 +212,26 @@ export function useSubcategories() {
 
     // Persiste a categoria na subcategoria — é essa lista que faz uma
     // transação nova (import, categorização manual) entrar sozinha no grupo
-    // depois, sem precisar passar de novo por aqui.
-    const currentCategories = sub.categories ?? []
-    if (!currentCategories.includes(categoryName)) {
-      const updatedCategories = [...currentCategories, categoryName].sort((a, b) => a.localeCompare(b, 'pt-BR'))
-      const updatedSubcategories = subcategories.map(s => s.name === label ? { ...s, categories: updatedCategories } : s)
+    // depois, sem precisar passar de novo por aqui. Uma categoria só pode
+    // pertencer a uma subcategoria por vez: como group_label é um campo
+    // único por transação, deixar a mesma categoria em duas subcategorias
+    // faria o resultado depender de qual sincronização rodou por último — em
+    // vez disso, tira a categoria de qualquer outra subcategoria que já a
+    // tinha antes de adicionar aqui (o chamador decide se confirma essa
+    // "mudança de dono" com o usuário antes de chegar até aqui).
+    const alreadyHere = (sub.categories ?? []).includes(categoryName)
+    const updatedSubcategories = subcategories.map(s => {
+      if (s.name === label) {
+        if (alreadyHere) return s
+        return { ...s, categories: [...(s.categories ?? []), categoryName].sort((a, b) => a.localeCompare(b, 'pt-BR')) }
+      }
+      if (s.categories?.includes(categoryName)) {
+        return { ...s, categories: s.categories.filter(c => c !== categoryName) }
+      }
+      return s
+    })
+    const changed = updatedSubcategories.some((s, i) => s !== subcategories[i])
+    if (changed) {
       const { error: metaError } = await supabase.auth.updateUser({ data: { subcategories: updatedSubcategories } })
       if (metaError) { console.error('Erro ao vincular categoria à subcategoria:', metaError); return false }
       setSubcategories(updatedSubcategories)
@@ -245,9 +260,15 @@ export function useSubcategories() {
     if (decisionError) console.error('Erro ao confirmar grupo automaticamente:', decisionError)
 
     setCategoriesByLabel(prev => {
-      const current = prev[label] ?? []
-      if (current.includes(categoryName)) return prev
-      return { ...prev, [label]: [...current, categoryName].sort((a, b) => a.localeCompare(b, 'pt-BR')) }
+      const next: Record<string, string[]> = {}
+      for (const [key, cats] of Object.entries(prev)) {
+        next[key] = key === label ? cats : cats.filter(c => c !== categoryName)
+      }
+      const current = next[label] ?? []
+      if (!current.includes(categoryName)) {
+        next[label] = [...current, categoryName].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+      }
+      return next
     })
     return true
   }

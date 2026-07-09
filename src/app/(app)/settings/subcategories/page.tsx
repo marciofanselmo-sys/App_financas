@@ -50,6 +50,8 @@ export default function SubcategoriesPage() {
   const [addCategoryError, setAddCategoryError] = useState('')
   const [addCategoryKey, setAddCategoryKey]     = useState(0)
   const [removingCategory, setRemovingCategory] = useState<string | null>(null)
+  const [moveConfirm, setMoveConfirm]           = useState<{ categoryName: string; fromLabel: string; toLabel: string } | null>(null)
+  const [moving, setMoving]                     = useState(false)
 
   const availableCategoriesToAdd: Category[] = useMemo(() => {
     if (!editing) return []
@@ -69,12 +71,35 @@ export default function SubcategoriesPage() {
 
   async function handleAddCategoryToGroup(categoryName: string) {
     if (!editing) return
+    // Se a categoria já pertence a outra subcategoria, confirma antes de
+    // mover — sem isso, as duas achariam que são donas dela e o resultado
+    // dependeria de qual sincronização rodasse por último.
+    const owner = subcategories.find(s => s.name !== editing.name && s.type === editType && s.categories?.includes(categoryName))
+    if (owner) {
+      setMoveConfirm({ categoryName, fromLabel: owner.name, toLabel: editing.name })
+      setAddCategoryKey(k => k + 1)
+      return
+    }
+    await doAssignCategoryToGroup(categoryName)
+  }
+
+  async function doAssignCategoryToGroup(categoryName: string) {
+    if (!editing) return
     setAddingCategory(true)
     setAddCategoryError('')
     const ok = await assignCategoryToSubcategory(editing.name, categoryName)
     if (!ok) setAddCategoryError('Erro ao adicionar categoria. Tente novamente.')
     setAddingCategory(false)
     setAddCategoryKey(k => k + 1)
+  }
+
+  async function confirmMoveCategory() {
+    if (!moveConfirm) return
+    setMoving(true)
+    const ok = await assignCategoryToSubcategory(moveConfirm.toLabel, moveConfirm.categoryName)
+    if (!ok) setAddCategoryError('Erro ao mover categoria. Tente novamente.')
+    setMoveConfirm(null)
+    setMoving(false)
   }
 
   async function handleRemoveCategoryFromGroup(categoryName: string) {
@@ -388,6 +413,24 @@ export default function SubcategoriesPage() {
           })}
         </div>
       )}
+
+      {/* Confirm mover categoria de outra subcategoria */}
+      <Dialog open={!!moveConfirm} onOpenChange={v => { if (!v) setMoveConfirm(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Mover categoria de subcategoria</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-500 dark:text-slate-400 pt-2">
+            A categoria <strong>&ldquo;{moveConfirm?.categoryName}&rdquo;</strong> já está vinculada à subcategoria <strong>&ldquo;{moveConfirm?.fromLabel}&rdquo;</strong>. Mover para <strong>&ldquo;{moveConfirm?.toLabel}&rdquo;</strong>? As transações dessa categoria passam a contar só no grupo novo.
+          </p>
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" onClick={() => setMoveConfirm(null)} className="flex-1">Cancelar</Button>
+            <Button onClick={confirmMoveCategory} disabled={moving} className="flex-1 bg-violet-600 hover:bg-violet-700">
+              {moving ? 'Movendo...' : 'Mover'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirm delete */}
       <Dialog open={!!deleteTarget} onOpenChange={v => { if (!v) setDeleteTarget(null) }}>
