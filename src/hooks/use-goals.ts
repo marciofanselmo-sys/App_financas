@@ -32,6 +32,7 @@ function toRow(goal: Partial<Goal>) {
   if (goal.currentAmount !== undefined) row.current_amount = goal.currentAmount
   if (goal.deadline !== undefined)      row.deadline = goal.deadline
   if (goal.color !== undefined)         row.color = goal.color
+  if (goal.created_at !== undefined)    row.created_at = goal.created_at
   if ('lastImport' in goal)             row.last_import = goal.lastImport ?? null
   return row
 }
@@ -57,32 +58,41 @@ export function useGoals() {
 
   useEffect(() => { fetchGoals() }, [])
 
-  async function createGoal(goal: Omit<Goal, 'id' | 'user_id' | 'created_at'>) {
+  // created_at é editável pelo usuário (data "meta iniciada em", usada no
+  // cálculo de ritmo) — se não vier informado, usa o momento da criação, igual
+  // sempre foi.
+  async function createGoal(goal: Omit<Goal, 'id' | 'user_id' | 'created_at'> & { created_at?: string }) {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
     const id = uid()
-    const created_at = new Date().toISOString()
+    const created_at = goal.created_at ?? new Date().toISOString()
     const row = {
       id,
       user_id: user.id,
-      created_at,
       ...toRow(goal),
+      created_at,
     }
     await supabase.from('goals').insert(row)
     setGoals(prev => [...prev, { ...goal, id, user_id: user.id, created_at }])
   }
 
-  async function updateGoal(id: string, data: Partial<Omit<Goal, 'id' | 'user_id' | 'created_at'>>) {
+  async function updateGoal(id: string, data: Partial<Omit<Goal, 'id' | 'user_id'>>) {
     const supabase = createClient()
-    await supabase.from('goals').update(toRow(data)).eq('id', id)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    // Filtro por user_id explícito, não só RLS — defesa em profundidade,
+    // no mesmo padrão do resto do app (ex: use-recurring-decisions.ts).
+    await supabase.from('goals').update(toRow(data)).eq('id', id).eq('user_id', user.id)
     setGoals(prev => prev.map(g => (g.id === id ? { ...g, ...data } : g)))
   }
 
   async function deleteGoal(id: string) {
     const supabase = createClient()
-    await supabase.from('goals').delete().eq('id', id)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    await supabase.from('goals').delete().eq('id', id).eq('user_id', user.id)
     setGoals(prev => prev.filter(g => g.id !== id))
   }
 

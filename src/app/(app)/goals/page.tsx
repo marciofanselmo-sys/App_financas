@@ -1,21 +1,20 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { useGoals } from '@/hooks/use-goals'
+import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { Goal, GoalType, GOAL_COLORS } from '@/types'
-import { parseRICOXLSX, RICOData } from '@/utils/parse-rico'
-import { parseOFXBalance, OFXBalance } from '@/utils/parse-ofx-balance'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
-  Plus, Pencil, Trash2, Target, Trophy, Star, Upload,
-  ChevronDown, ChevronUp, AlertCircle, RefreshCw,
+  Plus, Pencil, Trash2, Target, Trophy, Star, RefreshCw,
   PiggyBank, TrendingUp, Car, Plane, CreditCard, Home,
-  CheckCircle, Clock, AlertTriangle, Building2, BarChart2, Flame,
+  CheckCircle, Clock, AlertTriangle, Flame, Link2,
 } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
+import { InfoBox } from '@/components/ui/info-box'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
@@ -75,15 +74,12 @@ function milestone(pct: number): { label: string; color: string } | null {
   return null
 }
 
-function rentColor(value: string): string {
-  const n = parseFloat(value?.replace('%', '').replace(',', '.'))
-  if (isNaN(n)) return 'text-slate-400'
-  return n >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500'
-}
-
 // ── Form ──────────────────────────────────────────────────────────────────────
 const currentYear = new Date().getFullYear()
 const YEARS  = Array.from({ length: 11 }, (_, i) => currentYear + i)
+// Meta pode ter começado no passado (ex: já vinha guardando antes de cadastrar
+// no app) — diferente do prazo (YEARS), que só olha pra frente.
+const START_YEARS = Array.from({ length: 16 }, (_, i) => currentYear - 15 + i)
 const MONTHS = [
   { value: '01', label: 'Janeiro'   }, { value: '02', label: 'Fevereiro' },
   { value: '03', label: 'Março'     }, { value: '04', label: 'Abril'     },
@@ -97,17 +93,29 @@ interface FormState {
   name: string
   type: GoalType
   targetAmount: string
+  // Valor atual vem OU de uma conta de investimento vinculada, OU digitado à
+  // mão — nunca os dois ao mesmo tempo (mesma lógica de exclusão mútua usada
+  // em categoria normal/isolada no resto do app).
+  linkMode: 'manual' | 'board'
+  linkedBoardId: string
   currentAmount: string
+  startMonth: string
+  startYear: string
   deadlineMonth: string
   deadlineYear: string
   color: string
 }
 
+const now0 = new Date()
 const EMPTY_FORM: FormState = {
   name: '',
   type: 'personalizada',
   targetAmount: '',
+  linkMode: 'manual',
+  linkedBoardId: '',
   currentAmount: '',
+  startMonth: String(now0.getMonth() + 1).padStart(2, '0'),
+  startYear: String(currentYear),
   deadlineMonth: String(new Date().getMonth() + 2).padStart(2, '0'),
   deadlineYear: String(currentYear + 1),
   color: GOAL_COLORS[0],
@@ -116,32 +124,66 @@ const EMPTY_FORM: FormState = {
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function GoalsPage() {
   const { goals, loading, createGoal, updateGoal, deleteGoal } = useGoals()
+  const { boards } = useTransactionBoards()
   const [formOpen, setFormOpen]       = useState(false)
   const [editing, setEditing]         = useState<Goal | null>(null)
   const [form, setForm]               = useState<FormState>(EMPTY_FORM)
   const [deleteTarget, setDeleteTarget] = useState<Goal | null>(null)
-  const [expandedPos, setExpandedPos] = useState<Set<string>>(new Set())
 
-  // Import state
-  const [importingFor, setImportingFor]   = useState<Goal | null>(null)
-  const [importTypeOpen, setImportTypeOpen] = useState(false)   // format selector
-  const [importFormat, setImportFormat]   = useState<'rico' | 'ofx' | null>(null)
-  const [ricoPreview, setRicoPreview]     = useState<RICOData | null>(null)
-  const [ofxPreview, setOfxPreview]       = useState<OFXBalance | null>(null)
-  const [importError, setImportError]     = useState('')
-  const [importLoading, setImportLoading] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
+  // Puxar patrimônio de uma conta de investimento existente (Opção A, 2026-07-09)
+  // — só o valor + um link leve pra conta, sem trazer posições/proventos pro
+  // card da Meta (por pedido explícito do usuário). É o único jeito de atualizar
+  // o valor atual por importação — extrato RICO/OFX direto na Meta foi removido
+  // (2026-07-09), por pedido também.
+  const [importingFor, setImportingFor]       = useState<Goal | null>(null)
+  const [boardPickerOpen, setBoardPickerOpen] = useState(false)
+  const investmentBoardsWithPosition = boards.filter(b => b.is_investment && b.last_position_import)
+
+  function pullFromBoard(goal: Goal, board: (typeof boards)[number]) {
+    if (!board.last_position_import) return
+    updateGoal(goal.id, {
+      currentAmount: board.last_position_import.patrimonio,
+      lastImport: {
+        source: 'board',
+        importedAt: new Date().toISOString(),
+        patrimonio: board.last_position_import.patrimonio,
+        boardId: board.id,
+        boardName: board.name,
+      },
+    })
+    setBoardPickerOpen(false)
+    setImportingFor(null)
+  }
+
+  function openBoardPicker(goal: Goal) {
+    setImportingFor(goal)
+    setBoardPickerOpen(true)
+  }
+
+  // Atualização rápida (1 clique) quando a meta já está vinculada a uma conta —
+  // sem reabrir o seletor. Se a conta foi excluída, cai pra abrir o seletor de novo.
+  function quickRefreshFromBoard(goal: Goal) {
+    const board = boards.find(b => b.id === goal.lastImport?.boardId)
+    if (!board?.last_position_import) { openBoardPicker(goal); return }
+    pullFromBoard(goal, board)
+  }
 
   function openCreate() { setEditing(null); setForm(EMPTY_FORM); setFormOpen(true) }
 
   function openEdit(goal: Goal) {
     const [year, month] = goal.deadline.split('-')
+    const created = new Date(goal.created_at)
+    const linkedBoardId = goal.lastImport?.source === 'board' ? goal.lastImport.boardId ?? '' : ''
     setEditing(goal)
     setForm({
       name: goal.name,
       type: goal.type ?? 'personalizada',
       targetAmount: String(goal.targetAmount),
+      linkMode: linkedBoardId ? 'board' : 'manual',
+      linkedBoardId,
       currentAmount: String(goal.currentAmount),
+      startMonth: String(created.getMonth() + 1).padStart(2, '0'),
+      startYear: String(created.getFullYear()),
       deadlineMonth: month,
       deadlineYear: year,
       color: goal.color,
@@ -152,111 +194,46 @@ export default function GoalsPage() {
   function handleSave(e: React.FormEvent) {
     e.preventDefault()
     const target  = parseFloat(form.targetAmount.replace(',', '.'))
-    const current = parseFloat(form.currentAmount.replace(',', '.')) || 0
     const deadline = `${form.deadlineYear}-${form.deadlineMonth}`
+    // Preserva hora/minuto originais ao editar (só a mudança de mês/ano
+    // importa pro cálculo de ritmo); usa o momento atual ao criar.
+    const baseDate = editing ? new Date(editing.created_at) : new Date()
+    const created_at = new Date(
+      Number(form.startYear), Number(form.startMonth) - 1, baseDate.getDate(),
+      baseDate.getHours(), baseDate.getMinutes(), baseDate.getSeconds(),
+    ).toISOString()
+
+    // Valor atual: vinculado a uma conta de investimento, ou digitado à mão.
+    const linkedBoard = form.linkMode === 'board'
+      ? investmentBoardsWithPosition.find(b => b.id === form.linkedBoardId)
+      : undefined
+    const current = linkedBoard?.last_position_import
+      ? linkedBoard.last_position_import.patrimonio
+      : parseFloat(form.currentAmount.replace(',', '.')) || 0
+    const lastImport = linkedBoard?.last_position_import
+      ? {
+          source: 'board' as const,
+          importedAt: new Date().toISOString(),
+          patrimonio: linkedBoard.last_position_import.patrimonio,
+          boardId: linkedBoard.id,
+          boardName: linkedBoard.name,
+        }
+      // Trocou pra manual (ou não escolheu conta nenhuma) — limpa o vínculo
+      // anterior, senão o card continuaria mostrando "vinculada a X".
+      : undefined
+
     if (editing) {
-      updateGoal(editing.id, { name: form.name, type: form.type, targetAmount: target, currentAmount: current, deadline, color: form.color })
+      updateGoal(editing.id, { name: form.name, type: form.type, targetAmount: target, currentAmount: current, deadline, color: form.color, created_at, lastImport })
     } else {
-      createGoal({ name: form.name, type: form.type, targetAmount: target, currentAmount: current, deadline, color: form.color })
+      createGoal({ name: form.name, type: form.type, targetAmount: target, currentAmount: current, deadline, color: form.color, created_at, lastImport })
     }
     setFormOpen(false)
-  }
-
-  function togglePos(id: string) {
-    setExpandedPos(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
-  }
-
-  function openImport(goal: Goal) {
-    setImportingFor(goal)
-    setRicoPreview(null)
-    setOfxPreview(null)
-    setImportError('')
-    setImportFormat(null)
-    setImportTypeOpen(true)
-  }
-
-  function selectFormat(fmt: 'rico' | 'ofx') {
-    setImportFormat(fmt)
-    setImportTypeOpen(false)
-    if (fileRef.current) {
-      fileRef.current.accept = fmt === 'rico' ? '.xlsx,.xls' : '.ofx,.qfx,.OFX,.QFX'
-      fileRef.current.value = ''
-    }
-    setTimeout(() => fileRef.current?.click(), 100)
-  }
-
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setImportLoading(true)
-    setImportError('')
-
-    if (importFormat === 'rico') {
-      const reader = new FileReader()
-      reader.onload = ev => {
-        try {
-          setRicoPreview(parseRICOXLSX(ev.target?.result as ArrayBuffer))
-        } catch (err) {
-          setImportError(err instanceof Error ? err.message : 'Erro ao ler o arquivo.')
-          setImportingFor(null)
-        } finally {
-          setImportLoading(false)
-          if (fileRef.current) fileRef.current.value = ''
-        }
-      }
-      reader.onerror = () => { setImportError('Erro ao ler o arquivo.'); setImportLoading(false); setImportingFor(null) }
-      reader.readAsArrayBuffer(file)
-    } else {
-      const reader = new FileReader()
-      reader.onload = ev => {
-        try {
-          const text = ev.target?.result as string
-          setOfxPreview(parseOFXBalance(text))
-        } catch (err) {
-          setImportError(err instanceof Error ? err.message : 'Erro ao ler o arquivo OFX.')
-          setImportingFor(null)
-        } finally {
-          setImportLoading(false)
-          if (fileRef.current) fileRef.current.value = ''
-        }
-      }
-      reader.onerror = () => { setImportError('Erro ao ler o arquivo.'); setImportLoading(false); setImportingFor(null) }
-      reader.readAsText(file, 'latin1')
-    }
-  }
-
-  function confirmRICO() {
-    if (!importingFor || !ricoPreview) return
-    updateGoal(importingFor.id, {
-      currentAmount: ricoPreview.patrimonio,
-      lastImport: { ...ricoPreview, source: 'rico' },
-    })
-    setImportingFor(null); setRicoPreview(null)
-  }
-
-  function confirmOFX() {
-    if (!importingFor || !ofxPreview) return
-    updateGoal(importingFor.id, {
-      currentAmount: ofxPreview.ledgerBalance,
-      lastImport: {
-        source: 'ofx',
-        importedAt: new Date().toISOString(),
-        patrimonio: ofxPreview.ledgerBalance,
-        bankName: ofxPreview.bankName,
-        accountType: ofxPreview.accountType,
-        availBalance: ofxPreview.availBalance,
-        balanceDate: ofxPreview.balanceDate,
-      },
-    })
-    setImportingFor(null); setOfxPreview(null)
   }
 
   if (loading) return null
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
-      <input ref={fileRef} type="file" className="hidden" onChange={handleFileChange} />
-
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div>
@@ -270,11 +247,14 @@ export default function GoalsPage() {
         </Button>
       </div>
 
-      {importError && (
-        <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
-          <AlertCircle className="h-4 w-4 shrink-0" /> {importError}
-        </div>
-      )}
+      <InfoBox id="goals-vincular-conta">
+        <p className="text-blue-600 dark:text-blue-400">
+          O valor atual de uma meta pode vir de uma <strong>conta de investimento vinculada</strong>, em vez de digitado à mão. Pra isso funcionar, primeiro crie a conta em <strong>Investimentos</strong> e importe a posição dela (o patrimônio precisa aparecer no card da conta) — só depois ela fica disponível pra vincular aqui.
+        </p>
+        <p className="text-blue-600 dark:text-blue-400">
+          Vinculada, a meta guarda uma referência leve à conta (não copia posições nem proventos) — o valor só atualiza quando você clicar em &ldquo;Atualizar valor&rdquo;, nunca sozinho.
+        </p>
+      </InfoBox>
 
       {/* Empty state */}
       {goals.length === 0 ? (
@@ -343,6 +323,11 @@ export default function GoalsPage() {
                         {ms && <p className={`text-xs font-medium mt-0.5 ${ms.color}`}>{ms.label}</p>}
                         {imp && (
                           <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                            {imp.source === 'board' && (
+                              <span className="inline-flex items-center gap-1 text-violet-500 dark:text-violet-400 font-medium mr-1">
+                                <Link2 className="h-3 w-3" /> {imp.boardName} ·
+                              </span>
+                            )}
                             Atualizado em {format(new Date(imp.importedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                           </p>
                         )}
@@ -372,39 +357,6 @@ export default function GoalsPage() {
                       <span>{fmt(remaining)} restando</span>
                     </div>
                   </div>
-
-                  {/* Import breakdown */}
-                  {imp && (imp.source === 'rico' || !imp.source) && imp.totalInvestido !== undefined && (
-                    <div className="grid grid-cols-3 gap-2 mb-4 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl text-center">
-                      <div>
-                        <p className="text-xs text-slate-400 dark:text-slate-500">Investido</p>
-                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{fmt(imp.totalInvestido!)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-400 dark:text-slate-500">Saldo livre</p>
-                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{fmt(imp.saldoDisponivel!)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-400 dark:text-slate-500">Patrimônio</p>
-                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{fmt(imp.patrimonio)}</p>
-                      </div>
-                    </div>
-                  )}
-                  {imp && imp.source === 'ofx' && (
-                    <div className="flex items-center gap-3 mb-4 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl">
-                      <div className="h-8 w-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
-                        <Building2 className="h-4 w-4 text-blue-500" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{imp.bankName}</p>
-                        <p className="text-xs text-slate-400 dark:text-slate-500">{imp.accountType === 'INVESTMENT' ? 'Investimento' : imp.accountType === 'SAVINGS' ? 'Poupança' : 'Conta corrente'}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-slate-400 dark:text-slate-500">Saldo</p>
-                        <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{fmt(imp.patrimonio)}</p>
-                      </div>
-                    </div>
-                  )}
 
                   {/* Rodapé: mensal + prazo */}
                   <div className="flex items-center justify-between gap-3 flex-wrap pt-3 border-t border-slate-100 dark:border-slate-700">
@@ -446,68 +398,29 @@ export default function GoalsPage() {
                       )}
                     </div>
 
-                    <div className="flex gap-2">
-                      {imp && imp.positions && imp.positions.length > 0 && (
-                        <Button variant="ghost" size="sm" className="text-xs gap-1 h-8 text-slate-500" onClick={() => togglePos(goal.id)}>
-                          {expandedPos.has(goal.id) ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                          {imp.positions.length} ativos
+                    <div className="flex gap-2 flex-wrap">
+                      {imp?.source === 'board' && (
+                        <Button
+                          size="sm" variant="ghost" className="text-xs gap-1.5 h-8 text-slate-500"
+                          title={`Atualizar com o patrimônio atual de "${imp.boardName}"`}
+                          onClick={() => quickRefreshFromBoard(goal)}
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                          Atualizar valor
                         </Button>
                       )}
-                      <Button
-                        size="sm" variant="outline" className="text-xs gap-1.5 h-8"
-                        style={{ borderColor: goal.color + '60', color: goal.color }}
-                        disabled={importLoading}
-                        onClick={() => openImport(goal)}
-                      >
-                        {importLoading && importingFor?.id === goal.id
-                          ? <RefreshCw className="h-3 w-3 animate-spin" />
-                          : <Upload className="h-3 w-3" />
-                        }
-                        {imp ? 'Atualizar extrato' : 'Importar extrato'}
-                      </Button>
+                      {investmentBoardsWithPosition.length > 0 && (
+                        <Button
+                          size="sm" variant="outline" className="text-xs gap-1.5 h-8 border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400"
+                          onClick={() => openBoardPicker(goal)}
+                        >
+                          <Link2 className="h-3 w-3" />
+                          {imp?.source === 'board' ? 'Trocar conta' : 'Importar Patrimônio'}
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
-
-                {/* Posições RICO expandidas */}
-                {expandedPos.has(goal.id) && imp && imp.positions && imp.positions.length > 0 && (() => {
-                  const positions = imp.positions!
-                  const posRow = (pos: import('@/types').RICOPosition) => (
-                    <div key={pos.ticker} className="flex items-center gap-2 text-sm">
-                      <span className="font-mono font-semibold text-xs bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-2 py-0.5 rounded w-16 text-center shrink-0">{pos.ticker}</span>
-                      {pos.quantity && <span className="text-xs text-slate-400 shrink-0">{pos.quantity} un.</span>}
-                      <span className="text-xs text-slate-400 shrink-0">{pos.allocation}</span>
-                      <span className={`text-xs font-medium shrink-0 ml-auto ${rentColor(pos.rentabilidade)}`}>{pos.rentabilidade}</span>
-                      <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 shrink-0">{fmt(pos.value)}</span>
-                    </div>
-                  )
-                  const cats = Array.from(new Set(positions.map(p => p.category).filter(Boolean)))
-                  if (cats.length === 0) return (
-                    <div className="border-t border-slate-100 dark:border-slate-700 px-5 py-4">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Posições</p>
-                      <div className="space-y-2">{positions.map(posRow)}</div>
-                    </div>
-                  )
-                  return (
-                    <div className="border-t border-slate-100 dark:border-slate-700 px-5 py-4 space-y-4">
-                      {cats.map(cat => {
-                        const catPos = positions.filter(p => p.category === cat)
-                        const subs   = Array.from(new Set(catPos.map(p => p.subcategory))).filter(Boolean)
-                        return (
-                          <div key={cat}>
-                            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">{cat}</p>
-                            {subs.length > 0 ? subs.map(sub => (
-                              <div key={sub} className="mb-3">
-                                {subs.length > 1 && <p className="text-xs text-slate-400 mb-1.5 pl-1">{sub}</p>}
-                                <div className="space-y-2">{catPos.filter(p => p.subcategory === sub).map(posRow)}</div>
-                              </div>
-                            )) : <div className="space-y-2">{catPos.map(posRow)}</div>}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )
-                })()}
               </div>
             )
           })}
@@ -558,8 +471,71 @@ export default function GoalsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="goal-current">Valor atual (R$)</Label>
-              <Input id="goal-current" type="number" min="0" step="0.01" placeholder="Ex: 2500" value={form.currentAmount} onChange={e => setForm(f => ({ ...f, currentAmount: e.target.value }))} />
+              <Label>Valor atual</Label>
+              {investmentBoardsWithPosition.length > 0 ? (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, linkMode: 'board' }))}
+                      className={`py-2 px-3 rounded-lg text-xs font-medium border transition-colors ${
+                        form.linkMode === 'board'
+                          ? 'bg-violet-600 text-white border-violet-600'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      Vincular conta
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, linkMode: 'manual' }))}
+                      className={`py-2 px-3 rounded-lg text-xs font-medium border transition-colors ${
+                        form.linkMode === 'manual'
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      Valor manual
+                    </button>
+                  </div>
+                  {form.linkMode === 'board' ? (
+                    <div className="space-y-1.5 pt-1">
+                      {investmentBoardsWithPosition.map(board => (
+                        <button
+                          key={board.id}
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, linkedBoardId: board.id }))}
+                          className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-xl border-2 text-left transition-colors ${
+                            form.linkedBoardId === board.id
+                              ? 'border-violet-400 dark:border-violet-500 bg-violet-50 dark:bg-violet-900/20'
+                              : 'border-slate-200 dark:border-slate-600 hover:border-violet-300 dark:hover:border-violet-600'
+                          }`}
+                        >
+                          <span className="font-medium text-sm text-slate-800 dark:text-slate-100">{board.name}</span>
+                          <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{fmt(board.last_position_import!.patrimonio)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <Input id="goal-current" type="number" min="0" step="0.01" placeholder="Ex: 2500" value={form.currentAmount} onChange={e => setForm(f => ({ ...f, currentAmount: e.target.value }))} className="mt-1.5" />
+                  )}
+                </>
+              ) : (
+                <Input id="goal-current" type="number" min="0" step="0.01" placeholder="Ex: 2500" value={form.currentAmount} onChange={e => setForm(f => ({ ...f, currentAmount: e.target.value }))} />
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Meta iniciada em</Label>
+              <p className="text-xs text-slate-400 dark:text-slate-500 -mt-1">Usado pra calcular seu ritmo atual — mude se já vinha guardando antes de cadastrar aqui.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <select value={form.startMonth} onChange={e => setForm(f => ({ ...f, startMonth: e.target.value }))} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100">
+                  {MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+                <select value={form.startYear} onChange={e => setForm(f => ({ ...f, startYear: e.target.value }))} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100">
+                  {START_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -594,126 +570,22 @@ export default function GoalsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* FORMAT SELECTOR */}
-      <Dialog open={importTypeOpen} onOpenChange={v => { if (!v) { setImportTypeOpen(false); setImportingFor(null) } }}>
+      {/* BOARD PICKER — puxa só o patrimônio, sem posições/proventos */}
+      <Dialog open={boardPickerOpen} onOpenChange={v => { if (!v) { setBoardPickerOpen(false); setImportingFor(null) } }}>
         <DialogContent className="sm:max-w-sm">
-          <DialogHeader><DialogTitle>Qual tipo de extrato?</DialogTitle></DialogHeader>
-          <div className="space-y-3 pt-2">
-            <button
-              onClick={() => selectFormat('rico')}
-              className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-slate-200 dark:border-slate-600 hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all text-left group"
-            >
-              <div className="h-10 w-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 group-hover:bg-blue-200 dark:group-hover:bg-blue-800/40 transition-colors">
-                <BarChart2 className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div>
-                <p className="font-semibold text-slate-800 dark:text-slate-100 text-sm">RICO / XP Investimentos</p>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Arquivo PosicaoDetalhada.xlsx — mostra carteira detalhada</p>
-              </div>
-            </button>
-            <button
-              onClick={() => selectFormat('ofx')}
-              className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-slate-200 dark:border-slate-600 hover:border-emerald-400 dark:hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all text-left group"
-            >
-              <div className="h-10 w-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0 group-hover:bg-emerald-200 dark:group-hover:bg-emerald-800/40 transition-colors">
-                <Building2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <div>
-                <p className="font-semibold text-slate-800 dark:text-slate-100 text-sm">Extrato bancário OFX</p>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Itaú, Bradesco, BB, Santander, Caixa, Inter… (.ofx, .qfx)</p>
-              </div>
-            </button>
+          <DialogHeader><DialogTitle>Puxar de qual conta?</DialogTitle></DialogHeader>
+          <div className="space-y-2 pt-2">
+            {investmentBoardsWithPosition.map(board => (
+              <button
+                key={board.id}
+                onClick={() => importingFor && pullFromBoard(importingFor, board)}
+                className="w-full flex items-center justify-between gap-3 p-3 rounded-xl border-2 border-slate-200 dark:border-slate-600 hover:border-violet-400 dark:hover:border-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-all text-left"
+              >
+                <span className="font-medium text-sm text-slate-800 dark:text-slate-100">{board.name}</span>
+                <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{fmt(board.last_position_import!.patrimonio)}</span>
+              </button>
+            ))}
           </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* RICO PREVIEW */}
-      <Dialog open={!!ricoPreview} onOpenChange={v => { if (!v) { setRicoPreview(null); setImportingFor(null) } }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader><DialogTitle>Confirmar importação RICO</DialogTitle></DialogHeader>
-          {ricoPreview && (
-            <div className="space-y-4 pt-1">
-              <p className="text-sm text-slate-500 dark:text-slate-400">Meta: <strong className="text-slate-700 dark:text-slate-200">{importingFor?.name}</strong></p>
-              <div className="space-y-2 bg-slate-50 dark:bg-slate-700/50 rounded-xl p-4">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">Total investido em ativos</span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-200">{fmt(ricoPreview.totalInvestido)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">Saldo disponível</span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-200">{fmt(ricoPreview.saldoDisponivel)}</span>
-                </div>
-                <div className="h-px bg-slate-200 dark:bg-slate-600 my-1" />
-                <div className="flex justify-between text-sm">
-                  <span className="font-medium text-slate-700 dark:text-slate-200">Patrimônio total</span>
-                  <span className="font-bold text-slate-800 dark:text-slate-100">{fmt(ricoPreview.patrimonio)}</span>
-                </div>
-              </div>
-              <p className="text-xs text-slate-400 dark:text-slate-500">O progresso será atualizado com o patrimônio total ({fmt(ricoPreview.patrimonio)}).</p>
-              {ricoPreview.positions.length > 0 && (
-                <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{ricoPreview.positions.length} posições</p>
-                  {ricoPreview.positions.map(p => (
-                    <div key={p.ticker} className="flex justify-between text-xs">
-                      <span className="font-mono font-semibold text-slate-600 dark:text-slate-300">{p.ticker}</span>
-                      <span className={rentColor(p.rentabilidade)}>{p.rentabilidade}</span>
-                      <span className="text-slate-600 dark:text-slate-300">{fmt(p.value)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="flex gap-2 pt-1">
-                <Button variant="outline" onClick={() => { setRicoPreview(null); setImportingFor(null) }} className="flex-1">Cancelar</Button>
-                <Button onClick={confirmRICO} className="flex-1">Confirmar</Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* OFX PREVIEW */}
-      <Dialog open={!!ofxPreview} onOpenChange={v => { if (!v) { setOfxPreview(null); setImportingFor(null) } }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader><DialogTitle>Confirmar extrato bancário</DialogTitle></DialogHeader>
-          {ofxPreview && (
-            <div className="space-y-4 pt-1">
-              <p className="text-sm text-slate-500 dark:text-slate-400">Meta: <strong className="text-slate-700 dark:text-slate-200">{importingFor?.name}</strong></p>
-              <div className="space-y-2 bg-slate-50 dark:bg-slate-700/50 rounded-xl p-4">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">Banco</span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-200">{ofxPreview.bankName}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">Tipo de conta</span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-200">
-                    {ofxPreview.accountType === 'INVESTMENT' ? 'Investimento' : ofxPreview.accountType === 'SAVINGS' ? 'Poupança' : 'Conta corrente'}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">Data do extrato</span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-200">
-                    {ofxPreview.balanceDate ? new Date(ofxPreview.balanceDate + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}
-                  </span>
-                </div>
-                {ofxPreview.availBalance !== undefined && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500 dark:text-slate-400">Saldo disponível</span>
-                    <span className="font-semibold text-slate-700 dark:text-slate-200">{fmt(ofxPreview.availBalance)}</span>
-                  </div>
-                )}
-                <div className="h-px bg-slate-200 dark:bg-slate-600 my-1" />
-                <div className="flex justify-between text-sm">
-                  <span className="font-medium text-slate-700 dark:text-slate-200">Saldo contábil</span>
-                  <span className="font-bold text-slate-800 dark:text-slate-100">{fmt(ofxPreview.ledgerBalance)}</span>
-                </div>
-              </div>
-              <p className="text-xs text-slate-400 dark:text-slate-500">O progresso será atualizado com o saldo contábil ({fmt(ofxPreview.ledgerBalance)}).</p>
-              <div className="flex gap-2 pt-1">
-                <Button variant="outline" onClick={() => { setOfxPreview(null); setImportingFor(null) }} className="flex-1">Cancelar</Button>
-                <Button onClick={confirmOFX} className="flex-1">Confirmar</Button>
-              </div>
-            </div>
-          )}
         </DialogContent>
       </Dialog>
 
