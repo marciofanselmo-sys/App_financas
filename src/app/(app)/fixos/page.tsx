@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRecurring } from '@/hooks/use-recurring'
 import { useRecurringDecisions } from '@/hooks/use-recurring-decisions'
 import { useSubcategories } from '@/hooks/use-subcategories'
+import { useCategories } from '@/hooks/use-categories'
 import { createClient } from '@/lib/supabase/client'
 import { DisplayItem, buildDisplayItems } from '@/lib/recurring-groups'
 import { TransactionType } from '@/types'
@@ -121,11 +122,13 @@ function SubcategoryDropdown({
 
 // ── Card de item ──────────────────────────────────────────────────────────────
 function ItemCard({
-  item, decision, subcategories, onConfirm, onIgnore, onUndo, onSelectSubcategory,
+  item, decision, subcategories, groupCategories, categoryColor, onConfirm, onIgnore, onUndo, onSelectSubcategory,
 }: {
   item: DisplayItem
   decision: 'confirmed' | 'ignored' | null
   subcategories: string[]
+  groupCategories: string[]
+  categoryColor: (name: string) => string
   onConfirm: () => void
   onIgnore: () => void
   onUndo: () => void
@@ -146,7 +149,7 @@ function ItemCard({
   }
 
   return (
-    <div className={cn('bg-white dark:bg-slate-800 rounded-2xl border shadow-sm p-4', borderCls)}>
+    <div className={cn('bg-white dark:bg-slate-800 rounded-2xl border shadow-sm p-4 group', borderCls)}>
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0 flex items-start gap-3 flex-1">
           <div className={cn(
@@ -204,10 +207,20 @@ function ItemCard({
         <div className="text-right shrink-0">
           <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{fmt(item.avgAmount)}</p>
           <p className="text-xs text-slate-400">média/mês</p>
+          {!isPending && item.isGroup && (
+            <button
+              type="button"
+              onClick={onUndo}
+              title="Desfazer confirmação"
+              className="mt-1 inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              <RefreshCw className="h-3 w-3" /> Desfazer
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+      <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
         {isPending ? (
           <>
             <Button size="sm" variant="outline"
@@ -221,6 +234,20 @@ function ItemCard({
               <EyeOff className="h-3.5 w-3.5" /> Ignorar
             </Button>
           </>
+        ) : item.isGroup ? (
+          groupCategories.length > 0 ? (
+            groupCategories.map(catName => (
+              <span
+                key={catName}
+                className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300"
+              >
+                <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: categoryColor(catName) }} />
+                {catName}
+              </span>
+            ))
+          ) : (
+            <span className="text-xs text-slate-400">Nenhuma categoria vinculada a este grupo</span>
+          )
         ) : (
           <Button size="sm" variant="ghost"
             className="h-8 text-xs gap-1.5 text-slate-400 hover:text-slate-600"
@@ -262,7 +289,12 @@ const TYPE_SECTIONS: {
 export default function FixosPage() {
   const { recurring, installments, loading, refetch: refetchRecurring } = useRecurring()
   const { decisions, loading: decisionsLoading, setDecision }     = useRecurringDecisions()
-  const { subcategories, loading: subLoading, assignSubcategory, refetch: refetchSubs } = useSubcategories()
+  const { subcategories, categoriesByLabel, loading: subLoading, assignSubcategory, refetch: refetchSubs } = useSubcategories()
+  const { categories } = useCategories()
+
+  function categoryColor(name: string): string {
+    return categories.find(c => c.name === name)?.color ?? '#94a3b8'
+  }
 
 
   const [showIgnored, setShowIgnored] = useState<Set<TransactionType>>(new Set())
@@ -423,6 +455,8 @@ export default function FixosPage() {
         // Só oferece subcategorias do mesmo tipo do item — uma despesa nunca
         // pode ganhar uma subcategoria criada como receita, por exemplo.
         subcategories={subcategories.filter(s => s.type === item.type).map(s => s.name)}
+        groupCategories={item.subcategory ? categoriesByLabel[item.subcategory] ?? [] : []}
+        categoryColor={categoryColor}
         onConfirm={() => handleConfirm(item)}
         onIgnore={() => handleIgnore(item)}
         onUndo={() => handleUndo(item)}
