@@ -14,15 +14,9 @@ import { Plus, Pencil, Trash2, Wallet, Pin, PinOff, ArrowRight, ChevronRight, Al
 import { EmptyState } from '@/components/ui/empty-state'
 import { createClient } from '@/lib/supabase/client'
 
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
-}
-
 function computeStats(transactions: Transaction[], boardId: string) {
   const txs = transactions.filter(t => t.board_id === boardId)
-  const income = txs.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
-  const expenses = txs.filter(t => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0)
-  return { income, expenses, balance: income - expenses, count: txs.length }
+  return { count: txs.length }
 }
 
 interface AccountTemplate {
@@ -182,7 +176,6 @@ export default function TransactionsPage() {
         <div className="space-y-4">
           {boards.map(board => {
             const stats = computeStats(transactions, board.id)
-            const balancePositive = stats.balance >= 0
 
             return (
               <div
@@ -237,23 +230,6 @@ export default function TransactionsPage() {
                       >
                         <Trash2 className="h-3.5 w-3.5 text-slate-400 hover:text-red-500" />
                       </button>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-3 mb-4">
-                    <div className="bg-slate-50 dark:bg-white/[0.03] rounded-xl p-3 text-center">
-                      <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Entradas</p>
-                      <p className="text-sm font-semibold text-green-600">{formatCurrency(stats.income)}</p>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-white/[0.03] rounded-xl p-3 text-center">
-                      <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Saídas</p>
-                      <p className="text-sm font-semibold text-red-500">{formatCurrency(stats.expenses)}</p>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-white/[0.03] rounded-xl p-3 text-center">
-                      <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Saldo</p>
-                      <p className={`text-sm font-semibold ${balancePositive ? 'text-slate-700 dark:text-slate-200' : 'text-red-500'}`}>
-                        {formatCurrency(stats.balance)}
-                      </p>
                     </div>
                   </div>
 

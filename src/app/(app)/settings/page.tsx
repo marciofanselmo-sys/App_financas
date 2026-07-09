@@ -220,8 +220,8 @@ export default function SettingsPage() {
             </div>
             <div className="space-y-2">
               <Label>Tipo</Label>
-              <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v as CategoryType }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v as CategoryType }))} items={TYPE_LABELS}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="despesa">Despesa</SelectItem>
                   <SelectItem value="receita">Receita</SelectItem>

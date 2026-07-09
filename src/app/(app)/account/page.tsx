@@ -218,12 +218,20 @@ function TabConta() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setDeleting(false); return }
 
-    // Apaga todos os dados do usuário nas tabelas
+    // Apaga todos os dados do usuário nas tabelas. Lista corrigida em 2026-07-08:
+    // 'planning' era o nome de uma tabela que nunca existiu (a real é
+    // 'budget_plans') — o planejamento nunca era apagado ao excluir a conta.
+    // Também faltavam transaction_boards, categorization_rules,
+    // recurring_groups e recurring_decisions.
     await Promise.all([
       supabase.from('transactions').delete().eq('user_id', user.id),
       supabase.from('goals').delete().eq('user_id', user.id),
       supabase.from('categories').delete().eq('user_id', user.id),
-      supabase.from('planning').delete().eq('user_id', user.id),
+      supabase.from('budget_plans').delete().eq('user_id', user.id),
+      supabase.from('transaction_boards').delete().eq('user_id', user.id),
+      supabase.from('categorization_rules').delete().eq('user_id', user.id),
+      supabase.from('recurring_groups').delete().eq('user_id', user.id),
+      supabase.from('recurring_decisions').delete().eq('user_id', user.id),
     ])
 
     await supabase.auth.signOut()
