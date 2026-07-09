@@ -314,6 +314,8 @@ export default function FixosPage() {
     return categories.find(c => c.name === name)?.color ?? '#94a3b8'
   }
 
+  const [installmentsExpanded, setInstallmentsExpanded] = useState(false)
+
 
   const [showIgnored, setShowIgnored] = useState<Set<TransactionType>>(new Set())
   function toggleIgnored(type: TransactionType) {
@@ -343,6 +345,9 @@ export default function FixosPage() {
   // receita e transferência agora, mas esse número de resumo é especificamente de gasto.
   const confirmedDespesaItems = confirmedItems.filter(i => i.type === 'despesa')
   const totalMonthly = confirmedDespesaItems.reduce((s, i) => s + i.avgAmount, 0) + installmentsMonthly
+  // Receita não entra em nenhum total de gasto — é só pra exibir o resumo aqui em cima.
+  const confirmedReceitaItems = confirmedItems.filter(i => i.type === 'receita')
+  const receitaMonthly = confirmedReceitaItems.reduce((s, i) => s + i.avgAmount, 0)
 
   // Sincroniza transações novas (ex: de uma importação recente) com o estado que
   // o grupo já tem — is_recurring e subcategoria. Sem isso, uma transação recém
@@ -517,7 +522,10 @@ export default function FixosPage() {
               <span className="text-xs text-slate-400">(sempre fixo)</span>
             </div>
 
-            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-violet-200 dark:border-violet-800/50 shadow-sm p-4">
+            <div
+              className="bg-white dark:bg-slate-800 rounded-2xl border border-violet-200 dark:border-violet-800/50 shadow-sm p-4 cursor-pointer"
+              onClick={() => setInstallmentsExpanded(v => !v)}
+            >
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div className="min-w-0 flex items-start gap-3 flex-1">
                   <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 bg-violet-50 dark:bg-violet-900/30">
@@ -525,16 +533,19 @@ export default function FixosPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-sm text-slate-800 dark:text-slate-100">Parcelamentos ativos este mês</p>
-                    <div className="mt-2 space-y-0.5">
-                      {installments.map(item => (
-                        <p key={item.description} className="text-xs text-slate-400 dark:text-slate-500 truncate">
-                          • {item.description} ({item.currentInstallment}/{item.totalInstallments}) — {fmt(item.monthlyAmount)}
-                        </p>
-                      ))}
-                    </div>
+                    {installmentsExpanded && (
+                      <div className="mt-2 space-y-0.5">
+                        {installments.map(item => (
+                          <p key={item.description} className="text-xs text-slate-400 dark:text-slate-500 truncate">
+                            • {item.description} ({item.currentInstallment}/{item.totalInstallments}) — {fmt(item.monthlyAmount)}
+                          </p>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex items-center gap-3 mt-1.5">
                       <span className="flex items-center gap-1 text-xs text-slate-400">
                         <Clock className="h-3 w-3" />{installments.length} ativo{installments.length !== 1 ? 's' : ''}
+                        <ChevronDown className={cn('h-3 w-3 transition-transform', installmentsExpanded && 'rotate-180')} />
                       </span>
                     </div>
                   </div>
@@ -546,7 +557,7 @@ export default function FixosPage() {
                 </div>
               </div>
 
-              <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+              <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700" onClick={e => e.stopPropagation()}>
                 <Link
                   href="/recurring"
                   className="flex-1 h-8 text-xs gap-1.5 inline-flex items-center justify-center rounded-lg border border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/30 transition-colors"
@@ -654,16 +665,18 @@ export default function FixosPage() {
       {/* Resumo */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-100 dark:border-slate-700 shadow-sm">
-          <p className="text-xs text-slate-500 dark:text-slate-400">Despesas fixas / mês</p>
-          <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{fmt(totalMonthly)}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">Despesa fixa / mês</p>
+          <p className="text-xl font-bold text-red-500 mt-1">{fmt(totalMonthly)}</p>
           <p className="text-xs text-slate-400 mt-0.5">
             {confirmedDespesaItems.length + (installments.length > 0 ? 1 : 0)} item{(confirmedDespesaItems.length + (installments.length > 0 ? 1 : 0)) !== 1 ? 's' : ''}
           </p>
         </div>
         <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-100 dark:border-slate-700 shadow-sm">
-          <p className="text-xs text-slate-500 dark:text-slate-400">Aguardando revisão</p>
-          <p className="text-xl font-bold text-amber-500 mt-1">{pendingItems.length}</p>
-          <p className="text-xs text-slate-400 mt-0.5">cobrança{pendingItems.length !== 1 ? 's' : ''} detectada{pendingItems.length !== 1 ? 's' : ''}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">Receita fixa / mês</p>
+          <p className="text-xl font-bold text-green-600 dark:text-green-400 mt-1">{fmt(receitaMonthly)}</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            {confirmedReceitaItems.length} item{confirmedReceitaItems.length !== 1 ? 's' : ''}
+          </p>
         </div>
       </div>
 
