@@ -355,18 +355,18 @@ export default function PlanningPage() {
               </div>
             )}
 
-            {/* Receita + Gastos Previstos + Investimento + Reserva */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Receita + Gastos Previstos + Investimento */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-1.5">
-                <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                  <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
+                <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 whitespace-nowrap">
+                  <TrendingUp className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                   Receita prevista
                 </Label>
                 <CurrencyInput value={expectedIncome} onChange={setExpectedIncome} />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                  <RefreshCw className="h-3.5 w-3.5 text-violet-500" />
+                <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 whitespace-nowrap">
+                  <RefreshCw className="h-3.5 w-3.5 text-violet-500 shrink-0" />
                   Gastos Previstos
                   <span className="text-[10px] text-slate-400">{hasExpensesSnapshot ? '(recorrência)' : '(prévia)'}</span>
                 </Label>
@@ -378,8 +378,8 @@ export default function PlanningPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                  <PiggyBank className="h-3.5 w-3.5 text-blue-500" />
+                <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 whitespace-nowrap">
+                  <PiggyBank className="h-3.5 w-3.5 text-blue-500 shrink-0" />
                   Investimento previsto
                   <span className="text-[10px] text-blue-400">↔ cat. Investimento</span>
                 </Label>
