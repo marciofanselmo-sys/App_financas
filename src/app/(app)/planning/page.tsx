@@ -268,14 +268,20 @@ export default function PlanningPage() {
   const incomeNum = parseNum(expectedIncome)
   const investNum = parseNum(investmentTarget)
 
-  // Tabela: só categorias com limite > 0
+  // Tabela: só categorias/subcategorias com limite > 0
   const tableCategories = expenseCategories.filter(c => parseNum(categoryLimits[c.name] ?? '') > 0)
-  const totalPlanned = tableCategories.reduce((s, c) => s + parseNum(categoryLimits[c.name] ?? ''), 0)
-
-  // Subcategorias com limite > 0 — ficam de fora do Total Despesas porque são
-  // um recorte transversal (uma transação pode ter categoria E subcategoria ao
-  // mesmo tempo); somar junto contaria o mesmo gasto duas vezes.
   const tableSubcategories = subcategories.filter(s => s.type === 'despesa' && parseNum(categoryLimits[subKey(s.name)] ?? '') > 0)
+
+  // Total Despesas soma categoria + subcategoria — uma categoria não pode mais
+  // ser adicionada em "Limite por categoria" se já pertence a uma subcategoria
+  // ativa neste plano (ver availableToAddAll acima), então as duas listas
+  // nunca se sobrepõem: cada despesa planejada aparece numa delas, nunca nas
+  // duas ao mesmo tempo. Antes disso, o total só somava categoria — um plano
+  // feito inteiramente por subcategoria (comum: cobre o mesmo gasto com um
+  // recorte mais fino) aparecia com "Total Despesas" vazio.
+  const totalPlanned =
+    tableCategories.reduce((s, c) => s + parseNum(categoryLimits[c.name] ?? ''), 0) +
+    tableSubcategories.reduce((s, sub) => s + parseNum(categoryLimits[subKey(sub.name)] ?? ''), 0)
 
   // Investimento linkado à categoria de mesmo nome
   const investActual = actualByCategoryAll['Investimento'] ?? 0
@@ -661,7 +667,9 @@ export default function PlanningPage() {
                       )
                     })}
 
-                    {/* Subcategorias — recorte transversal, fora do Total Despesas */}
+                    {/* Subcategorias — entram no Total Despesas junto com as
+                        categorias (nunca junto com a categoria que já pertence
+                        a elas, ver comentário de totalPlanned acima) */}
                     {tableSubcategories.map(sub => {
                       const planned = parseNum(categoryLimits[subKey(sub.name)] ?? '')
                       const actual = actualByGroupLabel[sub.name] ?? 0
