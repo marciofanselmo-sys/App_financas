@@ -170,12 +170,17 @@ function ItemCard({
           <div className="min-w-0 flex-1">
             <p className="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">{item.name}</p>
 
-            {/* Categoria + Subcategoria */}
+            {/* Categoria + Subcategoria — num grupo, a categoria única não faz
+                sentido aqui (o grupo pode ter várias, exibidas embaixo) */}
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-              <span className="text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-full">
-                {item.category}
-              </span>
-              <span className="text-slate-300 dark:text-slate-600 text-xs select-none">›</span>
+              {!item.isGroup && (
+                <>
+                  <span className="text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-full">
+                    {item.category}
+                  </span>
+                  <span className="text-slate-300 dark:text-slate-600 text-xs select-none">›</span>
+                </>
+              )}
               <SubcategoryDropdown
                 value={item.subcategory}
                 subcategories={subcategories}
