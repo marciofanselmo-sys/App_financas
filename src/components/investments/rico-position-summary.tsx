@@ -28,7 +28,7 @@ function posRow(pos: RICOPosition) {
   return (
     <div key={pos.ticker} className="text-sm">
       <div className="flex items-center gap-2">
-        <span className="font-mono font-semibold text-xs bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-2 py-0.5 rounded w-16 text-center shrink-0">{pos.ticker}</span>
+        <span title={pos.ticker} className="font-mono font-semibold text-xs bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-2 py-0.5 rounded max-w-[9rem] truncate shrink-0">{pos.ticker}</span>
         {pos.quantity && <span className="text-xs text-slate-400 shrink-0">{pos.quantity} un.</span>}
         <span className="text-xs text-slate-400 shrink-0">{pos.allocation}</span>
         <span className={`text-xs font-medium shrink-0 ml-auto ${rentColor(pos.rentabilidade)}`}>{pos.rentabilidade}</span>

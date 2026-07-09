@@ -70,8 +70,10 @@ export default function DashboardPage() {
   const [year, setYear] = useState(now.getFullYear())
 
   const { boards, loading: boardsLoading } = useTransactionBoards()
+  // Investimento nunca entra no dashboard, mesmo fixado — o alfinete de
+  // conta de investimento só inclui a conta nos Relatórios.
   const unpinnedBoardIds = useMemo(
-    () => boards.filter(b => !b.show_on_dashboard).map(b => b.id),
+    () => boards.filter(b => !b.show_on_dashboard || b.is_investment).map(b => b.id),
     [boards]
   )
   const { installments, recurring, loading: recurringLoading } = useRecurring(unpinnedBoardIds)
@@ -82,7 +84,7 @@ export default function DashboardPage() {
     exclude_board_ids: unpinnedBoardIds,
   })
 
-  const pinnedBoards = boards.filter(b => b.show_on_dashboard)
+  const pinnedBoards = boards.filter(b => b.show_on_dashboard && !b.is_investment)
 
   const summary: DashboardSummary = transactions.reduce(
     (acc, t) => {

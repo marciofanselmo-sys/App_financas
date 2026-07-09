@@ -10,8 +10,10 @@ import { useCategories } from '@/hooks/use-categories'
 import { calcHealthScore, scoreConfig } from '@/components/dashboard/summary-cards'
 import {
   Printer, CalendarDays, BarChart2, CreditCard, RefreshCw, CheckCircle,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, TrendingUp,
 } from 'lucide-react'
+import { CategorySummary, PositionsBreakdown, ProventosBreakdown } from '@/components/investments/rico-position-summary'
+import { BoardIcon } from '@/components/transactions/board-icon'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/components/ui/button'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
@@ -28,12 +30,13 @@ const MONTH_NAMES = [
 ]
 const MONTH_SHORT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
 
-type ReportType = 'mensal' | 'anual' | 'parcelas' | 'fixos'
+type ReportType = 'mensal' | 'anual' | 'parcelas' | 'fixos' | 'investimentos'
 const REPORT_TYPES: { id: ReportType; label: string; icon: React.ElementType }[] = [
-  { id: 'mensal',   label: 'Mensal',      icon: CalendarDays },
-  { id: 'anual',    label: 'Anual',       icon: BarChart2    },
-  { id: 'parcelas', label: 'Parcelas',    icon: CreditCard   },
-  { id: 'fixos',    label: 'Gastos Fixos',icon: RefreshCw    },
+  { id: 'mensal',        label: 'Mensal',       icon: CalendarDays },
+  { id: 'anual',         label: 'Anual',        icon: BarChart2    },
+  { id: 'parcelas',      label: 'Parcelas',     icon: CreditCard   },
+  { id: 'fixos',         label: 'Gastos Fixos', icon: RefreshCw    },
+  { id: 'investimentos', label: 'Investimentos',icon: TrendingUp   },
 ]
 
 const now = new Date()
@@ -602,6 +605,124 @@ function FixedChargesReport({ boardId, excludeBoardIds }: { boardId: string; exc
   )
 }
 
+// ── Relatório de Investimentos ────────────────────────────────────────────────
+// Resumo da aba Investimentos: patrimônio, posições e rendimentos previstos da
+// última posição importada. Entram as contas fixadas (alfinete em /investments);
+// selecionar uma conta específica no filtro mostra ela mesmo sem estar fixada.
+function InvestmentsReport({ boardId }: { boardId: string }) {
+  const { boards, loading } = useTransactionBoards()
+
+  const investmentBoards = useMemo(() => {
+    const all = boards.filter(b => b.is_investment)
+    if (boardId !== 'all') {
+      const selected = all.filter(b => b.id === boardId)
+      if (selected.length > 0) return selected
+    }
+    return all.filter(b => b.show_on_dashboard)
+  }, [boards, boardId])
+
+  const totals = useMemo(() => {
+    let patrimonio = 0, investido = 0, saldo = 0, proventos = 0
+    investmentBoards.forEach(b => {
+      const p = b.last_position_import
+      if (!p) return
+      patrimonio += p.patrimonio
+      investido += p.totalInvestido
+      saldo += p.saldoDisponivel
+      proventos += (p.proventos ?? []).reduce((s, pr) => s + pr.netValue, 0)
+    })
+    return { patrimonio, investido, saldo, proventos }
+  }, [investmentBoards])
+
+  if (loading) return <div className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</div>
+
+  if (investmentBoards.length === 0) {
+    return (
+      <EmptyState
+        icon={TrendingUp}
+        title="Nenhuma conta de investimento nos relatórios"
+        description="Fixe uma conta na aba Investimentos (ícone de alfinete) para incluí-la aqui, ou selecione uma conta específica no filtro acima."
+        primaryLabel="Ir para Investimentos"
+        primaryHref="/investments"
+      />
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <ReportHeader
+        title="Relatório de Investimentos"
+        subtitle={`${investmentBoards.length} conta${investmentBoards.length > 1 ? 's' : ''} • posição da última importação`}
+      />
+
+      {/* Cards de resumo */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className={card}>
+          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Patrimônio total</p>
+          <p className="text-lg font-bold text-blue-600 dark:text-blue-400 print:text-blue-600 mt-1">{fmt(totals.patrimonio)}</p>
+        </div>
+        <div className={card}>
+          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Total investido</p>
+          <p className="text-lg font-bold text-slate-700 dark:text-slate-200 print:text-slate-700 mt-1">{fmt(totals.investido)}</p>
+        </div>
+        <div className={card}>
+          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Saldo disponível</p>
+          <p className="text-lg font-bold text-slate-700 dark:text-slate-200 print:text-slate-700 mt-1">{fmt(totals.saldo)}</p>
+        </div>
+        <div className={card}>
+          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Rendimentos previstos</p>
+          <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 print:text-emerald-600 mt-1">{fmt(totals.proventos)}</p>
+        </div>
+      </div>
+
+      {/* Detalhe por conta */}
+      {investmentBoards.map(b => (
+        <div key={b.id}>
+          <p className={secTitle}>{b.name}</p>
+          <div className={card}>
+            {b.last_position_import ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: b.color + '20' }}>
+                      <BoardIcon icon={b.icon} className="h-4 w-4" style={{ color: b.color }} />
+                    </div>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">
+                      Posição importada em {new Date(b.last_position_import.importedAt).toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">Patrimônio</p>
+                    <p className="text-base font-bold text-slate-800 dark:text-slate-100 print:text-slate-800">{fmt(b.last_position_import.patrimonio)}</p>
+                  </div>
+                </div>
+                {b.last_position_import.positions.length > 0 && (
+                  <>
+                    <CategorySummary positions={b.last_position_import.positions} />
+                    <div className="pt-3 border-t border-slate-100 dark:border-slate-700 print:border-slate-200">
+                      <PositionsBreakdown positions={b.last_position_import.positions} />
+                    </div>
+                  </>
+                )}
+                {b.last_position_import.proventos && b.last_position_import.proventos.length > 0 && (
+                  <div className="pt-3 border-t border-slate-100 dark:border-slate-700 print:border-slate-200">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 print:text-slate-500 mb-2">Próximos Rendimentos</p>
+                    <ProventosBreakdown proventos={b.last_position_import.proventos} />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400 dark:text-slate-500 print:text-slate-400 py-2">
+                Nenhuma posição importada ainda — importe na aba Investimentos para ver o resumo aqui.
+              </p>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function ReportsPage() {
   const [type, setType] = useState<ReportType>('mensal')
@@ -610,8 +731,11 @@ export default function ReportsPage() {
   const [boardId, setBoardId] = useState<string>('all')
 
   const { boards } = useTransactionBoards()
+  // Conta de investimento nunca entra nos agregados de Mensal/Anual/Parcelas/
+  // Fixos (aporte não é gasto) — ela tem a aba própria "Investimentos", onde o
+  // alfinete de /investments controla quem aparece.
   const excludeBoardIds = useMemo(
-    () => boards.filter(b => !b.show_on_dashboard).map(b => b.id),
+    () => boards.filter(b => !b.show_on_dashboard || b.is_investment).map(b => b.id),
     [boards]
   )
 
@@ -645,7 +769,13 @@ export default function ReportsPage() {
           {REPORT_TYPES.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
-              onClick={() => setType(id)}
+              onClick={() => {
+                // A lista de contas do filtro muda entre a aba Investimentos e as
+                // demais — reseta a seleção ao cruzar pra não filtrar por uma
+                // conta que nem aparece no dropdown.
+                if ((id === 'investimentos') !== (type === 'investimentos')) setBoardId('all')
+                setType(id)
+              }}
               className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-semibold transition-all ${
                 type === id
                   ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm'
@@ -685,7 +815,7 @@ export default function ReportsPage() {
             className="h-9 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] px-3 text-sm font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
           >
             <option value="all">Todas as contas</option>
-            {boards.map(b => (
+            {boards.filter(b => type === 'investimentos' ? b.is_investment : !b.is_investment).map(b => (
               <option key={b.id} value={b.id}>{b.name}</option>
             ))}
           </select>
@@ -698,6 +828,7 @@ export default function ReportsPage() {
         {type === 'anual'    && <AnnualReport year={year} boardId={boardId} excludeBoardIds={excludeBoardIds} />}
         {type === 'parcelas' && <InstallmentsReport boardId={boardId} excludeBoardIds={excludeBoardIds} />}
         {type === 'fixos'    && <FixedChargesReport boardId={boardId} excludeBoardIds={excludeBoardIds} />}
+        {type === 'investimentos' && <InvestmentsReport boardId={boardId} />}
       </div>
     </div>
   )

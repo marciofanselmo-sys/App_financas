@@ -6,14 +6,13 @@ import { usePositionImport } from '@/hooks/use-position-import'
 import { TransactionBoard, BoardType, BOARD_COLORS, BOARD_ICONS, BoardIconKey } from '@/types'
 import { formatCurrency, rentColor, CategorySummary, PositionsBreakdown, ProventosBreakdown } from '@/components/investments/rico-position-summary'
 import { BoardIcon } from '@/components/transactions/board-icon'
-import { ImportCSVModal } from '@/components/transactions/import-csv-modal'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   Plus, Pencil, Trash2, PiggyBank, ChevronRight, AlertTriangle,
-  ChevronDown, ChevronUp, Upload, RefreshCw, AlertCircle, FileText,
+  ChevronDown, ChevronUp, Upload, RefreshCw, AlertCircle, Pin, PinOff,
 } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { createClient } from '@/lib/supabase/client'
@@ -77,20 +76,17 @@ export default function InvestmentsPage() {
   const [expandedPos, setExpandedPos] = useState<Set<string>>(new Set())
   const [expandedProventos, setExpandedProventos] = useState<Set<string>>(new Set())
 
-  // Logo depois de criar a conta, oferece importar extrato ou posição — hoje
-  // é o único caminho de importação pra conta de investimento (o card na
-  // lista é só leitura, e não existe mais navegação até a tela de detalhe).
-  const [postCreateBoard, setPostCreateBoard] = useState<TransactionBoard | null>(null)
-  const [postCreateImportOpen, setPostCreateImportOpen] = useState(false)
   const {
     fileRef: positionFileRef, preview: positionPreview, loading: positionLoading, error: positionImportError,
-    open: openPositionImport, handleFile: handlePositionFile, confirm: confirmPositionImportRaw,
+    open: openPositionImport, handleFile: handlePositionFile, confirm: confirmPositionImport,
     cancel: cancelPositionImport, dismissError: dismissPositionError,
   } = usePositionImport(updateBoard)
 
-  function confirmPositionImport() {
-    confirmPositionImportRaw()
-    setPostCreateBoard(null)
+  // Fixar conta de investimento = entra SÓ nos totais dos Relatórios.
+  // Dashboard e analytics excluem investimentos sempre, fixados ou não
+  // (filtro `|| b.is_investment` nas duas páginas).
+  function togglePinned(board: TransactionBoard) {
+    updateBoard(board.id, { show_on_dashboard: !board.show_on_dashboard })
   }
 
   function togglePos(id: string) {
@@ -162,12 +158,10 @@ export default function InvestmentsPage() {
     }
     if (editing) {
       updateBoard(editing.id, data)
-      setFormOpen(false)
     } else {
-      const created = await createBoard(data)
-      setFormOpen(false)
-      if (created) setPostCreateBoard(created)
+      await createBoard(data)
     }
+    setFormOpen(false)
   }
 
   if (loading) return null
@@ -231,6 +225,16 @@ export default function InvestmentsPage() {
                       </div>
                     </div>
                     <div className="flex gap-1 shrink-0">
+                      <button
+                        title={board.show_on_dashboard ? 'Remover dos relatórios' : 'Incluir nos relatórios'}
+                        onClick={() => togglePinned(board)}
+                        className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                      >
+                        {board.show_on_dashboard
+                          ? <Pin className="h-3.5 w-3.5 text-blue-500" />
+                          : <PinOff className="h-3.5 w-3.5 text-slate-400" />
+                        }
+                      </button>
                       <button
                         title={board.last_position_import ? 'Atualizar posição' : 'Importar posição'}
                         disabled={positionLoading}
@@ -509,43 +513,6 @@ export default function InvestmentsPage() {
           )}
         </DialogContent>
       </Dialog>
-
-      {/* PÓS-CRIAÇÃO — oferece importar extrato ou posição da conta recém-criada */}
-      <Dialog open={!!postCreateBoard} onOpenChange={v => { if (!v) setPostCreateBoard(null) }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader><DialogTitle>Conta criada!</DialogTitle></DialogHeader>
-          <p className="text-sm text-slate-500 dark:text-slate-400 pt-1">
-            Quer importar algo pra <strong className="text-slate-700 dark:text-slate-200">{postCreateBoard?.name}</strong> agora?
-          </p>
-          <div className="space-y-2 pt-1">
-            <Button
-              variant="outline" className="w-full justify-start gap-2"
-              onClick={() => setPostCreateImportOpen(true)}
-            >
-              <FileText className="h-4 w-4" />
-              Importar extrato (rendimentos, compras, vendas)
-            </Button>
-            <Button
-              variant="outline" className="w-full justify-start gap-2"
-              disabled={positionLoading}
-              onClick={() => { if (postCreateBoard) openPositionImport(postCreateBoard) }}
-            >
-              {positionLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-              Importar posição da carteira
-            </Button>
-            <Button variant="ghost" className="w-full text-slate-400" onClick={() => setPostCreateBoard(null)}>
-              Agora não
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <ImportCSVModal
-        open={postCreateImportOpen}
-        onClose={() => setPostCreateImportOpen(false)}
-        onImported={() => { setPostCreateImportOpen(false); setPostCreateBoard(null) }}
-        boardId={postCreateBoard?.id}
-      />
 
       {/* Input escondido + preview pra importar posição da carteira */}
       <input ref={positionFileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handlePositionFile} />
