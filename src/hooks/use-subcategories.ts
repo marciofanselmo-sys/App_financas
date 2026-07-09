@@ -108,13 +108,19 @@ export function useSubcategories() {
     // transações novas (import, categorização manual) que nunca passaram
     // pela tela de Subcategorias. Roda toda vez que a página carrega, mesma
     // ideia de "rede de segurança" já usada em /fixos pra is_recurring.
+    //
+    // is_recurring=true junto é obrigatório, não só um bônus: use-recurring.ts
+    // descarta qualquer transação com menos de 2 meses de histórico E
+    // is_recurring=false antes mesmo de saber que ela tem group_label — sem
+    // marcar aqui, uma transação nova (só 1 mês até agora) fica de fora da
+    // conta do grupo mesmo com a categoria certinha vinculada.
     await Promise.all(
       finalList
         .filter(sub => sub.categories && sub.categories.length > 0)
         .map(sub =>
           supabase
             .from('transactions')
-            .update({ group_label: sub.name })
+            .update({ group_label: sub.name, is_recurring: true })
             .eq('user_id', user.id)
             .eq('type', sub.type)
             .in('category', sub.categories!)
@@ -237,9 +243,13 @@ export function useSubcategories() {
       setSubcategories(updatedSubcategories)
     }
 
+    // is_recurring=true junto é obrigatório: use-recurring.ts descarta
+    // qualquer transação com menos de 2 meses de histórico e is_recurring
+    // false antes mesmo de olhar o group_label — sem isso, uma transação
+    // dessa categoria com histórico curto fica de fora da conta do grupo.
     const { error } = await supabase
       .from('transactions')
-      .update({ group_label: label })
+      .update({ group_label: label, is_recurring: true })
       .eq('user_id', user.id)
       .eq('category', categoryName)
       .eq('type', sub.type)
