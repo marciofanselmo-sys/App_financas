@@ -26,15 +26,19 @@ interface PlanTemplate {
   label: string
   description: string
   investPct: number
-  reservePct: number
   color: string
 }
 
+// Reserva não é mais um alvo separado (2026-07-09) — já é coberta pelo
+// Investimento previsto, então o percentual que cada template reservava pra
+// ela entrou direto no investPct, pra manter a intenção original do template
+// (ex: "Equilibrado" ainda separa 30% da renda pra investir+reservar, só que
+// tudo dentro de um único campo agora).
 const PLAN_TEMPLATES: PlanTemplate[] = [
-  { id: 'equilibrado',  label: 'Equilibrado',    description: '50% essenciais · 30% variáveis · 20% investimentos', investPct: 0.20, reservePct: 0.10, color: 'blue'   },
-  { id: 'investidor',   label: 'Investidor',      description: '45% essenciais · 25% variáveis · 30% investimentos', investPct: 0.30, reservePct: 0.10, color: 'emerald'},
-  { id: 'dividas',      label: 'Quitar Dívidas',  description: '60% essenciais · 20% variáveis · 20% quitação',      investPct: 0.05, reservePct: 0.05, color: 'amber'  },
-  { id: 'personalizado',label: 'Personalizado',   description: 'Configure manualmente cada categoria',                investPct: 0,    reservePct: 0,    color: 'slate'  },
+  { id: 'equilibrado',  label: 'Equilibrado',    description: '50% essenciais · 30% variáveis · 20% investimentos', investPct: 0.30, color: 'blue'   },
+  { id: 'investidor',   label: 'Investidor',      description: '45% essenciais · 25% variáveis · 30% investimentos', investPct: 0.40, color: 'emerald'},
+  { id: 'dividas',      label: 'Quitar Dívidas',  description: '60% essenciais · 20% variáveis · 20% quitação',      investPct: 0.10, color: 'amber'  },
+  { id: 'personalizado',label: 'Personalizado',   description: 'Configure manualmente cada categoria',                investPct: 0,    color: 'slate'  },
 ]
 
 const fmt = (v: number) =>
@@ -120,9 +124,8 @@ export default function PlanningPage() {
 
   function applyTemplate(tpl: PlanTemplate) {
     const income = parseNum(expectedIncome)
-    if (income > 0 && (tpl.investPct > 0 || tpl.reservePct > 0)) {
-      if (tpl.investPct > 0) setInvestmentTarget(String(Math.round(income * tpl.investPct)))
-      if (tpl.reservePct > 0) setReserveTarget(String(Math.round(income * tpl.reservePct)))
+    if (income > 0 && tpl.investPct > 0) {
+      setInvestmentTarget(String(Math.round(income * tpl.investPct)))
     }
     setTemplateOpen(false)
   }
@@ -141,14 +144,12 @@ export default function PlanningPage() {
 
   const [expectedIncome, setExpectedIncome] = useState('')
   const [investmentTarget, setInvestmentTarget] = useState('')
-  const [reserveTarget, setReserveTarget] = useState('')
   const [categoryLimits, setCategoryLimits] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (plan) {
       setExpectedIncome(plan.expected_income > 0 ? String(plan.expected_income) : '')
       setInvestmentTarget(plan.investment_target > 0 ? String(plan.investment_target) : '')
-      setReserveTarget(plan.reserve_target > 0 ? String(plan.reserve_target) : '')
       const lim: Record<string, string> = {}
       for (const [cat, val] of Object.entries(plan.category_limits ?? {})) {
         lim[cat] = String(val)
@@ -157,7 +158,6 @@ export default function PlanningPage() {
     } else {
       setExpectedIncome('')
       setInvestmentTarget('')
-      setReserveTarget('')
       setCategoryLimits({})
     }
     setSaved(false)
@@ -253,7 +253,10 @@ export default function PlanningPage() {
       expected_income: parseNum(expectedIncome),
       expenses_target: expensesTargetDisplay,
       investment_target: parseNum(investmentTarget),
-      reserve_target: parseNum(reserveTarget),
+      // Reserva removida da UI (2026-07-09): já é coberta pelo Investimento
+      // previsto, não faz sentido ter um alvo manual separado. Mantém a
+      // coluna gravando 0 pra não precisar migrar o schema/hook.
+      reserve_target: 0,
       category_limits: limits,
     })
     setSaving(false)
@@ -270,7 +273,6 @@ export default function PlanningPage() {
 
   const incomeNum = parseNum(expectedIncome)
   const investNum = parseNum(investmentTarget)
-  const reserveNum = parseNum(reserveTarget)
 
   // Tabela: só categorias com limite > 0
   const tableCategories = expenseCategories.filter(c => parseNum(categoryLimits[c.name] ?? '') > 0)
@@ -281,14 +283,10 @@ export default function PlanningPage() {
   // mesmo tempo); somar junto contaria o mesmo gasto duas vezes.
   const tableSubcategories = subcategories.filter(s => s.type === 'despesa' && parseNum(categoryLimits[subKey(s.name)] ?? '') > 0)
 
-  // Investimento e Reserva linkados às categorias de mesmo nome
+  // Investimento linkado à categoria de mesmo nome
   const investActual = actualByCategoryAll['Investimento'] ?? 0
-  const reserveActual =
-    actualByCategory['Reserva'] ??
-    actualByCategory['Reserva de emergência'] ??
-    0
 
-  const hasTable = tableCategories.length > 0 || tableSubcategories.length > 0 || incomeNum > 0 || investNum > 0 || reserveNum > 0
+  const hasTable = tableCategories.length > 0 || tableSubcategories.length > 0 || incomeNum > 0 || investNum > 0
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -392,14 +390,6 @@ export default function PlanningPage() {
                   <span className="text-[10px] text-blue-400">↔ cat. Investimento</span>
                 </Label>
                 <CurrencyInput value={investmentTarget} onChange={setInvestmentTarget} />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                  <PiggyBank className="h-3.5 w-3.5 text-purple-500" />
-                  Reserva financeira
-                  <span className="text-[10px] text-purple-400">↔ cat. Reserva</span>
-                </Label>
-                <CurrencyInput value={reserveTarget} onChange={setReserveTarget} />
               </div>
             </div>
 
@@ -727,30 +717,6 @@ export default function PlanningPage() {
                         </td>
                         <td className="px-4 py-3 text-center">
                           <StatusBadge planned={investNum} actual={investActual} higherIsBetter />
-                        </td>
-                      </tr>
-                    )}
-
-                    {/* Reserva — linkada à categoria */}
-                    {reserveNum > 0 && (
-                      <tr className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                        <td className="px-6 py-3">
-                          <div className="flex items-center gap-2">
-                            <span className="h-2 w-2 rounded-full bg-purple-500 shrink-0" />
-                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Reserva</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right text-xs text-slate-600 dark:text-slate-300">{fmt(reserveNum)}</td>
-                        <td className="px-4 py-3 text-right text-xs font-semibold text-purple-600 dark:text-purple-400">
-                          {reserveActual > 0 ? fmt(reserveActual) : <span className="text-slate-300 dark:text-slate-600">R$ 0,00</span>}
-                        </td>
-                        <td className="px-4 py-3 text-right text-xs font-semibold">
-                          <span className={reserveActual >= reserveNum ? 'text-emerald-600' : 'text-amber-500'}>
-                            {reserveActual - reserveNum > 0 ? '+' : ''}{fmt(reserveActual - reserveNum)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <StatusBadge planned={reserveNum} actual={reserveActual} higherIsBetter />
                         </td>
                       </tr>
                     )}
