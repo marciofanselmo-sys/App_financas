@@ -68,6 +68,54 @@ export function applyUserRules(
   return { category: null, board_id: null }
 }
 
+// Igual applyRuleToExisting, mas pro campo `type` (Despesa/Receita/Transferência)
+// em vez de categoria — mudar o Tipo de uma transação editada também "gruda"
+// em todas as outras com a mesma descrição exata, do mesmo jeito que já
+// acontecia só com categoria. Sem isso, corrigir o tipo de UMA transação de
+// Pix (ex: de Despesa pra Transferência) deixava as demais com a mesma
+// descrição presas no tipo antigo.
+export async function applyTypeToExisting(
+  description: string,
+  newType: TransactionType,
+): Promise<{ count: number; error?: string }> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { count: 0 }
+
+  const kw = description.trim().toUpperCase()
+  if (!kw) return { count: 0 }
+
+  const txs: { id: string; description: string }[] = []
+  const PAGE = 1000
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('id, description')
+      .eq('user_id', user.id)
+      .range(from, from + PAGE - 1)
+    if (error) {
+      console.error('[applyTypeToExisting] select error:', error.message, '| code:', error.code)
+      return { count: 0, error: error.message }
+    }
+    if (!data?.length) break
+    txs.push(...data)
+    if (data.length < PAGE) break
+  }
+
+  const ids = txs.filter(t => t.description.trim().toUpperCase() === kw).map(t => t.id)
+  if (!ids.length) return { count: 0 }
+
+  const { data, error } = await supabase.from('transactions').update({ type: newType }).in('id', ids).select('id')
+  if (error) {
+    console.error('[applyTypeToExisting] update error:', error.message, '| code:', error.code, '| details:', error.details)
+    const friendly = error.code === '23514'
+      ? 'Tipo não permitido pelo banco de dados. Rode a migração migration_transferencia_categories.sql no Supabase.'
+      : error.message
+    return { count: 0, error: friendly }
+  }
+  return { count: data?.length ?? 0 }
+}
+
 export async function applyRuleToExisting(
   rule: { keyword: string; match_type: string; category: string; board_id: string | null },
   categories: Category[]
@@ -129,7 +177,12 @@ export async function applyRuleToExisting(
   const update: Record<string, unknown> = { category: rule.category }
   if (rule.board_id) update.board_id = rule.board_id
 
-  const { error } = await supabase.from('transactions').update(update).in('id', ids)
+  // `.select()` no update pra pegar a contagem REAL de linhas afetadas — sem
+  // isso, um update que bate 0 linhas (ex: RLS barrando silenciosamente, ou
+  // update sem erro mas sem efeito) ainda reportava `ids.length` como se
+  // tivesse dado certo, mostrando "N transações atualizadas" mesmo quando
+  // nada mudou de verdade no banco.
+  const { data, error } = await supabase.from('transactions').update(update).in('id', ids).select('id')
   if (error) {
     console.error('[applyRuleToExisting] update error:', error.message, '| code:', error.code, '| details:', error.details)
     const friendly = error.code === '23514'
@@ -137,7 +190,11 @@ export async function applyRuleToExisting(
       : error.message
     return { count: 0, error: friendly }
   }
-  return { count: ids.length }
+  const actualCount = data?.length ?? 0
+  if (actualCount < ids.length) {
+    console.warn(`[applyRuleToExisting] esperava atualizar ${ids.length} transações, mas só ${actualCount} vieram de volta — possível bloqueio de RLS.`)
+  }
+  return { count: actualCount }
 }
 
 export function useRules() {
@@ -281,27 +338,17 @@ export function useRules() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { applied: 0, error: 'Não autenticado.' }
 
-    const existing = rules.find(r => r.match_type === 'exact' && r.keyword.toUpperCase() === kw)
-
-    let rule: CategorizationRule
-    if (existing) {
-      const { data, error } = await supabase
-        .from('categorization_rules')
-        .update({ category, auto_created: true })
-        .eq('id', existing.id)
-        .select()
-        .single()
-      if (error || !data) {
-        console.error('[syncCategoryToRule] update error:', error?.message, '| code:', error?.code, '| details:', error?.details)
-        return { applied: 0, error: error?.message }
-      }
-      rule = data as CategorizationRule
-      setRules(prev => prev.map(r => (r.id === rule.id ? rule : r)))
-    } else {
-      const { data, error } = await supabase
-        .from('categorization_rules')
-        .insert({
-          id: crypto.randomUUID(),
+    // Upsert atômico no banco (precisa da constraint única de
+    // migration_rules_unique.sql em user_id+keyword+match_type) — em vez de
+    // "checar se existe, depois inserir ou atualizar". Esse padrão antigo tinha
+    // uma corrida real: se duas transações com a mesma descrição fossem
+    // recategorizadas quase ao mesmo tempo, as duas checagens podiam rodar
+    // ANTES de qualquer inserção terminar, e as duas criavam uma regra —
+    // gerando duplicata. Upsert resolve isso no próprio banco, sem essa janela.
+    const { data, error } = await supabase
+      .from('categorization_rules')
+      .upsert(
+        {
           user_id: user.id,
           keyword: kw,
           match_type: 'exact',
@@ -309,16 +356,22 @@ export function useRules() {
           board_id: null,
           active: true,
           auto_created: true,
-        })
-        .select()
-        .single()
-      if (error || !data) {
-        console.error('[syncCategoryToRule] insert error:', error?.message, '| code:', error?.code, '| details:', error?.details)
-        return { applied: 0, error: error?.message }
-      }
-      rule = data as CategorizationRule
-      setRules(prev => [...prev, rule])
+        },
+        { onConflict: 'user_id,keyword,match_type' }
+      )
+      .select()
+      .single()
+    if (error || !data) {
+      console.error('[syncCategoryToRule] upsert error:', error?.message, '| code:', error?.code, '| details:', error?.details)
+      const friendly = error?.code === '23502'
+        ? 'A coluna "id" de categorization_rules não tem geração automática configurada. Rode a migração migration_rules_id_default.sql no Supabase.'
+        : error?.code === '42P10'
+          ? 'Falta uma trava no banco pra evitar regra duplicada. Rode a migração migration_rules_unique.sql no Supabase.'
+          : error?.message
+      return { applied: 0, error: friendly }
     }
+    const rule = data as CategorizationRule
+    setRules(prev => (prev.some(r => r.id === rule.id) ? prev.map(r => (r.id === rule.id ? rule : r)) : [...prev, rule]))
 
     const { count, error: applyError } = await applyRuleToExisting(
       { keyword: rule.keyword, match_type: rule.match_type, category: rule.category, board_id: rule.board_id },

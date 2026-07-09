@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useRules, CategorizationRule, applyRuleToExisting } from '@/hooks/use-rules'
 import { useCategories } from '@/hooks/use-categories'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
@@ -19,15 +19,26 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { InfoBox } from '@/components/ui/info-box'
 
 type MatchType = 'contains' | 'starts_with' | 'ends_with' | 'exact'
+// Tipo é só um filtro client-side pra achar a categoria certa mais rápido — a
+// regra em si não grava tipo nenhum, o tipo efetivo dela é sempre o da
+// categoria que ela aponta.
+type RuleTypeFilter = 'despesa' | 'receita' | 'transferencia'
 
 interface FormState {
   keyword: string
   matchType: MatchType
+  type: RuleTypeFilter
   category: string
   board_id: string
 }
 
-const EMPTY: FormState = { keyword: '', matchType: 'contains', category: '', board_id: '' }
+const EMPTY: FormState = { keyword: '', matchType: 'contains', type: 'despesa', category: '', board_id: '' }
+
+const RULE_TYPE_OPTIONS: { value: RuleTypeFilter; label: string }[] = [
+  { value: 'receita', label: 'Receita' },
+  { value: 'despesa', label: 'Despesa' },
+  { value: 'transferencia', label: 'Transferência' },
+]
 
 const MATCH_LABELS: Record<MatchType, string> = {
   contains:    'Contém',
@@ -138,10 +149,12 @@ function CategoryGroup({
 type RetroResult = { count: number; keyword: string; schemaWarning?: boolean; error?: string }
 
 // Categorias tipo "Ambos" (ex: "Outros") valem pros três tipos de transação —
-// regras que apontam pra elas caem na seção "Outras" em vez de uma específica.
-type SectionKey = 'despesa' | 'receita' | 'transferencia' | 'outras'
+// regras que apontam pra elas caem nesta seção em vez de uma específica. Se uma
+// regra "de transferência" foi criada apontando pra "Outros" em vez de uma
+// categoria com Tipo = Transferência, ela aparece aqui, não em "Transferências".
+type SectionKey = 'despesa' | 'receita' | 'transferencia' | 'ambos'
 
-const SECTION_ORDER: SectionKey[] = ['despesa', 'receita', 'transferencia', 'outras']
+const SECTION_ORDER: SectionKey[] = ['despesa', 'receita', 'transferencia', 'ambos']
 
 const SECTION_META: Record<SectionKey, { label: string; icon: React.ElementType; iconColor: string; iconBg: string; help: string }> = {
   despesa: {
@@ -156,9 +169,9 @@ const SECTION_META: Record<SectionKey, { label: string; icon: React.ElementType;
     label: 'Transferências', icon: ArrowLeftRight, iconColor: 'text-slate-400', iconBg: 'bg-slate-100 dark:bg-slate-700',
     help: 'Regras que apontam pra uma categoria de transferência.',
   },
-  outras: {
-    label: 'Outras', icon: Layers, iconColor: 'text-violet-500', iconBg: 'bg-violet-50 dark:bg-violet-900/20',
-    help: 'Regras que apontam pra uma categoria válida em mais de um tipo (ex: "Outros").',
+  ambos: {
+    label: 'Ambos', icon: Layers, iconColor: 'text-violet-500', iconBg: 'bg-violet-50 dark:bg-violet-900/20',
+    help: 'Regras que apontam pra uma categoria do tipo "Ambos" (ex: "Outros") — vale pra despesa, receita ou transferência ao mesmo tempo, por isso não entra numa seção específica.',
   },
 }
 
@@ -190,7 +203,7 @@ export default function RulesPage() {
   function sectionFor(categoryName: string): SectionKey {
     const type = categoryTypeMap.get(categoryName)
     if (type === 'despesa' || type === 'receita' || type === 'transferencia') return type
-    return 'outras'
+    return 'ambos'
   }
 
   const grouped = useMemo(() => {
@@ -211,7 +224,7 @@ export default function RulesPage() {
 
   const groupedBySection = useMemo(() => {
     const buckets: Record<SectionKey, [string, CategorizationRule[]][]> = {
-      despesa: [], receita: [], transferencia: [], outras: [],
+      despesa: [], receita: [], transferencia: [], ambos: [],
     }
     for (const entry of grouped) {
       buckets[sectionFor(entry[0])].push(entry)
@@ -223,15 +236,41 @@ export default function RulesPage() {
   function openCreate() { setEditing(null); setForm(EMPTY); setFormOpen(true) }
   function openEdit(r: CategorizationRule) {
     const ext = r as CategorizationRule & { match_type?: MatchType; board_id?: string }
+    // Categoria "Ambos" (ex: Outros) vale pros 3 tipos — nesse caso não tem
+    // como saber qual Tipo o usuário tinha em mente, então cai em "despesa"
+    // por padrão (a categoria continua aparecendo, "ambos" bate com qualquer filtro).
+    const existingType = categoryTypeMap.get(r.category)
     setEditing(r)
     setForm({
       keyword: r.keyword,
       matchType: ext.match_type ?? 'contains',
+      type: existingType === 'receita' || existingType === 'despesa' || existingType === 'transferencia' ? existingType : 'despesa',
       category: r.category,
       board_id: ext.board_id ?? '',
     })
     setFormOpen(true)
   }
+
+  // Categorias normais e isoladas ficam em seletores separados (mesmo padrão do
+  // formulário de transação) — escolher em um desmarca o outro. Sem filtro de
+  // data aqui: regra não é presa a uma transação específica, então qualquer
+  // categoria isolada do tipo certo é uma opção válida (a checagem de mês só
+  // acontece depois, transação por transação, quando a regra é aplicada).
+  const typeFilteredCategories = useMemo(
+    () => categories.filter(c => c.type === form.type || c.type === 'ambos'),
+    [categories, form.type],
+  )
+  const normalCategoryOptions = typeFilteredCategories.filter(c => !c.special_dates || c.special_dates.length === 0)
+  const specialCategoryOptions = typeFilteredCategories.filter(c => (c.special_dates?.length ?? 0) > 0)
+  const selectedIsSpecial = specialCategoryOptions.some(c => c.name === form.category)
+
+  // Se o Tipo mudar e a categoria escolhida não fizer mais sentido pra ele, limpa.
+  useEffect(() => {
+    if (!form.category) return
+    const stillValid = typeFilteredCategories.some(c => c.name === form.category)
+    if (!stillValid) setForm(f => ({ ...f, category: '' }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.type])
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -299,9 +338,21 @@ export default function RulesPage() {
           </p>
         </div>
         <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
-          <p className="font-semibold mb-1">Categoria especial fica isolada</p>
+          <p className="font-semibold mb-1">Não achou sua regra na seção esperada?</p>
           <p className="text-blue-600 dark:text-blue-400">
-            Categorias especiais (presas a um mês específico) nunca entram nesse sistema de regras — nem criam regra automática, nem são sobrescritas por nenhuma regra. Uma vez que você marca uma transação com categoria especial, ela fica só ali, sem afetar nem ser afetada pelas outras.
+            A seção é definida pelo <strong>Tipo da categoria</strong> que a regra aponta, não pela intenção de quando você criou. Uma regra que muda a categoria pra &ldquo;Outros&rdquo; sempre aparece em &ldquo;Ambos&rdquo; — mesmo que a transação seja uma transferência — porque &ldquo;Outros&rdquo; é do tipo &ldquo;Ambos&rdquo;. Pra ela aparecer em &ldquo;Transferências&rdquo;, a categoria de destino precisa ser criada com Tipo = Transferência em Configurações → Categorias.
+          </p>
+        </div>
+        <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
+          <p className="font-semibold mb-1">Categoria isolada fica de fora das regras</p>
+          <p className="text-blue-600 dark:text-blue-400">
+            Categorias isoladas (presas a um mês específico) nunca entram nesse sistema de regras — nem criam regra automática, nem são sobrescritas por nenhuma regra. Uma vez que você marca uma transação com categoria isolada, ela fica só ali, sem afetar nem ser afetada pelas outras.
+          </p>
+        </div>
+        <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
+          <p className="font-semibold mb-1">Não quer criar regra pra uma edição específica?</p>
+          <p className="text-blue-600 dark:text-blue-400">
+            Ao editar a categoria de uma transação (em Contas e Cartões), marque a opção &ldquo;Mudar só esta transação&rdquo; que aparece no formulário — a categoria muda só ali, sem criar/atualizar regra nem afetar outras transações com a mesma descrição.
           </p>
         </div>
       </InfoBox>
@@ -428,8 +479,8 @@ export default function RulesPage() {
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="rule-match" className="text-xs">Tipo de correspondência</Label>
-                  <Select value={form.matchType} onValueChange={v => setForm(f => ({ ...f, matchType: v as MatchType }))}>
-                    <SelectTrigger id="rule-match">
+                  <Select value={form.matchType} onValueChange={v => setForm(f => ({ ...f, matchType: v as MatchType }))} items={MATCH_LABELS}>
+                    <SelectTrigger id="rule-match" className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -459,25 +510,68 @@ export default function RulesPage() {
             {/* Ações */}
             <div className="space-y-3">
               <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Ações</Label>
+
               <div className="space-y-1.5">
-                <Label htmlFor="rule-category" className="text-xs">Definir categoria</Label>
-                <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v ?? '' }))}>
-                  <SelectTrigger id="rule-category">
-                    <SelectValue placeholder="Selecione a categoria..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map(c => (
-                      <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label className="text-xs">Tipo</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {RULE_TYPE_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, type: opt.value }))}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition-colors ${
+                        form.type === opt.value
+                          ? opt.value === 'receita'
+                            ? 'bg-green-600 text-white border-green-600'
+                            : opt.value === 'despesa'
+                              ? 'bg-red-500 text-white border-red-500'
+                              : 'bg-slate-500 text-white border-slate-500'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Definir categoria</Label>
+                <div className={specialCategoryOptions.length > 0 ? 'grid grid-cols-2 gap-2' : ''}>
+                  <Select value={selectedIsSpecial ? '' : form.category} onValueChange={v => { if (v) setForm(f => ({ ...f, category: v })) }}>
+                    <SelectTrigger id="rule-category" className="w-full">
+                      <SelectValue placeholder="Selecione a categoria..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {normalCategoryOptions.length === 0 ? (
+                        <SelectItem value="__empty__" disabled>Nenhuma categoria disponível</SelectItem>
+                      ) : (
+                        normalCategoryOptions.map(c => (
+                          <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {specialCategoryOptions.length > 0 && (
+                    <Select value={selectedIsSpecial ? form.category : ''} onValueChange={v => { if (v) setForm(f => ({ ...f, category: v })) }}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Categoria isolada..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {specialCategoryOptions.map(c => (
+                          <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
               </div>
 
               {boards.length > 0 && (
                 <div className="space-y-1.5">
                   <Label htmlFor="rule-board" className="text-xs">Mover para conta (opcional)</Label>
                   <Select value={form.board_id} onValueChange={v => setForm(f => ({ ...f, board_id: v ?? '' }))}>
-                    <SelectTrigger id="rule-board">
+                    <SelectTrigger id="rule-board" className="w-full">
                       <SelectValue placeholder="Nenhuma conta específica" />
                     </SelectTrigger>
                     <SelectContent>

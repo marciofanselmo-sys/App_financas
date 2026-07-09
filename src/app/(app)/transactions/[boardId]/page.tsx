@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useCategories } from '@/hooks/use-categories'
-import { useRules } from '@/hooks/use-rules'
+import { useRules, applyTypeToExisting } from '@/hooks/use-rules'
 import { usePositionImport } from '@/hooks/use-position-import'
 import { TransactionTable } from '@/components/transactions/transaction-table'
 import { TransactionForm } from '@/components/transactions/transaction-form'
@@ -21,17 +21,23 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   ArrowLeft, Plus, Upload, Download, Search, X,
-  ChevronDown, ChevronUp, RefreshCw, AlertCircle,
+  ChevronDown, ChevronUp, RefreshCw, AlertCircle, CheckCircle2,
 } from 'lucide-react'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
 import { createClient } from '@/lib/supabase/client'
 
 const TYPE_FILTER_OPTIONS: { value: 'all' | TransactionType; label: string }[] = [
-  { value: 'all', label: 'Todos os tipos' },
+  { value: 'all', label: 'Todos os Tipos' },
   { value: 'despesa', label: 'Despesa' },
   { value: 'receita', label: 'Receita' },
   { value: 'transferencia', label: 'Transferência' },
 ]
+
+const TYPE_LABELS: Record<TransactionType, string> = {
+  despesa: 'Despesa',
+  receita: 'Receita',
+  transferencia: 'Transferência',
+}
 
 export default function BoardDetailPage() {
   const params = useParams()
@@ -64,6 +70,11 @@ export default function BoardDetailPage() {
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [expandedPos, setExpandedPos] = useState(false)
   const [expandedProventos, setExpandedProventos] = useState(false)
+  const [ruleSyncError, setRuleSyncError] = useState<string | null>(null)
+  const [ruleSyncSuccess, setRuleSyncSuccess] = useState<{
+    category?: { name: string; applied: number }
+    type?: { value: TransactionType; applied: number }
+  } | null>(null)
 
   const { transactions, loading, createTransaction, updateTransaction, deleteTransaction, refetch } =
     useTransactions({
@@ -81,6 +92,13 @@ export default function BoardDetailPage() {
     () => typeFilter === 'all' ? categories : categories.filter(c => c.type === typeFilter || c.type === 'ambos'),
     [categories, typeFilter],
   )
+  // O componente de Select (base-ui) só resolve o rótulo do valor selecionado
+  // via este `items` — sem ele, mostra o valor bruto ("all") em vez do texto
+  // amigável até o usuário abrir o dropdown pela primeira vez.
+  const categoryFilterItems = useMemo(
+    () => [{ value: 'all', label: 'Todas as Categorias' }, ...categoryOptions.map(c => ({ value: c.name, label: c.name }))],
+    [categoryOptions],
+  )
   const hasExtraFilters = categoryFilter !== 'all' || typeFilter !== 'all'
   function clearExtraFilters() {
     setCategoryFilter('all')
@@ -93,6 +111,14 @@ export default function BoardDetailPage() {
     if (!stillValid) setCategoryFilter('all')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typeFilter])
+
+  // Entradas / Saídas / Saldo / Transferências do que está na tela (respeita mês e filtros)
+  const stats = useMemo(() => {
+    const income = transactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
+    const expenses = transactions.filter(t => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0)
+    const transfers = transactions.filter(t => t.type === 'transferencia').reduce((s, t) => s + Number(t.amount), 0)
+    return { income, expenses, balance: income - expenses, transfers }
+  }, [transactions])
 
   // collect all tags from all transactions for this board (no filters applied)
   const { transactions: allBoardTxs } = useTransactions({ board_id: boardId })
@@ -112,15 +138,47 @@ export default function BoardDetailPage() {
     setEditingTx(null)
   }
 
-  async function handleSubmit(data: Omit<Transaction, 'id' | 'user_id' | 'created_at'>) {
+  async function handleSubmit(data: Omit<Transaction, 'id' | 'user_id' | 'created_at'>, options?: { skipRuleSync?: boolean }) {
     if (editingTx) {
       const result = await updateTransaction(editingTx.id, data)
-      // Categoria normal mudou de verdade: "gruda" em todas as transações com esse
-      // nome exato via regra automática (categoria especial nunca entra aqui).
-      if (!result.error && data.type !== 'transferencia' && data.category && data.category !== editingTx.category) {
-        const syncResult = await syncCategoryToRule(data.description, data.category, categories)
-        if (syncResult.error) console.error('[handleSubmit] syncCategoryToRule falhou:', syncResult.error)
-        refetch()
+      // Categoria E Tipo mudados de verdade "grudam" em todas as transações com
+      // esse nome exato (categoria especial nunca entra aqui). Antes, só a
+      // categoria propagava — mudar o Tipo (ex: Despesa -> Transferência) pra
+      // corrigir uma classificação errada deixava as outras transações da mesma
+      // descrição presas no tipo antigo. Usuário marca "só esta transação" no
+      // formulário pra pular os dois quando não quiser esse comportamento.
+      if (!result.error && !options?.skipRuleSync) {
+        const categoryChanged = data.category && data.category !== editingTx.category
+        const typeChanged = data.type !== editingTx.type
+        if (categoryChanged || typeChanged) {
+          setRuleSyncSuccess(null)
+          const success: NonNullable<typeof ruleSyncSuccess> = {}
+          let firstError: string | undefined
+
+          if (categoryChanged) {
+            const syncResult = await syncCategoryToRule(data.description, data.category, categories)
+            if (syncResult.error) {
+              console.error('[handleSubmit] syncCategoryToRule falhou:', syncResult.error)
+              firstError = syncResult.error
+            } else {
+              success.category = { name: data.category, applied: syncResult.applied }
+            }
+          }
+
+          if (typeChanged) {
+            const typeResult = await applyTypeToExisting(data.description, data.type)
+            if (typeResult.error) {
+              console.error('[handleSubmit] applyTypeToExisting falhou:', typeResult.error)
+              firstError = firstError ?? typeResult.error
+            } else {
+              success.type = { value: data.type, applied: typeResult.count }
+            }
+          }
+
+          setRuleSyncError(firstError ?? null)
+          if (success.category || success.type) setRuleSyncSuccess(success)
+          refetch()
+        }
       }
       return result
     }
@@ -190,6 +248,54 @@ export default function BoardDetailPage() {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
+      {/* Erro ao sincronizar a regra automática — antes só ia pro console do
+          navegador, invisível pro usuário; agora aparece aqui. */}
+      {ruleSyncError && (
+        <div className="flex items-start gap-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
+          <AlertCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-red-800 dark:text-red-300">Transação salva, mas a atualização retroativa falhou</p>
+            <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{ruleSyncError}</p>
+          </div>
+          <button onClick={() => setRuleSyncError(null)} className="text-red-400 hover:text-red-600 transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Confirmação de sucesso — antes, criar/atualizar a regra com sucesso e
+          pular ela (checkbox marcado) pareciam a mesma coisa (nada aparecia). */}
+      {ruleSyncSuccess && (ruleSyncSuccess.category || ruleSyncSuccess.type) && (
+        <div className="flex items-start gap-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-4">
+          <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0 mt-0.5" />
+          <div className="flex-1 space-y-1.5">
+            {ruleSyncSuccess.category && (
+              <div>
+                <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Regra de categoria criada/atualizada: &ldquo;{ruleSyncSuccess.category.name}&rdquo;</p>
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
+                  {ruleSyncSuccess.category.applied > 0
+                    ? `${ruleSyncSuccess.category.applied} transação${ruleSyncSuccess.category.applied !== 1 ? 'ões' : ''} com a mesma descrição também foi${ruleSyncSuccess.category.applied !== 1 ? 'ram' : ''} atualizada${ruleSyncSuccess.category.applied !== 1 ? 's' : ''}.`
+                    : 'Nenhuma outra transação com a mesma descrição encontrada.'}
+                </p>
+              </div>
+            )}
+            {ruleSyncSuccess.type && (
+              <div>
+                <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Tipo atualizado: &ldquo;{TYPE_LABELS[ruleSyncSuccess.type.value]}&rdquo;</p>
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
+                  {ruleSyncSuccess.type.applied > 0
+                    ? `${ruleSyncSuccess.type.applied} transação${ruleSyncSuccess.type.applied !== 1 ? 'ões' : ''} com a mesma descrição também foi${ruleSyncSuccess.type.applied !== 1 ? 'ram' : ''} atualizada${ruleSyncSuccess.type.applied !== 1 ? 's' : ''}.`
+                    : 'Nenhuma outra transação com a mesma descrição encontrada.'}
+                </p>
+              </div>
+            )}
+          </div>
+          <button onClick={() => setRuleSyncSuccess(null)} className="text-emerald-400 hover:text-emerald-600 transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -233,6 +339,28 @@ export default function BoardDetailPage() {
             <Plus className="h-4 w-4" />
             Nova transação
           </Button>
+        </div>
+      </div>
+
+      {/* Entradas / Saídas / Saldo / Transferências — reflete o período e os filtros ativos */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06]">
+          <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Entradas</p>
+          <p className="text-sm sm:text-base font-semibold text-green-600">{formatCurrency(stats.income)}</p>
+        </div>
+        <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06]">
+          <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Saídas</p>
+          <p className="text-sm sm:text-base font-semibold text-red-500">{formatCurrency(stats.expenses)}</p>
+        </div>
+        <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06]">
+          <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Saldo</p>
+          <p className={`text-sm sm:text-base font-semibold ${stats.balance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500'}`}>
+            {formatCurrency(stats.balance)}
+          </p>
+        </div>
+        <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06]">
+          <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Transferências</p>
+          <p className="text-sm sm:text-base font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(stats.transfers)}</p>
         </div>
       </div>
 
@@ -286,7 +414,7 @@ export default function BoardDetailPage() {
             placeholder="Buscar..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="pl-9"
+            className="pl-9 h-9 rounded-xl border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] shadow-sm focus-visible:ring-blue-500/50"
           />
         </div>
 
@@ -299,8 +427,8 @@ export default function BoardDetailPage() {
           />
         )}
 
-        <Select value={typeFilter} onValueChange={v => setTypeFilter((v ?? 'all') as 'all' | TransactionType)}>
-          <SelectTrigger className="w-full sm:w-40">
+        <Select value={typeFilter} onValueChange={v => setTypeFilter((v ?? 'all') as 'all' | TransactionType)} items={TYPE_FILTER_OPTIONS}>
+          <SelectTrigger className="w-full sm:w-44 h-9 rounded-xl border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] shadow-sm focus-visible:ring-blue-500/50">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -310,12 +438,12 @@ export default function BoardDetailPage() {
           </SelectContent>
         </Select>
 
-        <Select value={categoryFilter} onValueChange={v => setCategoryFilter(v ?? 'all')}>
-          <SelectTrigger className="w-full sm:w-44">
+        <Select value={categoryFilter} onValueChange={v => setCategoryFilter(v ?? 'all')} items={categoryFilterItems}>
+          <SelectTrigger className="w-full sm:w-44 h-9 rounded-xl border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] shadow-sm focus-visible:ring-blue-500/50">
             <SelectValue placeholder="Categoria" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todas categorias</SelectItem>
+            <SelectItem value="all">Todas as Categorias</SelectItem>
             {categoryOptions.map(cat => (
               <SelectItem key={cat.id} value={cat.name}>
                 <div className="flex items-center gap-2">

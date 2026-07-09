@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useCategories } from '@/hooks/use-categories'
-import { TrendingDown, TrendingUp, Wallet, BarChart2, Loader2 } from 'lucide-react'
+import { TrendingDown, TrendingUp, Wallet, BarChart2, Loader2, AlertCircle, CheckCircle2, X } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
 import Link from 'next/link'
@@ -45,12 +45,16 @@ export default function AnalyticsPage() {
 
   const { boards } = useTransactionBoards()
   const { categories } = useCategories()
+  // Investimento nunca entra no analytics, mesmo fixado — o alfinete de
+  // conta de investimento só inclui a conta nos Relatórios.
   const unpinnedBoardIds = useMemo(
-    () => boards.filter(b => !b.show_on_dashboard).map(b => b.id),
+    () => boards.filter(b => !b.show_on_dashboard || b.is_investment).map(b => b.id),
     [boards]
   )
   const { syncCategoryToRule } = useRules()
   const [savingTxId, setSavingTxId] = useState<string | null>(null)
+  const [ruleSyncError, setRuleSyncError] = useState<string | null>(null)
+  const [ruleSyncSuccess, setRuleSyncSuccess] = useState<{ category: string; applied: number } | null>(null)
 
   const { transactions, loading, updateTransaction, refetch } = useTransactions({
     month,
@@ -110,10 +114,18 @@ export default function AnalyticsPage() {
     setSavingTxId(txId)
     await updateTransaction(txId, { category: newCategory })
     // Categoria normal: "gruda" em todas as transações com esse nome exato via
-    // regra automática (categoria especial nunca entra aqui).
+    // regra automática (categoria especial nunca entra aqui). Transferência
+    // também entra normalmente (decisão revertida em 2026-07-08).
     if (tx) {
+      setRuleSyncSuccess(null)
       const syncResult = await syncCategoryToRule(tx.description, newCategory, categories)
-      if (syncResult.error) console.error('[handleRecategorize] syncCategoryToRule falhou:', syncResult.error)
+      if (syncResult.error) {
+        console.error('[handleRecategorize] syncCategoryToRule falhou:', syncResult.error)
+        setRuleSyncError(syncResult.error)
+      } else {
+        setRuleSyncError(null)
+        setRuleSyncSuccess({ category: newCategory, applied: syncResult.applied })
+      }
       refetch()
     }
     setSavingTxId(null)
@@ -128,6 +140,40 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
+
+      {/* Erro ao sincronizar a regra automática — antes só ia pro console do
+          navegador, invisível pro usuário; agora aparece aqui. */}
+      {ruleSyncError && (
+        <div className="flex items-start gap-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
+          <AlertCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-red-800 dark:text-red-300">Categoria salva, mas a regra automática falhou</p>
+            <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{ruleSyncError}</p>
+          </div>
+          <button onClick={() => setRuleSyncError(null)} className="text-red-400 hover:text-red-600 transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Confirmação de sucesso — antes, criar/atualizar a regra com sucesso
+          não mostrava nada na tela. */}
+      {ruleSyncSuccess && (
+        <div className="flex items-start gap-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-4">
+          <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Regra criada/atualizada: &ldquo;{ruleSyncSuccess.category}&rdquo;</p>
+            <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
+              {ruleSyncSuccess.applied > 0
+                ? `${ruleSyncSuccess.applied} transação${ruleSyncSuccess.applied !== 1 ? 'ões' : ''} com a mesma descrição também foi${ruleSyncSuccess.applied !== 1 ? 'ram' : ''} atualizada${ruleSyncSuccess.applied !== 1 ? 's' : ''}.`
+                : 'Nenhuma outra transação com a mesma descrição encontrada.'}
+            </p>
+          </div>
+          <button onClick={() => setRuleSyncSuccess(null)} className="text-emerald-400 hover:text-emerald-600 transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -146,7 +192,7 @@ export default function AnalyticsPage() {
             className="h-9 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] px-3 text-sm font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
           >
             <option value="all">Todas as contas</option>
-            {boards.map(b => (
+            {boards.filter(b => !b.is_investment).map(b => (
               <option key={b.id} value={b.id}>{b.name}</option>
             ))}
           </select>
@@ -435,26 +481,50 @@ export default function AnalyticsPage() {
                     </div>
 
                     {/* Coluna 2: categoria — muda só essa transação; se for categoria
-                        normal, a regra automática cuida de propagar pro histórico */}
-                    <div className="shrink-0 flex items-center gap-1.5">
-                      {savingTxId === tx.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
-                      <Select
-                        value={tx.category}
-                        onValueChange={v => v && v !== tx.category && handleRecategorize(tx.id, v)}
-                        disabled={savingTxId === tx.id}
-                      >
-                        <SelectTrigger className="h-7 text-xs px-2 w-auto min-w-[120px] border-dashed">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categoriesForDate(categories, tx.date)
-                            .filter(c => c.type === tx.type || c.type === 'ambos')
-                            .map(c => (
-                              <SelectItem key={c.id} value={c.name} className="text-xs">{c.name}</SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                        normal, a regra automática cuida de propagar pro histórico.
+                        Normais e isoladas em seletores separados, mesmo padrão do
+                        resto do app — escolher em um desmarca o outro. */}
+                    {(() => {
+                      const usable = categoriesForDate(categories, tx.date).filter(c => c.type === tx.type || c.type === 'ambos')
+                      const normalOpts = usable.filter(c => !c.special_dates || c.special_dates.length === 0)
+                      const specialOpts = usable.filter(c => (c.special_dates?.length ?? 0) > 0)
+                      const isSpecial = specialOpts.some(c => c.name === tx.category)
+                      return (
+                        <div className="shrink-0 flex items-center gap-1.5">
+                          {savingTxId === tx.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+                          <Select
+                            value={isSpecial ? '' : tx.category}
+                            onValueChange={v => v && v !== tx.category && handleRecategorize(tx.id, v)}
+                            disabled={savingTxId === tx.id}
+                          >
+                            <SelectTrigger className="h-7 text-xs px-2 w-auto min-w-[120px] border-dashed">
+                              <SelectValue placeholder="Categoria" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {normalOpts.map(c => (
+                                <SelectItem key={c.id} value={c.name} className="text-xs">{c.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {specialOpts.length > 0 && (
+                            <Select
+                              value={isSpecial ? tx.category : ''}
+                              onValueChange={v => v && v !== tx.category && handleRecategorize(tx.id, v)}
+                              disabled={savingTxId === tx.id}
+                            >
+                              <SelectTrigger className="h-7 text-xs px-2 w-auto min-w-[100px] border-dashed">
+                                <SelectValue placeholder="Isolada" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {specialOpts.map(c => (
+                                  <SelectItem key={c.id} value={c.name} className="text-xs">{c.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                      )
+                    })()}
 
                     {/* Coluna 3: valor */}
                     <span className={`text-sm font-semibold shrink-0 w-24 text-right ${tx.type === 'receita' ? 'text-green-600' : tx.type === 'transferencia' ? 'text-slate-400' : 'text-red-500'}`}>

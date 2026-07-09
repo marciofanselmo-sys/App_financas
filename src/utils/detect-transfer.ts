@@ -2,7 +2,12 @@
 // não uma compra ou pagamento a terceiros. PIX é propositalmente EXCLUÍDO daqui — a maioria dos
 // PIX é pagamento a lojas/pessoas (uma despesa ou receita real), não uma movimentação interna.
 const TRANSFER_PATTERNS = [
-  /^transfer[êe]ncia\b/i,
+  // Negative lookahead exclui "Transferência Pix recebida/enviada NOME" — rótulo
+  // que o Mercado Pago usava em 2025 pro Pix normal (mudou pra só "Pix
+  // recebido/enviado" em 2026). É um Pix de verdade (pagamento a terceiro),
+  // não uma movimentação entre contas do próprio usuário — sem essa exceção,
+  // todo Pix de extrato antigo do Mercado Pago virava "transferência" por engano.
+  /^transfer[êe]ncia\b(?!\s+pix\b)/i,
   /^transf\b/i,
   /^ted\b/i,
   /^doc\b/i,

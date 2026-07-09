@@ -57,7 +57,13 @@ export function TransactionTable({
   const selectionEnabled = !!onBulkCategoryChange
   const allSelected = transactions.length > 0 && selected.size === transactions.length
   const selectedTransactions = transactions.filter(t => selected.has(t.id))
+  // Normais e especiais em seletores separados, gravando no mesmo estado
+  // (bulkCategory) — escolher em um desmarca o outro, igual ao formulário de
+  // transação. A especial só é opção se valer pra TODAS as selecionadas.
   const bulkCategoryOptions = categoriesForTransactions(categories ?? [], selectedTransactions)
+  const bulkNormalOptions = bulkCategoryOptions.filter(c => !c.special_dates || c.special_dates.length === 0)
+  const bulkSpecialOptions = bulkCategoryOptions.filter(c => (c.special_dates?.length ?? 0) > 0)
+  const bulkIsSpecial = bulkSpecialOptions.some(c => c.name === bulkCategory)
 
   // Nunca deixa a seleção "grudada" entre filtros diferentes (mês, busca, conta) —
   // sem isso, uma seleção antiga podia ser aplicada por engano numa lista diferente
@@ -142,12 +148,12 @@ export function TransactionTable({
           <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
             {selected.size} selecionada{selected.size !== 1 ? 's' : ''}
           </span>
-          <Select value={bulkCategory} onValueChange={v => setBulkCategory(v ?? '')}>
+          <Select value={bulkIsSpecial ? '' : bulkCategory} onValueChange={v => { if (v) setBulkCategory(v) }}>
             <SelectTrigger className="w-48 h-9 bg-white dark:bg-slate-800">
               <SelectValue placeholder="Mudar categoria para..." />
             </SelectTrigger>
             <SelectContent>
-              {bulkCategoryOptions.map(c => (
+              {bulkNormalOptions.map(c => (
                 <SelectItem key={c.id} value={c.name}>
                   <span className="flex items-center gap-2">
                     <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
@@ -155,6 +161,25 @@ export function TransactionTable({
                   </span>
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+          <Select value={bulkIsSpecial ? bulkCategory : ''} onValueChange={v => { if (v) setBulkCategory(v) }}>
+            <SelectTrigger className="w-48 h-9 bg-white dark:bg-slate-800">
+              <SelectValue placeholder="Categoria isolada..." />
+            </SelectTrigger>
+            <SelectContent>
+              {bulkSpecialOptions.length === 0 ? (
+                <SelectItem value="__empty__" disabled>Nenhuma isolada válida pra seleção</SelectItem>
+              ) : (
+                bulkSpecialOptions.map(c => (
+                  <SelectItem key={c.id} value={c.name}>
+                    <span className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                      {c.name}
+                    </span>
+                  </SelectItem>
+                ))
+              )}
             </SelectContent>
           </Select>
           <Button size="sm" onClick={() => setBulkConfirmOpen(true)} disabled={!bulkCategory || applyingBulk} className="gap-1.5">
@@ -331,7 +356,7 @@ export function TransactionTable({
               Conta de destino
             </Label>
             <Select value={selectedBoardId} onValueChange={(v) => v && setSelectedBoardId(v)}>
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Selecione uma conta..." />
               </SelectTrigger>
               <SelectContent>
@@ -401,7 +426,7 @@ export function TransactionTable({
               Conta de destino
             </Label>
             <Select value={bulkMoveBoardId} onValueChange={v => v && setBulkMoveBoardId(v)}>
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Selecione uma conta..." />
               </SelectTrigger>
               <SelectContent>

@@ -13,11 +13,16 @@ import { addMonths } from '@/utils/add-months'
 import { X } from 'lucide-react'
 
 type TransactionData = Omit<Transaction, 'id' | 'user_id' | 'created_at'>
+interface SubmitOptions {
+  // Usuário marcou "só esta transação" — pula a regra automática de categoria
+  // (criar/atualizar regra + aplicar retroativamente), mesmo mudando a categoria.
+  skipRuleSync?: boolean
+}
 
 interface TransactionFormProps {
   open: boolean
   onClose: () => void
-  onSubmit: (data: TransactionData) => Promise<{ error: unknown }>
+  onSubmit: (data: TransactionData, options?: SubmitOptions) => Promise<{ error: unknown }>
   onSubmitBatch?: (items: TransactionData[]) => Promise<{ error: unknown }>
   initialData?: Transaction
   boardId?: string
@@ -37,11 +42,37 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
   const [error, setError] = useState('')
   const [isInstallment, setIsInstallment] = useState(false)
   const [installmentCount, setInstallmentCount] = useState(2)
+  const [skipRuleSync, setSkipRuleSync] = useState(false)
   const tagRef = useRef<HTMLInputElement>(null)
 
-  const filteredCategories = categoriesForDate(categories, date).filter(c => c.type === type || c.type === 'ambos')
+  // Categorias normais e especiais ficam em seletores separados, mas gravam no
+  // mesmo campo `category` — escolher em um automaticamente desmarca o outro.
+  const usableCategoriesBase = categoriesForDate(categories, date).filter(c => c.type === type || c.type === 'ambos')
+  // A categoria JÁ salva na transação sempre aparece como opção, mesmo que hoje
+  // ela não passasse no filtro de data (ex: os meses configurados na categoria
+  // isolada mudaram depois que a transação foi categorizada) — sem isso, abrir
+  // pra editar mostrava o seletor vazio mesmo com uma categoria válida salva.
+  const currentCategoryObj = category ? categories.find(c => c.name === category) : undefined
+  const usableCategories = currentCategoryObj && !usableCategoriesBase.some(c => c.name === category)
+    ? [...usableCategoriesBase, currentCategoryObj]
+    : usableCategoriesBase
+  const filteredCategories = usableCategories.filter(c => !c.special_dates || c.special_dates.length === 0)
+  const specialCategories = usableCategories.filter(c => (c.special_dates?.length ?? 0) > 0)
+  const selectedIsSpecial = specialCategories.some(c => c.name === category)
   const isNewTransaction = !initialData
   const canInstallment = isNewTransaction && type === 'despesa' && !!onSubmitBatch
+  // Só faz sentido oferecer a opção quando editar de fato muda categoria OU
+  // tipo — são esses dois gatilhos (não a edição em si) que propagam pra
+  // outras transações com a mesma descrição. Mudar só o Tipo (ex: Despesa ->
+  // Transferência) sem mudar a categoria também dispara isso.
+  const categoryChanged = !isNewTransaction && category !== initialData?.category
+  const typeChanged = !isNewTransaction && type !== initialData?.type
+  const hasChangeToSync = categoryChanged || typeChanged
+
+  // Evita que o efeito de baixo limpe a categoria imediatamente ao abrir o
+  // formulário pra editar — ele só deve reagir a uma mudança de tipo/data feita
+  // pelo usuário DEPOIS de aberto, nunca à carga inicial do valor já salvo.
+  const justOpenedRef = useRef(false)
 
   useEffect(() => {
     if (open) {
@@ -55,10 +86,15 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
       setError('')
       setIsInstallment(false)
       setInstallmentCount(2)
+      // Marcada por padrão — editar muda só esta transação. Pra virar regra
+      // (afetar todo o histórico com a mesma descrição), o usuário desmarca.
+      setSkipRuleSync(true)
+      justOpenedRef.current = true
     }
   }, [open, initialData])
 
   useEffect(() => {
+    if (justOpenedRef.current) { justOpenedRef.current = false; return }
     if (!category || categories.length === 0) return
     const still = categories.find(c =>
       c.name === category && (c.type === type || c.type === 'ambos') && isCategoryUsableForDate(c, date)
@@ -121,7 +157,7 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
         return
       }
     } else {
-      const { error } = await onSubmit({ ...baseData, date })
+      const { error } = await onSubmit({ ...baseData, date }, { skipRuleSync })
       if (error) {
         const msg = typeof error === 'object' && error !== null && 'message' in error
           ? (error as { message: string }).message : String(error)
@@ -253,25 +289,57 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
                 + Gerenciar categorias
               </a>
             </div>
-            <Select value={category} onValueChange={v => setCategory(v ?? '')}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione uma categoria..." />
-              </SelectTrigger>
-              <SelectContent>
-                {filteredCategories.length === 0 ? (
-                  <SelectItem value="__empty__" disabled>Nenhuma categoria disponível</SelectItem>
-                ) : (
-                  filteredCategories.map(cat => (
-                    <SelectItem key={cat.id} value={cat.name}>
-                      <div className="flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                        {cat.name}
-                      </div>
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
+            <div className={specialCategories.length > 0 ? 'grid grid-cols-2 gap-3' : ''}>
+              <Select value={selectedIsSpecial ? '' : category} onValueChange={v => { if (v) setCategory(v) }}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Selecione uma categoria..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {filteredCategories.length === 0 ? (
+                    <SelectItem value="__empty__" disabled>Nenhuma categoria disponível</SelectItem>
+                  ) : (
+                    filteredCategories.map(cat => (
+                      <SelectItem key={cat.id} value={cat.name}>
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                          {cat.name}
+                        </div>
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {specialCategories.length > 0 && (
+                <Select value={selectedIsSpecial ? category : ''} onValueChange={v => { if (v) setCategory(v) }}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Categoria isolada..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {specialCategories.map(cat => (
+                      <SelectItem key={cat.id} value={cat.name}>
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                          {cat.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            {hasChangeToSync && (
+              <label className="flex items-start gap-2 pt-1 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={skipRuleSync}
+                  onChange={e => setSkipRuleSync(e.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 dark:border-slate-600 accent-blue-600 cursor-pointer"
+                />
+                <span>
+                  Mudar só esta transação — não aplicar {categoryChanged && typeChanged ? 'a categoria nem o tipo' : categoryChanged ? 'a categoria' : 'o tipo'} em outras transações com a mesma descrição
+                </span>
+              </label>
+            )}
           </div>
 
           {/* Tags / Etiquetas */}
