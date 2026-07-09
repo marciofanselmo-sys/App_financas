@@ -14,53 +14,69 @@ export function useTransactions(filters?: TransactionFilters) {
     setError(null)
     const supabase = createClient()
 
-    let query = supabase
-      .from('transactions')
-      .select('*')
-      .order('date', { ascending: false })
+    function buildQuery() {
+      let query = supabase
+        .from('transactions')
+        .select('*')
+        .order('date', { ascending: false })
 
-    if (filters?.month && filters?.year) {
-      const start = `${filters.year}-${String(filters.month).padStart(2, '0')}-01`
-      const end = new Date(filters.year, filters.month, 0).toISOString().split('T')[0]
-      query = query.gte('date', start).lte('date', end)
-    } else if (filters?.year) {
-      query = query
-        .gte('date', `${filters.year}-01-01`)
-        .lte('date', `${filters.year}-12-31`)
+      if (filters?.month && filters?.year) {
+        const start = `${filters.year}-${String(filters.month).padStart(2, '0')}-01`
+        const end = new Date(filters.year, filters.month, 0).toISOString().split('T')[0]
+        query = query.gte('date', start).lte('date', end)
+      } else if (filters?.year) {
+        query = query
+          .gte('date', `${filters.year}-01-01`)
+          .lte('date', `${filters.year}-12-31`)
+      }
+
+      if (filters?.board_id) {
+        query = query.eq('board_id', filters.board_id)
+      }
+
+      if (filters?.category && filters.category !== 'all') {
+        query = query.eq('category', filters.category)
+      }
+
+      if (filters?.type) {
+        query = query.eq('type', filters.type)
+      }
+
+      if (filters?.search) {
+        query = query.ilike('description', `%${filters.search}%`)
+      }
+
+      if (filters?.tag) {
+        query = query.contains('tags', [filters.tag])
+      }
+
+      if (filters?.exclude_board_ids?.length) {
+        const ids = filters.exclude_board_ids.join(',')
+        query = query.or(`board_id.is.null,board_id.not.in.(${ids})`)
+      }
+
+      return query
     }
 
-    if (filters?.board_id) {
-      query = query.eq('board_id', filters.board_id)
+    // Busca paginada — o Supabase limita a 1000 linhas por consulta por padrão.
+    // Sem isso, um período com mais de 1000 transações (ex: ano inteiro com
+    // várias contas movimentadas) tinha as mais ANTIGAS cortadas em silêncio,
+    // já que a ordenação é por data decrescente (as 1000 primeiras são as mais
+    // recentes) — relatório anual de 2025 perdia jan-abr por causa disso.
+    const PAGE = 1000
+    const allData: Transaction[] = []
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await buildQuery().range(from, from + PAGE - 1)
+      if (error) {
+        setError(error.message)
+        setLoading(false)
+        return
+      }
+      if (!data?.length) break
+      allData.push(...(data as Transaction[]))
+      if (data.length < PAGE) break
     }
-
-    if (filters?.category && filters.category !== 'all') {
-      query = query.eq('category', filters.category)
-    }
-
-    if (filters?.type) {
-      query = query.eq('type', filters.type)
-    }
-
-    if (filters?.search) {
-      query = query.ilike('description', `%${filters.search}%`)
-    }
-
-    if (filters?.tag) {
-      query = query.contains('tags', [filters.tag])
-    }
-
-    if (filters?.exclude_board_ids?.length) {
-      const ids = filters.exclude_board_ids.join(',')
-      query = query.or(`board_id.is.null,board_id.not.in.(${ids})`)
-    }
-
-    const { data, error } = await query
-
-    if (error) {
-      setError(error.message)
-    } else {
-      setTransactions(data as Transaction[])
-    }
+    setTransactions(allData)
     setLoading(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters?.month, filters?.year, filters?.category, filters?.type, filters?.search, filters?.board_id, filters?.tag, filters?.exclude_board_ids?.join(',')])
