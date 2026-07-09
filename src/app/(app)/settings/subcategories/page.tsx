@@ -56,6 +56,16 @@ export default function SubcategoriesPage() {
     return categories.filter(c => (c.type === editType || c.type === 'ambos') && !already.has(c.name))
   }, [categories, categoriesByLabel, editing, editType])
 
+  // Normais e isoladas em seletores separados, mesmo padrão do resto do app.
+  const normalCategoriesToAdd = useMemo(
+    () => availableCategoriesToAdd.filter(c => !(c.special_dates && c.special_dates.length > 0)),
+    [availableCategoriesToAdd]
+  )
+  const isolatedCategoriesToAdd = useMemo(
+    () => availableCategoriesToAdd.filter(c => c.special_dates && c.special_dates.length > 0),
+    [availableCategoriesToAdd]
+  )
+
   async function handleAddCategoryToGroup(categoryName: string) {
     if (!editing) return
     setAddingCategory(true)
@@ -272,28 +282,50 @@ export default function SubcategoriesPage() {
                               ))}
                             </div>
                           )}
-                          <Select<string>
-                            key={addCategoryKey}
-                            onValueChange={v => { if (v) handleAddCategoryToGroup(v) }}
-                            disabled={addingCategory || availableCategoriesToAdd.length === 0}
-                          >
-                            <SelectTrigger className="h-8 text-xs w-full sm:w-64">
-                              <SelectValue
-                                placeholder={
-                                  addingCategory
-                                    ? 'Adicionando...'
-                                    : availableCategoriesToAdd.length === 0
-                                      ? 'Nenhuma categoria disponível'
-                                      : '+ Adicionar categoria ao grupo'
-                                }
-                              />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {availableCategoriesToAdd.map(c => (
-                                <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <Select<string>
+                              key={`normal-${addCategoryKey}`}
+                              onValueChange={v => { if (v) handleAddCategoryToGroup(v) }}
+                              disabled={addingCategory || normalCategoriesToAdd.length === 0}
+                            >
+                              <SelectTrigger className="h-8 text-xs w-full sm:w-56">
+                                <SelectValue
+                                  placeholder={
+                                    addingCategory
+                                      ? 'Adicionando...'
+                                      : normalCategoriesToAdd.length === 0
+                                        ? 'Nenhuma categoria disponível'
+                                        : '+ Adicionar categoria ao grupo'
+                                  }
+                                />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {normalCategoriesToAdd.map(c => (
+                                  <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Select<string>
+                              key={`isolated-${addCategoryKey}`}
+                              onValueChange={v => { if (v) handleAddCategoryToGroup(v) }}
+                              disabled={addingCategory || isolatedCategoriesToAdd.length === 0}
+                            >
+                              <SelectTrigger className="h-8 text-xs w-full sm:w-56">
+                                <SelectValue
+                                  placeholder={
+                                    isolatedCategoriesToAdd.length === 0
+                                      ? 'Nenhuma isolada disponível'
+                                      : '+ Adicionar categoria isolada'
+                                  }
+                                />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {isolatedCategoriesToAdd.map(c => (
+                                  <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
                           {addCategoryError && <p className="text-xs text-red-500">{addCategoryError}</p>}
                         </div>
                       </>
