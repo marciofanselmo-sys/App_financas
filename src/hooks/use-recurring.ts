@@ -11,6 +11,7 @@ export interface RecurringItem {
   type: TransactionType
   avgAmount: number
   monthsCount: number
+  months: string[]
   lastDate: string
   board_id?: string | null
   group_label?: string | null
@@ -171,6 +172,7 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
         type: g.type,
         avgAmount,
         monthsCount: g.months.size,
+        months: Array.from(g.months),
         lastDate: g.lastDate,
         board_id: g.board_id,
         group_label: g.group_label,

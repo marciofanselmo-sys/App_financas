@@ -20,7 +20,7 @@ export interface DisplayItem {
 // detecção começou, então mudar o formato faria confirmações/ignorados já
 // salvos pelos usuários "sumirem". Receita e transferência são tipos novos
 // aqui (nunca existiu linha salva pra eles), então ganham um prefixo próprio.
-function decisionKey(type: TransactionType, rawKey: string): string {
+export function decisionKey(type: TransactionType, rawKey: string): string {
   return type === 'despesa' ? rawKey : `${type}:${rawKey}`
 }
 
@@ -56,16 +56,20 @@ export function buildDisplayItems(
   for (const members of grouped.values()) {
     const label = members[0].group_label!.trim()
     const type = members[0].type
-    const totalCount = members.reduce((s, r) => s + r.monthsCount, 0)
-    const avgAmount = totalCount > 0
-      ? members.reduce((s, r) => s + r.avgAmount * r.monthsCount, 0) / totalCount
-      : 0
+    // Meses distintos do grupo como um todo (não a soma dos meses de cada
+    // descrição) — duas descrições que caem no mesmo mês não podem contar
+    // esse mês duas vezes, senão a média mensal do grupo fica diluída pela
+    // metade quando as descrições se sobrepõem (bug corrigido em 2026-07-09).
+    const unionMonths = new Set(members.flatMap(r => r.months ?? []))
+    const monthsCount = unionMonths.size
+    const totalAmount = members.reduce((s, r) => s + r.avgAmount * r.monthsCount, 0)
+    const avgAmount = monthsCount > 0 ? totalAmount / monthsCount : 0
     const lastDate = members.reduce((max, r) => r.lastDate > max ? r.lastDate : max, '')
     items.push({
       key: decisionKey(type, `group:${label}`),
       name: label,
       avgAmount,
-      monthsCount: totalCount,
+      monthsCount,
       lastDate,
       category: members[0]?.category ?? '',
       subcategory: label,

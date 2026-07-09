@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Subcategory, TransactionType } from '@/types'
+import { decisionKey } from '@/lib/recurring-groups'
 
 function sortSubcategories(list: Subcategory[]): Subcategory[] {
   return [...list].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
@@ -185,6 +186,19 @@ export function useSubcategories() {
       .eq('type', sub.type)
 
     if (error) { console.error('Erro ao adicionar categoria à subcategoria:', error); return false }
+
+    // O grupo formado por essa atribuição já nasce confirmado como fixo em
+    // Recorrências — o usuário está organizando deliberadamente essas
+    // transações num grupo recorrente aqui, não faz sentido pedir confirmação
+    // manual de novo lá (decisão de produto, 2026-07-09). Upsert porque o
+    // grupo pode já ter uma decisão salva de uma atribuição anterior.
+    const { error: decisionError } = await supabase
+      .from('recurring_decisions')
+      .upsert(
+        { user_id: user.id, description_key: decisionKey(sub.type, `group:${label}`), decision: 'confirmed' },
+        { onConflict: 'user_id,description_key' }
+      )
+    if (decisionError) console.error('Erro ao confirmar grupo automaticamente:', decisionError)
 
     setCategoriesByLabel(prev => {
       const current = prev[label] ?? []
