@@ -72,18 +72,24 @@ Quatro tipos de relatório, todos com filtro por conta:
 - Filtro por conta
 - **Remover da lista de parcelamentos:** ícone de lixeira em cada card, com confirmação — não apaga a transação, só limpa os campos de parcela (`installment_current`/`installment_total`, ou o sufixo `(X/Y)` legado), fazendo o item deixar de ser detectado como parcelamento
 
+### Investimentos
+- Contas dedicadas a investimento (`is_investment`), separadas das contas normais em `/transactions`
+- Templates prontos: Corretora (RICO, XP, Clear, Nubank Investimentos), Previdência Privada, Criptomoedas, Tesouro Direto, Outro
+- Importação de posição por conta: patrimônio total, breakdown de ativos por categoria e lista de proventos previstos
+- Botão de atualizar posição a qualquer momento (reimportar extrato da corretora)
+
 ### Metas Financeiras
 - Tipos de meta: Reserva de Emergência, Investimento, Carro, Viagem, Quitar Dívida, Imóvel, Personalizada
 - Status automático: No prazo / Adiantada / Atrasada (baseado na % concluída vs tempo decorrido)
-- Atualização de saldo manual ou via importação de extrato:
-  - **RICO (XLS)**: importação de extrato da corretora Rico para atualizar o valor investido
-  - **OFX**: importação de saldo bancário para atualizar reserva/conta
+- **Valor atual**: manual ou vinculado a uma conta de investimento já existente (puxa o patrimônio importado em `/investments`) — mutuamente exclusivo, com botão de reatualizar em 1 clique sem precisar reabrir o seletor de conta
+- "Meta iniciada em" é editável, para metas que representam dinheiro já guardado antes do cadastro no app
 
 ### Planejamento Orçamentário
 - Templates de orçamento: Equilibrado (30% poupança/investimento), Investidor (40%), Quitar Dívidas (10%), Personalizado
 - Três campos no topo: **Receita prevista**, **Gastos Previstos (Recorrência)** e **Poupança/Investimento previsto** (soma Investimento + Reserva/Reserva de emergência) — unificado em 2026-07-01
 - **Gastos Previstos (Recorrência)**: campo somente leitura, puxado do mesmo total de "Fixos confirmados / mês" de `/fixos` (recorrências confirmadas + Cartões & Parcelas ativos). Antes de salvar, mostra uma prévia ao vivo; ao clicar em "Salvar Planejamento", o valor é **travado** (congelado) naquele momento e fica gravado com aquele mês específico — não muda mais sozinho depois. Esse valor não aparece na tabela Planejado × Realizado (é só referência no formulário)
 - Definição de limite por categoria
+- **Limite por subcategoria**: seção separada para limitar subcategorias de despesa (ex: "Mercado"), fora da soma de "Total Despesas" da tabela Planejado × Realizado (evita contar o mesmo gasto duas vezes, já que subcategoria é um recorte transversal à categoria)
 - Comparação planejado vs realizado para o mês selecionado
 - Indicadores visuais de status por categoria (dentro do limite, próximo, estourado)
 - **Repetição automática:** ao salvar um planejamento, ele passa a valer também para os meses seguintes que ainda não têm plano próprio (a tela avisa quando o valor exibido foi herdado). Meses anteriores e meses futuros já configurados individualmente não são alterados.
@@ -173,6 +179,7 @@ src/
       reports/          # Relatórios (mensal, anual, parcelas, fixos)
       fixos/            # Gastos recorrentes
       recurring/        # Parcelas ativas
+      investments/      # Contas de investimento e importação de posição
       goals/            # Metas financeiras
       planning/         # Planejamento orçamentário
       import/           # Importação de extratos
@@ -188,6 +195,7 @@ src/
   components/
     dashboard/          # Cards, gráficos, filtro de período
     transactions/       # Formulário, tabela, filtros, import CSV
+    investments/        # Breakdown de posição, categorias e proventos
     layout/             # Sidebar (desktop) e nav inferior (mobile)
     ui/                 # Componentes base (shadcn/ui)
   hooks/                # Lógica de dados (CRUD, filtros, cálculos)
