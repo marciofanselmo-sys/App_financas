@@ -1,17 +1,19 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import Link from 'next/link'
 import { useCategories } from '@/hooks/use-categories'
 import { useTransactions } from '@/hooks/use-transactions'
-import { Category, CategoryType, CATEGORY_COLORS, TRANSFER_CATEGORY_COLOR, SpecialCategoryDate } from '@/types'
+import { useSubcategories } from '@/hooks/use-subcategories'
+import { Category, CategoryType, CATEGORY_COLORS, TRANSFER_CATEGORY_COLOR } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { SpecialDatesPicker, MONTH_NAMES } from '@/components/categories/special-dates-picker'
-import { Plus, Pencil, Trash2, Tag, RotateCcw, Search, AlertTriangle, ArrowRight, Sparkles } from 'lucide-react'
+import { Plus, Pencil, Trash2, Tag, RotateCcw, Search, AlertTriangle, ArrowRight, Sparkles, TrendingDown, TrendingUp, ArrowLeftRight, Layers } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 const TYPE_LABELS: Record<CategoryType, string> = {
   receita: 'Receita',
@@ -35,12 +37,29 @@ const TYPE_FILTER: { value: string; label: string }[] = [
   { value: 'ambos',   label: 'Ambos' },
 ]
 
+// Mesma convenção visual da aba Subcategorias: seções por tipo, transferência por último.
+type SectionType = 'despesa' | 'receita' | 'transferencia'
+const SECTION_ORDER: SectionType[] = ['despesa', 'receita', 'transferencia']
+
+const SECTION_META: Record<SectionType, { label: string; icon: React.ElementType; iconColor: string; iconBg: string; help: string }> = {
+  despesa: {
+    label: 'Despesas', icon: TrendingDown, iconColor: 'text-red-500', iconBg: 'bg-red-50 dark:bg-red-900/20',
+    help: 'Dinheiro que sai de verdade: contas, compras, assinaturas... Conta como gasto real no saldo, no planejamento e nos relatórios.',
+  },
+  receita: {
+    label: 'Receitas', icon: TrendingUp, iconColor: 'text-green-500', iconBg: 'bg-green-50 dark:bg-green-900/20',
+    help: 'Dinheiro que entra: salário, freelance, vendas... Conta como ganho real no saldo, no dashboard e nos relatórios.',
+  },
+  transferencia: {
+    label: 'Transferências', icon: ArrowLeftRight, iconColor: 'text-slate-400', iconBg: 'bg-slate-100 dark:bg-slate-700',
+    help: 'Movimentação entre suas próprias contas — não é ganho nem gasto real. Categorizar ajuda só a organizar pra onde o dinheiro foi.',
+  },
+}
+
 interface FormState {
   name: string
   type: CategoryType
   color: string
-  special: boolean
-  specialDates: SpecialCategoryDate[]
 }
 
 interface MergeState {
@@ -48,14 +67,12 @@ interface MergeState {
   toId: string   // empty string = not selected
 }
 
-const EMPTY_FORM: FormState = {
-  name: '', type: 'despesa', color: CATEGORY_COLORS[0],
-  special: false, specialDates: [],
-}
+const EMPTY_FORM: FormState = { name: '', type: 'despesa', color: CATEGORY_COLORS[0] }
 
 export default function CategoriesPage() {
   const { categories, loading, createCategory, updateCategory, deleteCategory, seedDefaults } = useCategories()
   const { transactions } = useTransactions()
+  const { categoriesByLabel } = useSubcategories()
 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Category | null>(null)
@@ -81,6 +98,13 @@ export default function CategoriesPage() {
     return map
   }, [transactions])
 
+  // Nomes de categoria já vinculados a alguma subcategoria — usado só pra marcar o selo na linha.
+  const categoriesWithSubcategory = useMemo(() => {
+    const set = new Set<string>()
+    Object.values(categoriesByLabel).forEach(names => names.forEach(n => set.add(n)))
+    return set
+  }, [categoriesByLabel])
+
   const filtered = useMemo(() => {
     let result = categories.filter(c => !(c.special_dates && c.special_dates.length > 0))
     if (search.trim()) {
@@ -93,53 +117,30 @@ export default function CategoriesPage() {
     return result
   }, [categories, search, typeFilter])
 
-  const receitas = filtered.filter(c => c.type === 'receita' || c.type === 'ambos')
-  const despesas = filtered.filter(c => c.type === 'despesa' || c.type === 'ambos')
-  const transferencias = filtered.filter(c => c.type === 'transferencia' || c.type === 'ambos')
-
-  const specialCategories = useMemo(
-    () => categories
-      .filter(c => c.special_dates && c.special_dates.length > 0)
-      .sort((a, b) => {
-        const aMin = a.special_dates![0]
-        const bMin = b.special_dates![0]
-        return (bMin.year - aMin.year) || (bMin.month - aMin.month)
-      }),
-    [categories],
-  )
+  const bySection: Record<SectionType, Category[]> = {
+    despesa: filtered.filter(c => c.type === 'despesa' || c.type === 'ambos'),
+    receita: filtered.filter(c => c.type === 'receita' || c.type === 'ambos'),
+    transferencia: filtered.filter(c => c.type === 'transferencia' || c.type === 'ambos'),
+  }
 
   function openCreate() {
     setEditing(null); setForm(EMPTY_FORM); setFormError(''); setFormOpen(true)
   }
 
-  function openCreateSpecial() {
-    const today = new Date()
-    setEditing(null)
-    setForm({ ...EMPTY_FORM, special: true, specialDates: [{ month: today.getMonth() + 1, year: today.getFullYear() }] })
-    setFormError('')
-    setFormOpen(true)
-  }
-
   function openEdit(cat: Category) {
     setEditing(cat)
-    setForm({
-      name: cat.name, type: cat.type, color: cat.color,
-      special: !!(cat.special_dates && cat.special_dates.length > 0),
-      specialDates: cat.special_dates ?? [],
-    })
+    setForm({ name: cat.name, type: cat.type, color: cat.color })
     setFormError(''); setFormOpen(true)
   }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim()) { setFormError('Nome obrigatório.'); return }
-    if (form.special && form.specialDates.length === 0) { setFormError('Adicione pelo menos um mês para a categoria isolada.'); return }
     setSaving(true); setFormError('')
     const payload = {
       name: form.name,
       type: form.type,
       color: form.type === 'transferencia' ? TRANSFER_CATEGORY_COLOR : form.color,
-      special_dates: form.special ? form.specialDates : [],
     }
     const { error } = editing
       ? await updateCategory(editing.id, payload)
@@ -182,14 +183,9 @@ export default function CategoriesPage() {
   }
 
   const deleteCount = deleteTarget ? (usageCount[deleteTarget.name] ?? 0) : 0
-  const mergeTargetsAll = mergeState
-    ? categories.filter(c => c.id !== mergeState.from.id && c.type === mergeState.from.type)
+  const mergeTargets = mergeState
+    ? categories.filter(c => c.id !== mergeState.from.id && c.type === mergeState.from.type && !(c.special_dates && c.special_dates.length > 0))
     : []
-  // Normais e isoladas em seletores separados, mesmo padrão do resto do app —
-  // escolher em um desmarca o outro.
-  const mergeTargetsNormal = mergeTargetsAll.filter(c => !c.special_dates || c.special_dates.length === 0)
-  const mergeTargetsSpecial = mergeTargetsAll.filter(c => (c.special_dates?.length ?? 0) > 0)
-  const mergeToIsSpecial = mergeTargetsSpecial.some(c => c.id === mergeState?.toId)
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
@@ -206,6 +202,14 @@ export default function CategoriesPage() {
           </Button>
         </div>
       </div>
+
+      <Link
+        href="/settings/isolated-categories"
+        className="flex items-center gap-1.5 text-xs font-medium text-violet-600 dark:text-violet-400 hover:underline w-fit"
+      >
+        <Sparkles className="h-3.5 w-3.5" />
+        Gerenciar categorias isoladas (gastos de um mês específico) →
+      </Link>
 
       {seedError && (
         <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
@@ -260,20 +264,25 @@ export default function CategoriesPage() {
         <p className="text-center text-sm text-slate-400 py-10">Nenhuma categoria para &ldquo;{search}&rdquo;</p>
       ) : (
         <div className="space-y-6">
-          {[
-            { label: 'Receitas', items: receitas, help: 'Dinheiro que entra: salário, freelance, vendas... Conta como ganho real no saldo, no dashboard e nos relatórios.' },
-            { label: 'Despesas', items: despesas, help: 'Dinheiro que sai de verdade: contas, compras, assinaturas... Conta como gasto real no saldo, no planejamento e nos relatórios.' },
-            { label: 'Transferências', items: transferencias, help: 'Movimentação entre suas próprias contas — não é ganho nem gasto real (ex: pagar a fatura do cartão pela conta corrente, ou aplicar num investimento). Por isso fica fora dos totais de receita/despesa: o gasto de verdade já foi contado individualmente na fatura, por exemplo, e somar a transferência também duplicaria o valor. Categorizar ajuda só a organizar pra onde o dinheiro foi.' },
-          ].map(({ label, items, help }) => (
-            <div key={label}>
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">{label}</h2>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mb-3">{help}</p>
-              {items.length === 0 ? (
-                <p className="text-sm text-slate-400 dark:text-slate-500 py-2">Nenhuma categoria de {label.toLowerCase()}</p>
-              ) : (
+          {SECTION_ORDER.map(type => {
+            const items = bySection[type]
+            if (items.length === 0) return null
+            const { label, icon: Icon, iconColor, iconBg, help } = SECTION_META[type]
+            return (
+              <section key={type} className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className={cn('h-7 w-7 rounded-lg flex items-center justify-center', iconBg)}>
+                    <Icon className={cn('h-4 w-4', iconColor)} />
+                  </div>
+                  <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">{label}</h2>
+                  <span className="text-xs text-slate-400">({items.length})</span>
+                </div>
+                <p className="text-xs text-slate-400 dark:text-slate-500 ml-9 -mt-1">{help}</p>
+
                 <div className="space-y-2">
                   {items.map(cat => {
                     const count = usageCount[cat.name] ?? 0
+                    const hasSubcategory = categoriesWithSubcategory.has(cat.name)
                     return (
                       <div
                         key={cat.id}
@@ -290,6 +299,14 @@ export default function CategoriesPage() {
                             </p>
                           )}
                         </div>
+                        {hasSubcategory && (
+                          <span
+                            title="Vinculada a uma subcategoria"
+                            className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-violet-50 dark:bg-violet-900/30 text-violet-500 dark:text-violet-400 shrink-0"
+                          >
+                            <Layers className="h-2.5 w-2.5" />
+                          </span>
+                        )}
                         <Badge className={`text-xs shrink-0 border-0 ${TYPE_BADGE[cat.type]}`}>
                           {TYPE_LABELS[cat.type]}
                         </Badge>
@@ -314,67 +331,11 @@ export default function CategoriesPage() {
                     )
                   })}
                 </div>
-              )}
-            </div>
-          ))}
+              </section>
+            )
+          })}
         </div>
       )}
-
-      {/* CATEGORIAS ESPECIAIS — separadas da lista principal, presas a um mês/ano */}
-      <div className="border-t border-slate-200 dark:border-slate-700 pt-6">
-        <div className="flex items-center justify-between gap-4 mb-3">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-              <Sparkles className="h-4 w-4 text-violet-500" />
-              Categorias isoladas
-            </h2>
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-              Para organizar um gasto ou evento único de um mês específico (ex: &ldquo;Reforma Banheiro&rdquo;, &ldquo;Viagem&rdquo;)
-            </p>
-          </div>
-          <Button variant="outline" size="sm" onClick={openCreateSpecial} className="gap-2 shrink-0">
-            <Plus className="h-4 w-4" /> Nova isolada
-          </Button>
-        </div>
-
-        {specialCategories.length === 0 ? (
-          <p className="text-sm text-slate-400 dark:text-slate-500 py-2">Nenhuma categoria isolada criada ainda.</p>
-        ) : (
-          <div className="space-y-2">
-            {specialCategories.map(cat => {
-              const count = usageCount[cat.name] ?? 0
-              return (
-                <div
-                  key={cat.id}
-                  className="flex items-center gap-3 bg-white dark:bg-slate-800 rounded-xl px-4 py-3 shadow-sm border border-violet-100 dark:border-violet-900/40"
-                >
-                  <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: cat.color + '25' }}>
-                    <Sparkles className="h-4 w-4" style={{ color: cat.color }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-slate-700 dark:text-slate-200 text-sm">{cat.name}</p>
-                    <p className="text-xs text-violet-500 dark:text-violet-400 mt-0.5">
-                      {cat.special_dates!.map(d => `${MONTH_NAMES[d.month - 1]}/${d.year}`).join(', ')}
-                      {count > 0 && ` · ${count} transaç${count === 1 ? 'ão' : 'ões'}`}
-                    </p>
-                  </div>
-                  <Badge className={`text-xs shrink-0 border-0 ${TYPE_BADGE[cat.type]}`}>
-                    {TYPE_LABELS[cat.type]}
-                  </Badge>
-                  <div className="flex gap-1 shrink-0">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(cat)}>
-                      <Pencil className="h-3.5 w-3.5 text-slate-400" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={() => { setDeleteError(''); setDeleteTarget(cat) }}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
 
       {/* FORM MODAL */}
       <Dialog open={formOpen} onOpenChange={v => { if (!v) setFormOpen(false) }}>
@@ -429,32 +390,6 @@ export default function CategoriesPage() {
                 </div>
               </div>
             )}
-
-            <div className="border-t border-slate-100 dark:border-slate-700 pt-3 space-y-2">
-              <button
-                type="button"
-                onClick={() => setForm(f => ({ ...f, special: !f.special }))}
-                className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300"
-              >
-                <span className={`h-5 w-9 rounded-full flex items-center px-0.5 transition-colors ${form.special ? 'bg-violet-500 justify-end' : 'bg-slate-200 dark:bg-slate-600 justify-start'}`}>
-                  <span className="h-4 w-4 rounded-full bg-white shadow" />
-                </span>
-                <Sparkles className="h-3.5 w-3.5 text-violet-500" />
-                Categoria isolada (só vale em meses específicos)
-              </button>
-
-              {form.special && (
-                <div className="pt-1 space-y-1.5">
-                  <SpecialDatesPicker
-                    dates={form.specialDates}
-                    onChange={d => setForm(f => ({ ...f, specialDates: d }))}
-                  />
-                  <p className="text-xs text-slate-400 dark:text-slate-500">
-                    Não aparece na lista principal — fica na seção &ldquo;Categorias isoladas&rdquo; no final da página. Você pode adicionar mais meses depois, editando a categoria.
-                  </p>
-                </div>
-              )}
-            </div>
             <div className="flex gap-2 pt-2">
               <Button type="button" variant="outline" onClick={() => setFormOpen(false)} className="flex-1">Cancelar</Button>
               <Button type="submit" disabled={saving} className="flex-1">{saving ? 'Salvando...' : editing ? 'Salvar' : 'Criar'}</Button>
@@ -517,36 +452,21 @@ export default function CategoriesPage() {
               )}
               <div className="space-y-2">
                 <Label>Categoria destino</Label>
-                <div className={mergeTargetsSpecial.length > 0 ? 'grid grid-cols-2 gap-2' : ''}>
-                  <Select
-                    value={mergeToIsSpecial ? '' : mergeState.toId}
-                    onValueChange={v => { if (v) setMergeState(s => s ? { ...s, toId: v } : null) }}
-                  >
-                    <SelectTrigger className="w-full"><SelectValue placeholder="Selecione a categoria destino..." /></SelectTrigger>
-                    <SelectContent>
-                      {mergeTargetsNormal.length === 0 ? (
-                        <SelectItem value="__empty__" disabled>Nenhuma categoria disponível</SelectItem>
-                      ) : (
-                        mergeTargetsNormal.map(c => (
-                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {mergeTargetsSpecial.length > 0 && (
-                    <Select
-                      value={mergeToIsSpecial ? mergeState.toId : ''}
-                      onValueChange={v => { if (v) setMergeState(s => s ? { ...s, toId: v } : null) }}
-                    >
-                      <SelectTrigger className="w-full"><SelectValue placeholder="Categoria isolada..." /></SelectTrigger>
-                      <SelectContent>
-                        {mergeTargetsSpecial.map(c => (
-                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
+                <Select
+                  value={mergeState.toId}
+                  onValueChange={v => { if (v) setMergeState(s => s ? { ...s, toId: v } : null) }}
+                >
+                  <SelectTrigger className="w-full"><SelectValue placeholder="Selecione a categoria destino..." /></SelectTrigger>
+                  <SelectContent>
+                    {mergeTargets.length === 0 ? (
+                      <SelectItem value="__empty__" disabled>Nenhuma categoria disponível</SelectItem>
+                    ) : (
+                      mergeTargets.map(c => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="flex gap-2 pt-1">
                 <Button variant="outline" onClick={() => setMergeState(null)} className="flex-1">Cancelar</Button>

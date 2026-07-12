@@ -11,7 +11,7 @@ import {
   LayoutDashboard, ArrowLeftRight, LogOut, TrendingUp, Settings,
   Tag, ChevronDown, Target, RefreshCw, BarChart2, CalendarCheck,
   Zap, CreditCard, FileText, HelpCircle, ChevronRight, Layers, Shield,
-  PiggyBank,
+  PiggyBank, Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -45,9 +45,10 @@ const NAV_GROUPS = [
 ]
 
 const SETTINGS_ITEMS = [
-  { href: '/settings/categories',    label: 'Categorias',    icon: Tag    },
-  { href: '/settings/subcategories', label: 'Subcategorias', icon: Layers },
-  { href: '/settings/rules',         label: 'Regras auto.',  icon: Zap    },
+  { href: '/settings/categories',          label: 'Categorias',          icon: Tag      },
+  { href: '/settings/subcategories',       label: 'Subcategorias',       icon: Layers   },
+  { href: '/settings/isolated-categories', label: 'Categorias isoladas', icon: Sparkles },
+  { href: '/settings/rules',               label: 'Regras auto.',        icon: Zap      },
 ]
 
 // ── Componente de item de nav ──────────────────────────────────────────────────
