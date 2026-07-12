@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge'
 import { InfoBox } from '@/components/ui/info-box'
 import { SpecialDatesPicker, MONTH_NAMES } from '@/components/categories/special-dates-picker'
-import { Plus, Pencil, Trash2, Sparkles, AlertTriangle, ArrowRight } from 'lucide-react'
+import { Plus, Pencil, Trash2, Sparkles, AlertTriangle, ArrowRight, TrendingDown, TrendingUp, ArrowLeftRight } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 const TYPE_LABELS: Record<CategoryType, string> = {
   receita: 'Receita',
@@ -26,6 +27,16 @@ const TYPE_BADGE: Record<CategoryType, string> = {
   despesa: 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400',
   transferencia: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400',
   ambos:   'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
+}
+
+// Mesma convenção visual das abas Categorias e Subcategorias: seções por tipo, transferência por último.
+type SectionType = 'despesa' | 'receita' | 'transferencia'
+const SECTION_ORDER: SectionType[] = ['despesa', 'receita', 'transferencia']
+
+const SECTION_META: Record<SectionType, { label: string; icon: React.ElementType; iconColor: string; iconBg: string }> = {
+  despesa:       { label: 'Despesas',       icon: TrendingDown,   iconColor: 'text-red-500',   iconBg: 'bg-red-50 dark:bg-red-900/20' },
+  receita:       { label: 'Receitas',       icon: TrendingUp,     iconColor: 'text-green-500', iconBg: 'bg-green-50 dark:bg-green-900/20' },
+  transferencia: { label: 'Transferências', icon: ArrowLeftRight, iconColor: 'text-slate-400', iconBg: 'bg-slate-100 dark:bg-slate-700' },
 }
 
 interface FormState {
@@ -78,6 +89,12 @@ export default function IsolatedCategoriesPage() {
       }),
     [categories],
   )
+
+  const bySection: Record<SectionType, Category[]> = {
+    despesa: isolatedCategories.filter(c => c.type === 'despesa' || c.type === 'ambos'),
+    receita: isolatedCategories.filter(c => c.type === 'receita' || c.type === 'ambos'),
+    transferencia: isolatedCategories.filter(c => c.type === 'transferencia' || c.type === 'ambos'),
+  }
 
   function openCreate() {
     setEditing(null)
@@ -190,43 +207,62 @@ export default function IsolatedCategoriesPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {isolatedCategories.map(cat => {
-            const count = usageCount[cat.name] ?? 0
+        <div className="space-y-6">
+          {SECTION_ORDER.map(type => {
+            const items = bySection[type]
+            if (items.length === 0) return null
+            const { label, icon: Icon, iconColor, iconBg } = SECTION_META[type]
             return (
-              <div
-                key={cat.id}
-                className="flex items-center gap-3 bg-white dark:bg-slate-800 rounded-xl px-4 py-3 shadow-sm border border-violet-100 dark:border-violet-900/40"
-              >
-                <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: cat.color + '25' }}>
-                  <Sparkles className="h-4 w-4" style={{ color: cat.color }} />
+              <section key={type} className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className={cn('h-7 w-7 rounded-lg flex items-center justify-center', iconBg)}>
+                    <Icon className={cn('h-4 w-4', iconColor)} />
+                  </div>
+                  <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">{label}</h2>
+                  <span className="text-xs text-slate-400">({items.length})</span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-slate-700 dark:text-slate-200 text-sm">{cat.name}</p>
-                  <p className="text-xs text-violet-500 dark:text-violet-400 mt-0.5">
-                    {cat.special_dates!.map(d => `${MONTH_NAMES[d.month - 1]}/${d.year}`).join(', ')}
-                    {count > 0 && ` · ${count} transaç${count === 1 ? 'ão' : 'ões'}`}
-                  </p>
+
+                <div className="space-y-2">
+                  {items.map(cat => {
+                    const count = usageCount[cat.name] ?? 0
+                    return (
+                      <div
+                        key={cat.id}
+                        className="flex items-center gap-3 bg-white dark:bg-slate-800 rounded-xl px-4 py-3 shadow-sm border border-violet-100 dark:border-violet-900/40"
+                      >
+                        <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: cat.color + '25' }}>
+                          <Sparkles className="h-4 w-4" style={{ color: cat.color }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-slate-700 dark:text-slate-200 text-sm">{cat.name}</p>
+                          <p className="text-xs text-violet-500 dark:text-violet-400 mt-0.5">
+                            {cat.special_dates!.map(d => `${MONTH_NAMES[d.month - 1]}/${d.year}`).join(', ')}
+                            {count > 0 && ` · ${count} transaç${count === 1 ? 'ão' : 'ões'}`}
+                          </p>
+                        </div>
+                        <Badge className={`text-xs shrink-0 border-0 ${TYPE_BADGE[cat.type]}`}>
+                          {TYPE_LABELS[cat.type]}
+                        </Badge>
+                        <div className="flex gap-1 shrink-0">
+                          <Button
+                            variant="ghost" size="icon" className="h-8 w-8"
+                            title="Mesclar com outra categoria isolada"
+                            onClick={() => setMergeState({ from: cat, toId: '' })}
+                          >
+                            <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(cat)}>
+                            <Pencil className="h-3.5 w-3.5 text-slate-400" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={() => { setDeleteError(''); setDeleteTarget(cat) }}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-                <Badge className={`text-xs shrink-0 border-0 ${TYPE_BADGE[cat.type]}`}>
-                  {TYPE_LABELS[cat.type]}
-                </Badge>
-                <div className="flex gap-1 shrink-0">
-                  <Button
-                    variant="ghost" size="icon" className="h-8 w-8"
-                    title="Mesclar com outra categoria isolada"
-                    onClick={() => setMergeState({ from: cat, toId: '' })}
-                  >
-                    <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(cat)}>
-                    <Pencil className="h-3.5 w-3.5 text-slate-400" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={() => { setDeleteError(''); setDeleteTarget(cat) }}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </div>
+              </section>
             )
           })}
         </div>
