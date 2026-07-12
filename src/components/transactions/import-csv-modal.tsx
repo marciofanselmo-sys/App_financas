@@ -97,7 +97,7 @@ interface ImportCSVModalProps {
 }
 
 type Step = 'upload' | 'map' | 'preview' | 'installments' | 'review' | 'done'
-type FileType = 'ofx' | 'csv' | 'c6-credit' | 'c6-checking' | 'nubank' | 'rico-xlsx' | 'rico-extrato-xlsx' | 'mercadopago-pdf' | 'inter-pdf' | 'itau-extrato-pdf' | null
+type FileType = 'ofx' | 'csv' | 'c6-credit' | 'c6-checking' | 'nubank' | 'nubank-checking' | 'rico-xlsx' | 'rico-extrato-xlsx' | 'mercadopago-pdf' | 'inter-pdf' | 'itau-extrato-pdf' | null
 
 // ─── GENERIC CSV HELPERS ─────────────────────────────────────────────────────
 
@@ -210,13 +210,65 @@ async function computeMissingInstallments(
 
 // ─── BANK PARSERS ────────────────────────────────────────────────────────────
 
-function detectBankFormat(content: string): 'c6-credit' | 'c6-checking' | 'nubank' | null {
+function detectBankFormat(content: string): 'c6-credit' | 'c6-checking' | 'nubank' | 'nubank-checking' | null {
   const firstLine = content.split('\n')[0].trim()
   if (firstLine.startsWith('EXTRATO DE CONTA CORRENTE C6 BANK')) return 'c6-checking'
   if (content.includes('Data de Compra') && content.includes('Parcela') && content.includes('Valor (em R$)')) return 'c6-credit'
   // Nubank (cartão de crédito): cabeçalho fixo "date,title,amount"
   if (firstLine.toLowerCase().replace(/\s/g, '') === 'date,title,amount') return 'nubank'
+  // Nubank (conta corrente): cabeçalho fixo "Data,Valor,Identificador,Descrição"
+  // — nome do arquivo exportado pelo site é "NU_<conta>_<período>.csv".
+  const normalizedFirst = firstLine.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s/g, '')
+  if (normalizedFirst === 'data,valor,identificador,descricao') return 'nubank-checking'
   return null
+}
+
+// Descrição do CSV de conta corrente Nubank vem cheia de metadado bancário —
+// "Transferência recebida pelo Pix - NOME - •••.CPF.•••-•• - BANCO (código)
+// Agência: X Conta: Y" ou "Compra no débito - ESTABELECIMENTO". Extrai só a
+// parte que interessa (nome de quem mandou/recebeu, ou o estabelecimento),
+// descartando CPF mascarado/código do banco/agência/conta.
+function cleanNubankCheckingDescription(raw: string): string {
+  const s = raw.trim()
+  const compra = s.match(/^Compra no d[ée]bito\s*-\s*(.+)$/i)
+  if (compra) return compra[1].trim()
+  // O que vem depois do nome varia: quase sempre "- CPF/CNPJ mascarado - Banco
+  // (código) Agência: X Conta: Y", mas às vezes (Pix devolvido/sem contraparte
+  // resolvida) é só "(Transferência enviada)" sem nenhum dado de conta — por
+  // isso o corte aceita um "- dígito/•" OU um "(" OU fim da string.
+  const transfer = s.match(/^Transfer[êe]ncia\s+\S+(?:\s+pelo\s+pix)?\s*-\s*(.+?)(?:\s*-\s*[•\d]|\s*\(|$)/i)
+  if (transfer) {
+    let name = transfer[1].trim()
+    // Nubank mistura nome em Title Case (quando o outro banco manda assim) com
+    // nome em CAIXA ALTA (quando o próprio Nubank formata) — padroniza pra
+    // Title Case, mesma convenção usada em cleanDescription (parse-ofx.ts).
+    if (name === name.toUpperCase()) {
+      name = name.toLowerCase().replace(/(?:^|\s)\S/g, c => c.toUpperCase())
+    }
+    return name
+  }
+  return s
+}
+
+function parseNubankCheckingCSV(content: string): PreviewRow[] {
+  const result = Papa.parse<Record<string, string>>(content, { header: true, skipEmptyLines: true })
+  return result.data
+    .filter(row => (row['Valor'] ?? '').trim() !== '')
+    .map(row => {
+      const errors: string[] = []
+      const rawDescription = (row['Descrição'] ?? '').trim()
+      const description = stripEmbeddedDate(cleanNubankCheckingDescription(rawDescription))
+      if (!description) errors.push('Descrição vazia')
+      const date = normalizeDate((row['Data'] ?? '').trim()) ?? ''
+      if (!date) errors.push('Data inválida')
+      const valorNum = parseAmountBR(row['Valor'] ?? '')
+      const amount = Math.abs(valorNum)
+      if (isNaN(amount) || amount <= 0) errors.push('Valor inválido')
+      const type: TransactionType = isTransferDescription(rawDescription)
+        ? 'transferencia'
+        : (valorNum < 0 ? 'despesa' : 'receita')
+      return { description, amount: isNaN(amount) ? 0 : amount, date, type, category: 'Outros', valid: errors.length === 0, errors }
+    })
 }
 
 function parseNubankCSV(content: string): PreviewRow[] {
@@ -482,6 +534,11 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
         const rows = parseNubankCSV(content)
         if (!rows.length) { setFileError('Nenhuma transação encontrada no extrato Nubank.'); return }
         setPreview(enhanceWithUserRules(rows)); setFileType('nubank'); setStep('preview'); return
+      }
+      if (bankFormat === 'nubank-checking') {
+        const rows = parseNubankCheckingCSV(content)
+        if (!rows.length) { setFileError('Nenhuma transação encontrada no extrato Nubank.'); return }
+        setPreview(enhanceWithUserRules(rows)); setFileType('nubank-checking'); setStep('preview'); return
       }
       Papa.parse<Record<string, string>>(content, {
         header: true, skipEmptyLines: true, delimiter: '',
@@ -944,12 +1001,13 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   const validCount = preview.filter(r => r.valid).length
   const invalidCount = preview.filter(r => !r.valid).length
   const othersCount = preview.filter(r => r.valid && r.category === 'Outros').length
-  const isBankFormat = fileType === 'c6-credit' || fileType === 'c6-checking' || fileType === 'mercadopago-pdf' || fileType === 'nubank' || fileType === 'inter-pdf' || fileType === 'itau-extrato-pdf' || fileType === 'rico-extrato-xlsx'
+  const isBankFormat = fileType === 'c6-credit' || fileType === 'c6-checking' || fileType === 'mercadopago-pdf' || fileType === 'nubank' || fileType === 'nubank-checking' || fileType === 'inter-pdf' || fileType === 'itau-extrato-pdf' || fileType === 'rico-extrato-xlsx'
   const bankFormatLabel: Record<string, string> = {
     'c6-credit': 'C6 Cartão de Crédito',
     'c6-checking': 'C6 Conta Corrente',
     'mercadopago-pdf': 'Mercado Pago — Extrato de Conta',
     'nubank': 'Nubank — Cartão de Crédito',
+    'nubank-checking': 'Nubank — Conta Corrente',
     'inter-pdf': 'Inter — Fatura de Cartão',
     'itau-extrato-pdf': 'Itaú — Extrato de Conta',
     'rico-extrato-xlsx': 'RICO/XP — Extrato da Conta',

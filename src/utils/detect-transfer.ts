@@ -2,12 +2,17 @@
 // não uma compra ou pagamento a terceiros. PIX é propositalmente EXCLUÍDO daqui — a maioria dos
 // PIX é pagamento a lojas/pessoas (uma despesa ou receita real), não uma movimentação interna.
 const TRANSFER_PATTERNS = [
-  // Negative lookahead exclui "Transferência Pix recebida/enviada NOME" — rótulo
-  // que o Mercado Pago usava em 2025 pro Pix normal (mudou pra só "Pix
-  // recebido/enviado" em 2026). É um Pix de verdade (pagamento a terceiro),
-  // não uma movimentação entre contas do próprio usuário — sem essa exceção,
-  // todo Pix de extrato antigo do Mercado Pago virava "transferência" por engano.
-  /^transfer[êe]ncia\b(?!\s+pix\b)/i,
+  // Negative lookahead exclui variações de "Transferência ... Pix ..." — tanto
+  // "Transferência Pix recebida NOME" (rótulo que o Mercado Pago usava em 2025
+  // pro Pix normal, mudou pra só "Pix recebido/enviado" em 2026) quanto
+  // "Transferência recebida pelo Pix - NOME" (Nubank, conta corrente). Em
+  // ambos os casos é um Pix de verdade (pagamento a terceiro), não uma
+  // movimentação entre contas do próprio usuário — sem essa exceção, todo Pix
+  // desses extratos virava "transferência" por engano. Janela de 30 caracteres
+  // (em vez de exigir "pix" logo em seguida) cobre "recebida"/"enviada pelo"
+  // entre "transferência" e "pix" sem deixar de casar transferências reais que
+  // mencionem "pix" bem mais adiante por coincidência.
+  /^transfer[êe]ncia\b(?!.{0,30}\bpix\b)/i,
   /^transf\b/i,
   /^ted\b/i,
   /^doc\b/i,
