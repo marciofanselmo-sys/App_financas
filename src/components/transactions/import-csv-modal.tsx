@@ -264,9 +264,14 @@ function parseNubankCheckingCSV(content: string): PreviewRow[] {
       const valorNum = parseAmountBR(row['Valor'] ?? '')
       const amount = Math.abs(valorNum)
       if (isNaN(amount) || amount <= 0) errors.push('Valor inválido')
-      const type: TransactionType = isTransferDescription(rawDescription)
-        ? 'transferencia'
-        : (valorNum < 0 ? 'despesa' : 'receita')
+      // Diferente de OFX/C6/Inter, "Transferência Recebida/enviada" do Nubank
+      // conta corrente não significa movimentação entre contas do próprio
+      // usuário — é o rótulo genérico do Nubank pra TED/transferência comum
+      // enviada/recebida de terceiros (cliente, familiar), tanto quanto o Pix
+      // já era. Por isso nunca classifica como transferência aqui, só pelo
+      // sinal do valor — usuário reclassifica manualmente se for de fato uma
+      // movimentação interna.
+      const type: TransactionType = valorNum < 0 ? 'despesa' : 'receita'
       return { description, amount: isNaN(amount) ? 0 : amount, date, type, category: 'Outros', valid: errors.length === 0, errors }
     })
 }
