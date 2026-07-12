@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { SpecialDatesPicker, MONTH_NAMES } from '@/components/categories/special-dates-picker'
+import { SpecialDatesPicker, formatSpecialDateGroups } from '@/components/categories/special-dates-picker'
 import { Plus, Pencil, Trash2, Tag, RotateCcw, Sparkles } from 'lucide-react'
 
 const TYPE_LABELS: Record<CategoryType, string> = {
@@ -274,7 +274,7 @@ export default function CategoriesPage() {
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-slate-700 dark:text-slate-200 text-sm">{cat.name}</p>
                   <p className="text-xs text-violet-500 dark:text-violet-400 mt-0.5">
-                    {cat.special_dates!.map(d => `${MONTH_NAMES[d.month - 1]}/${d.year}`).join(', ')}
+                    {formatSpecialDateGroups(cat.special_dates!).join(', ')}
                   </p>
                 </div>
                 <Badge className={`text-xs shrink-0 border-0 ${TYPE_BADGE[cat.type]}`}>

@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { InfoBox } from '@/components/ui/info-box'
-import { SpecialDatesPicker, MONTH_NAMES } from '@/components/categories/special-dates-picker'
+import { SpecialDatesPicker, formatSpecialDateGroups } from '@/components/categories/special-dates-picker'
 import { Plus, Pencil, Trash2, Sparkles, AlertTriangle, ArrowRight, TrendingDown, TrendingUp, ArrowLeftRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -236,7 +236,7 @@ export default function IsolatedCategoriesPage() {
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-slate-700 dark:text-slate-200 text-sm">{cat.name}</p>
                           <p className="text-xs text-violet-500 dark:text-violet-400 mt-0.5">
-                            {cat.special_dates!.map(d => `${MONTH_NAMES[d.month - 1]}/${d.year}`).join(', ')}
+                            {formatSpecialDateGroups(cat.special_dates!).join(', ')}
                             {count > 0 && ` · ${count} transaç${count === 1 ? 'ão' : 'ões'}`}
                           </p>
                         </div>
