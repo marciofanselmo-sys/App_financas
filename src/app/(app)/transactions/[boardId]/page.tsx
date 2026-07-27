@@ -10,9 +10,9 @@ import { usePositionImport } from '@/hooks/use-position-import'
 import { TransactionTable } from '@/components/transactions/transaction-table'
 import { TransactionForm } from '@/components/transactions/transaction-form'
 import { ImportCSVModal } from '@/components/transactions/import-csv-modal'
+import { ExportCSVModal } from '@/components/transactions/export-csv-modal'
 import { BoardIcon } from '@/components/transactions/board-icon'
 import { formatCurrency, rentColor, CategorySummary, PositionsBreakdown, ProventosBreakdown } from '@/components/investments/rico-position-summary'
-import { exportToCSV } from '@/utils/export-csv'
 import { Transaction, TransactionType } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -67,6 +67,7 @@ export default function BoardDetailPage() {
   const [typeFilter, setTypeFilter] = useState<'all' | TransactionType>('all')
   const [formOpen, setFormOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [expandedPos, setExpandedPos] = useState(false)
   const [expandedProventos, setExpandedProventos] = useState(false)
@@ -331,7 +332,12 @@ export default function BoardDetailPage() {
               <span className="hidden sm:inline">{board.last_position_import ? 'Atualizar posição' : 'Importar posição'}</span>
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={() => exportToCSV(transactions)} disabled={transactions.length === 0} className="gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => setExportOpen(true)}
+          >
             <Download className="h-4 w-4" />
             <span className="hidden sm:inline">Exportar CSV</span>
           </Button>
@@ -521,6 +527,20 @@ export default function BoardDetailPage() {
         onClose={() => setImportOpen(false)}
         onImported={refetch}
         boardId={boardId}
+      />
+
+      <ExportCSVModal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        boardId={boardId}
+        boardName={board.name}
+        initialMonth={month}
+        initialYear={year}
+        initialCategory={categoryFilter}
+        initialType={typeFilter}
+        initialTag={activeTag}
+        initialSearch={search}
+        categories={categories}
       />
 
       {isInvestmentBoard && (
