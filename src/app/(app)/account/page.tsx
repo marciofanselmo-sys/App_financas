@@ -232,6 +232,7 @@ function TabConta() {
       supabase.from('categorization_rules').delete().eq('user_id', user.id),
       supabase.from('recurring_groups').delete().eq('user_id', user.id),
       supabase.from('recurring_decisions').delete().eq('user_id', user.id),
+      supabase.from('user_profiles').delete().eq('user_id', user.id),
     ])
 
     await supabase.auth.signOut()

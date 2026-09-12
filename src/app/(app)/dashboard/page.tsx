@@ -10,7 +10,31 @@ import { DiagnosticCard } from '@/components/dashboard/diagnostic-card'
 import { TopCategoriesBar } from '@/components/dashboard/top-categories-bar'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
 import { BoardSummaryCard } from '@/components/dashboard/board-summary-card'
+import { MacroOverview } from '@/components/dashboard/macro-overview'
+import { InvestMonthCard } from '@/components/dashboard/invest-month-card'
+import { GoalsSummaryCard } from '@/components/dashboard/goals-summary-card'
 import { DashboardSummary } from '@/types'
+import { computePatrimonyOverview } from '@/lib/dashboard-patrimony'
+import {
+  getMonthRange,
+  aggregateMonthlyFlow,
+  aggregateCashBalanceTrend,
+  buildPatrimonyChartData,
+  buildExpenseChartData,
+  buildIncomeCommitment,
+  buildPlannedVsActual,
+} from '@/lib/dashboard-charts'
+import { PatrimonyCompositionChart } from '@/components/dashboard/charts/patrimony-composition-chart'
+import { MonthlyFlowChart } from '@/components/dashboard/charts/monthly-flow-chart'
+import { CashBalanceTrendChart } from '@/components/dashboard/charts/cash-balance-trend-chart'
+import { ExpenseDistributionChart } from '@/components/dashboard/charts/expense-distribution-chart'
+import { IncomeCommitmentChart } from '@/components/dashboard/charts/income-commitment-chart'
+import { PlannedVsActualChart } from '@/components/dashboard/charts/planned-vs-actual-chart'
+import { useBudgetPlan } from '@/hooks/use-budget-plan'
+import { useBudgetPlansRange } from '@/hooks/use-budget-plans-range'
+import { useGoals } from '@/hooks/use-goals'
+import { sumInvestmentContributions, aggregateContributionsByMonth } from '@/lib/investment-contributions'
+import { InvestTargetChart } from '@/components/dashboard/invest-target-chart'
 import { LayoutGrid, AlertCircle, CreditCard, RefreshCw, Upload, CheckCircle, Tag } from 'lucide-react'
 import Link from 'next/link'
 import { OnboardingModal } from '@/components/onboarding-modal'
@@ -70,11 +94,14 @@ export default function DashboardPage() {
   const [year, setYear] = useState(now.getFullYear())
 
   const { boards, loading: boardsLoading } = useTransactionBoards()
-  // Investimento nunca entra no dashboard, mesmo fixado — o alfinete de
-  // conta de investimento só inclui a conta nos Relatórios.
+  const investmentBoardIds = useMemo(
+    () => boards.filter(b => b.is_investment).map(b => b.id),
+    [boards],
+  )
+  // Investimento nunca entra no fluxo mensal — patrimônio de carteira vem da posição importada.
   const unpinnedBoardIds = useMemo(
     () => boards.filter(b => !b.show_on_dashboard || b.is_investment).map(b => b.id),
-    [boards]
+    [boards],
   )
   const { installments, recurring, loading: recurringLoading } = useRecurring(unpinnedBoardIds)
   const { decisions, loading: decisionsLoading } = useRecurringDecisions()
@@ -83,6 +110,56 @@ export default function DashboardPage() {
     year,
     exclude_board_ids: unpinnedBoardIds,
   })
+  const { transactions: allCashTransactions, loading: patrimonyLoading } = useTransactions({
+    exclude_board_ids: investmentBoardIds.length > 0 ? investmentBoardIds : undefined,
+  })
+  const { transactions: allTransactions, loading: allTxLoading } = useTransactions()
+  const patrimony = useMemo(
+    () => computePatrimonyOverview(boards, allCashTransactions),
+    [boards, allCashTransactions],
+  )
+  const { plan, loading: planLoading } = useBudgetPlan(month, year)
+  const { targetsByKey, loading: targetsRangeLoading } = useBudgetPlansRange(month, year, 6)
+  const { goals, loading: goalsLoading } = useGoals()
+
+  const chartMonths = useMemo(() => getMonthRange(month, year, 6), [month, year])
+
+  const monthlyContributions = useMemo(
+    () => sumInvestmentContributions(transactions, boards),
+    [transactions, boards],
+  )
+  const contributionsByMonth = useMemo(
+    () => aggregateContributionsByMonth(allTransactions, boards, chartMonths),
+    [allTransactions, boards, chartMonths],
+  )
+  const investTargetChartData = useMemo(
+    () => contributionsByMonth.map(p => ({
+      label: p.label,
+      meta: targetsByKey[p.key] ?? 0,
+      aportes: p.aportes,
+    })),
+    [contributionsByMonth, targetsByKey],
+  )
+  const monthlyFlowData = useMemo(
+    () => aggregateMonthlyFlow(allCashTransactions, chartMonths),
+    [allCashTransactions, chartMonths],
+  )
+  const cashBalanceTrend = useMemo(
+    () => aggregateCashBalanceTrend(allCashTransactions, chartMonths),
+    [allCashTransactions, chartMonths],
+  )
+  const patrimonyChartData = useMemo(
+    () => buildPatrimonyChartData(patrimony),
+    [patrimony],
+  )
+  const expenseChartData = useMemo(
+    () => buildExpenseChartData(transactions),
+    [transactions],
+  )
+  const plannedVsActual = useMemo(
+    () => buildPlannedVsActual(plan, transactions),
+    [plan, transactions],
+  )
 
   const pinnedBoards = boards.filter(b => b.show_on_dashboard && !b.is_investment)
 
@@ -112,6 +189,18 @@ export default function DashboardPage() {
   const totalMonthlyRecurring = confirmedRecurring.reduce((s, r) => s + r.avgAmount, 0)
   const pendingRecurringCount = groupedRecurring.filter(i => !decisions.has(i.key)).length
 
+  const incomeCommitment = useMemo(
+    () => buildIncomeCommitment(
+      summary.totalIncome,
+      totalMonthlyRecurring,
+      totalMonthlyInstallments,
+      summary.totalExpenses,
+    ),
+    [summary.totalIncome, summary.totalExpenses, totalMonthlyRecurring, totalMonthlyInstallments],
+  )
+
+  const chartsLoading = boardsLoading || patrimonyLoading || loading
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <OnboardingModal />
@@ -119,7 +208,7 @@ export default function DashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Dashboard</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Visão geral das suas finanças</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Patrimônio acumulado + fluxo do mês</p>
         </div>
         <div className="flex items-center gap-2">
           <Link
@@ -133,16 +222,55 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Cards de resumo (Receitas, Despesas, Saldo, Saúde) */}
-      {loading ? (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="h-28 bg-white dark:bg-slate-800 rounded-2xl animate-pulse shadow-sm" />
-          ))}
-        </div>
-      ) : (
-        <SummaryCards summary={summary} />
-      )}
+      <MacroOverview overview={patrimony} loading={boardsLoading || patrimonyLoading} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <PatrimonyCompositionChart data={patrimonyChartData} loading={chartsLoading} />
+        <CashBalanceTrendChart data={cashBalanceTrend} loading={chartsLoading} />
+      </div>
+
+      <MonthlyFlowChart data={monthlyFlowData} loading={chartsLoading} />
+
+      <div>
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-3">
+          Fluxo do mês
+        </h2>
+        {loading ? (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-28 bg-white dark:bg-slate-800 rounded-2xl animate-pulse shadow-sm" />
+            ))}
+          </div>
+        ) : (
+          <SummaryCards summary={summary} />
+        )}
+      </div>
+
+      <InvestTargetChart
+        data={investTargetChartData}
+        loading={targetsRangeLoading || allTxLoading || boardsLoading}
+      />
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <InvestMonthCard
+          monthlyIncome={summary.totalIncome}
+          investmentTarget={plan?.investment_target ?? 0}
+          actualContributions={monthlyContributions}
+          loading={planLoading || loading || allTxLoading}
+        />
+        <GoalsSummaryCard goals={goals} loading={goalsLoading} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <ExpenseDistributionChart data={expenseChartData} loading={loading} />
+        <IncomeCommitmentChart
+          segments={incomeCommitment.segments}
+          hasIncome={incomeCommitment.hasIncome}
+          monthlyIncome={summary.totalIncome}
+          loading={loading || recurringLoading || decisionsLoading}
+        />
+        <PlannedVsActualChart data={plannedVsActual} loading={planLoading || loading} />
+      </div>
 
       {/* Primeiros passos */}
       {!loading && !boardsLoading && !recurringLoading && !decisionsLoading && (

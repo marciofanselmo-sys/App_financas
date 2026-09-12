@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { usePositionImport } from '@/hooks/use-position-import'
 import { TransactionBoard, BoardType, BOARD_COLORS, BOARD_ICONS, BoardIconKey } from '@/types'
@@ -16,6 +16,9 @@ import {
 } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { createClient } from '@/lib/supabase/client'
+import { AllocationChartsPanel } from '@/components/investments/allocation-charts-panel'
+import { PatrimonyHistoryChart } from '@/components/investments/patrimony-history-chart'
+import { buildConsolidatedPatrimonyHistory, hasPatrimonyHistory } from '@/lib/position-history'
 
 interface AccountTemplate {
   id: string
@@ -164,10 +167,13 @@ export default function InvestmentsPage() {
     setFormOpen(false)
   }
 
+  const patrimonyHistory = useMemo(() => buildConsolidatedPatrimonyHistory(boards), [boards])
+  const showHistory = hasPatrimonyHistory(boards)
+
   if (loading) return null
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
+    <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Investimentos</h1>
@@ -193,6 +199,16 @@ export default function InvestmentsPage() {
         />
       ) : (
         <div className="space-y-4">
+          <AllocationChartsPanel boards={boards} />
+
+          {showHistory && (
+            <PatrimonyHistoryChart
+              data={patrimonyHistory}
+              title="Evolução do patrimônio importado"
+              subtitle="Consolidado · cada ponto = uma importação de posição (XLSX)"
+            />
+          )}
+
           {boards.map(board => {
             return (
               <div

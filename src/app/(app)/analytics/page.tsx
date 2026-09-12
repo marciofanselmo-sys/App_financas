@@ -16,6 +16,8 @@ import { Transaction, TRANSFER_CATEGORY_COLOR } from '@/types'
 import { useRules } from '@/hooks/use-rules'
 import { categoriesForDate } from '@/lib/special-category-filter'
 import { installmentLabel } from '@/utils/format-installment'
+import { aggregateDailyFlow } from '@/lib/analytics-charts'
+import { DailyFlowChart } from '@/components/analytics/daily-flow-chart'
 
 const CATEGORY_COLORS: Record<string, string> = {
   'Alimentação':  '#f59e0b',
@@ -138,6 +140,11 @@ export default function AnalyticsPage() {
     ).sort((a, b) => b.date.localeCompare(a.date))
   }, [selectedCategory, transactions])
 
+  const dailyFlowData = useMemo(
+    () => aggregateDailyFlow(transactions, month, year),
+    [transactions, month, year],
+  )
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
 
@@ -254,6 +261,8 @@ export default function AnalyticsPage() {
 
       {!loading && transactions.length > 0 && (
         <>
+          <DailyFlowChart data={dailyFlowData} month={month} year={year} />
+
           {/* Expense breakdown */}
           <section>
             <div className="mb-4">

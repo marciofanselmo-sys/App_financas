@@ -105,6 +105,9 @@ alter table transaction_boards
 alter table transaction_boards
   add column if not exists last_position_import jsonb;
 
+alter table transaction_boards
+  add column if not exists position_import_history jsonb not null default '[]'::jsonb;
+
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- 4. categories (migration_categories.sql)

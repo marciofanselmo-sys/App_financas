@@ -1,7 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useTransactions } from '@/hooks/use-transactions'
+import { useTransactionBoards } from '@/hooks/use-transaction-boards'
+import { sumInvestmentContributions } from '@/lib/investment-contributions'
 import { useCategories } from '@/hooks/use-categories'
 import { useSubcategories } from '@/hooks/use-subcategories'
 import { useBudgetPlan } from '@/hooks/use-budget-plan'
@@ -125,6 +127,7 @@ export default function PlanningPage() {
   }
 
   const { transactions } = useTransactions({ month, year })
+  const { boards } = useTransactionBoards()
   const { categories } = useCategories()
   const { subcategories } = useSubcategories()
   const { plan, loading, savePlan } = useBudgetPlan(month, year)
@@ -300,7 +303,10 @@ export default function PlanningPage() {
   const untrackedExpenses = Math.max(0, totalDespesasPeriodo - actualExpenses)
 
   // Investimento linkado à categoria de mesmo nome
-  const investActual = actualByCategoryAll['Investimento'] ?? 0
+  const investActual = useMemo(
+    () => sumInvestmentContributions(transactions, boards),
+    [transactions, boards],
+  )
 
   const hasTable = tableCategories.length > 0 || tableSubcategories.length > 0 || incomeNum > 0 || investNum > 0
 
@@ -722,7 +728,7 @@ export default function PlanningPage() {
                         <td className="px-6 py-3">
                           <div className="flex items-center gap-2">
                             <span className="h-2 w-2 rounded-full bg-blue-500 shrink-0" />
-                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Investimento</span>
+                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Investir (aportes)</span>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right text-xs text-slate-600 dark:text-slate-300">{fmt(investNum)}</td>

@@ -1,3 +1,15 @@
+export type UserRole = 'user' | 'admin'
+
+export interface UserProfile {
+  id: string
+  user_id: string
+  full_name: string
+  role: UserRole
+  onboarding_completed: boolean
+  created_at: string
+  updated_at: string
+}
+
 export type TransactionType = 'receita' | 'despesa' | 'transferencia'
 export type CategoryType = 'receita' | 'despesa' | 'transferencia' | 'ambos'
 export type BoardType = 'entrada' | 'saida' | 'ambos'
@@ -35,6 +47,7 @@ export interface TransactionBoard {
   is_investment: boolean
   show_on_dashboard: boolean
   last_position_import?: BoardPositionImport
+  position_import_history?: PositionHistoryEntry[]
   created_at: string
 }
 
@@ -132,6 +145,14 @@ export interface BoardPositionImport {
   saldoDisponivel: number
   positions: RICOPosition[]
   proventos: RICOProvento[]
+  importedAt: string
+  /** Snapshots leves de importações anteriores (mesmo JSONB — sem migration). */
+  history?: PositionHistoryEntry[]
+}
+
+/** Snapshot leve guardado a cada importação — usado no gráfico de evolução (7.19). */
+export interface PositionHistoryEntry {
+  patrimonio: number
   importedAt: string
 }
 

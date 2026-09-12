@@ -17,6 +17,7 @@ function fromRow(row: any): TransactionBoard {
     is_investment: row.is_investment ?? false,
     show_on_dashboard: row.show_on_dashboard,
     last_position_import: row.last_position_import ?? undefined,
+    position_import_history: row.position_import_history ?? undefined,
     created_at: row.created_at,
   }
 }

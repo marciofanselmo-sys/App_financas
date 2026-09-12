@@ -21,6 +21,12 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/components/ui/button'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
 import { installmentLabel } from '@/utils/format-installment'
+import {
+  aggregateYearMonths,
+  buildYoYBalanceComparison,
+  buildYoYIncomeComparison,
+} from '@/lib/report-charts'
+import { AnnualFlowChart, YoYComparisonChart } from '@/components/reports/annual-charts'
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -299,22 +305,36 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
 
 // ── Relatório Anual ───────────────────────────────────────────────────────────
 function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardId: string; excludeBoardIds: string[] }) {
-  const { transactions, loading } = useTransactions({
-    year,
+  const txFilters = {
     board_id: boardId !== 'all' ? boardId : undefined,
     exclude_board_ids: boardId === 'all' ? excludeBoardIds : undefined,
+  }
+
+  const { transactions, loading } = useTransactions({ year, ...txFilters })
+  const { transactions: prevTransactions, loading: prevLoading } = useTransactions({
+    year: year - 1,
+    ...txFilters,
   })
 
+  const chartMonths = useMemo(() => aggregateYearMonths(transactions), [transactions])
+  const prevChartMonths = useMemo(() => aggregateYearMonths(prevTransactions), [prevTransactions])
+  const yoyBalance = useMemo(
+    () => buildYoYBalanceComparison(chartMonths, prevChartMonths),
+    [chartMonths, prevChartMonths],
+  )
+  const yoyIncome = useMemo(
+    () => buildYoYIncomeComparison(chartMonths, prevChartMonths),
+    [chartMonths, prevChartMonths],
+  )
+
   const monthly = useMemo(() => {
-    const map = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, income: 0, expenses: 0, balance: 0 }))
-    transactions.forEach(t => {
-      const m = new Date(t.date + 'T12:00:00').getMonth()
-      if (t.type === 'receita') map[m].income += Number(t.amount)
-      else if (t.type === 'despesa') map[m].expenses += Number(t.amount)
-    })
-    map.forEach(m => { m.balance = m.income - m.expenses })
-    return map
-  }, [transactions])
+    return chartMonths.map(m => ({
+      month: m.month,
+      income: m.receita,
+      expenses: m.despesa,
+      balance: m.saldo,
+    }))
+  }, [chartMonths])
 
   const byCategory = useMemo(() => {
     const map: Record<string, number> = {}
@@ -342,11 +362,19 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
   const bestMonth     = activeMonths.length ? [...activeMonths].sort((a, b) => b.balance - a.balance)[0] : null
   const worstMonth    = activeMonths.length ? [...activeMonths].sort((a, b) => a.balance - b.balance)[0] : null
 
-  if (loading) return <div className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</div>
+  if (loading || prevLoading) return <div className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</div>
 
   return (
     <div className="space-y-6">
-      <ReportHeader title={`Relatório Anual — ${year}`} subtitle={`${transactions.length} transações no ano`} />
+      <ReportHeader title={`Relatório Anual — ${year}`} subtitle={`${transactions.length} transações no ano · comparativo com ${year - 1}`} />
+
+      <AnnualFlowChart data={chartMonths} year={year} />
+      <YoYComparisonChart
+        balanceData={yoyBalance}
+        incomeData={yoyIncome}
+        currentYear={year}
+        previousYear={year - 1}
+      />
 
       <div className="grid grid-cols-3 gap-3">
         <div className={card}>

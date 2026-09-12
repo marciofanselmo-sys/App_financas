@@ -50,7 +50,18 @@ export function usePositionImport(updateBoard: UpdateBoardFn) {
 
   function confirm() {
     if (!importFor || !preview) return
-    updateBoard(importFor.id, { last_position_import: preview })
+    const prev = importFor.last_position_import
+    const priorHistory = prev?.history ?? importFor.position_import_history ?? []
+    const history = prev
+      ? [...priorHistory, { patrimonio: prev.patrimonio, importedAt: prev.importedAt }]
+      : [...priorHistory]
+    const entry = { patrimonio: preview.patrimonio, importedAt: preview.importedAt }
+    updateBoard(importFor.id, {
+      last_position_import: {
+        ...preview,
+        history: [...history, entry].slice(-48),
+      },
+    })
     setImportFor(null)
     setPreview(null)
   }
