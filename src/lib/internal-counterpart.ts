@@ -69,3 +69,80 @@ export function findCounterpartBoard(
   if (scored.length > 1 && scored[0].score === scored[1].score) return null
   return scored[0].board
 }
+
+/** Dias de tolerância entre o pagamento sair e aparecer no extrato do destino. */
+const PAIRING_TOLERANCE_DAYS = 3
+
+function daysApart(a: string, b: string): number {
+  const ms = Math.abs(new Date(`${a}T12:00:00`).getTime() - new Date(`${b}T12:00:00`).getTime())
+  return ms / 86_400_000
+}
+
+export interface ExistingLeg {
+  board_id?: string | null
+  amount: number
+  date: string
+  is_internal?: boolean
+}
+
+/**
+ * A perna já existe no destino?
+ *
+ * Alguns bancos (Inter) listam o pagamento recebido no extrato do cartão;
+ * outros (C6) não. Gerar a perna sem checar creditaria o cartão duas vezes
+ * justamente nos bancos que se comportam bem.
+ */
+export function hasExistingLeg(
+  existing: ExistingLeg[],
+  boardId: string,
+  amount: number,
+  date: string,
+): boolean {
+  // Comparação em centavos inteiros: `Math.abs(a - b) < 0.01` parece exigir
+  // valor igual, mas em ponto flutuante 671.98 vs 671.99 dá 0.00999... e
+  // passava — um centavo de diferença pareava indevidamente.
+  const cents = Math.round(amount * 100)
+  return existing.some(e =>
+    e.is_internal &&
+    e.board_id === boardId &&
+    Math.round(Number(e.amount) * 100) === cents &&
+    daysApart(e.date, date) <= PAIRING_TOLERANCE_DAYS,
+  )
+}
+
+export interface PaymentRow {
+  id: string
+  description: string
+  amount: number
+  date: string
+  type: 'receita' | 'despesa' | 'transferencia'
+  category: string
+  counterpartBoardId: string
+}
+
+/**
+ * A linha que credita a conta de destino.
+ *
+ * Espelho exato do pagamento: o que saiu da conta corrente entra no cartão.
+ * Fica marcada como interna (não é renda) e guarda `counterpart_of_id`, que
+ * impede a reimportação do mesmo extrato de creditar de novo.
+ */
+export function buildCounterpartLeg(
+  payment: PaymentRow,
+  userId: string,
+  newId: string,
+): Record<string, unknown> {
+  return {
+    id: newId,
+    user_id: userId,
+    description: payment.description,
+    amount: payment.amount,
+    date: payment.date,
+    type: payment.type === 'receita' ? 'despesa' : 'receita',
+    is_internal: true,
+    category: payment.category,
+    board_id: payment.counterpartBoardId,
+    counterpart_of_id: payment.id,
+    tags: [],
+  }
+}

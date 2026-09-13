@@ -21,7 +21,9 @@ import { parseMercadoPagoPDF, isMercadoPagoPDF } from '@/utils/parse-mercadopago
 import { parseInterInvoicePDF, isInterInvoicePDF } from '@/utils/parse-inter-pdf'
 import { parseItauExtratoPDF, isItauExtratoPDF } from '@/utils/parse-itau-extrato-pdf'
 import { stripEmbeddedDate } from '@/utils/strip-embedded-date'
-import { isTransferDescription, classifyTransaction } from '@/utils/detect-transfer'
+import { classifyTransaction } from '@/utils/detect-transfer'
+import { findCounterpartBoard, hasExistingLeg, buildCounterpartLeg } from '@/lib/internal-counterpart'
+import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { parseAmountBR } from '@/utils/parse-amount'
 import { addMonths } from '@/utils/add-months'
 import { installmentLabel } from '@/utils/format-installment'
@@ -412,6 +414,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   const [headers, setHeaders] = useState<string[]>([])
   const [rawRows, setRawRows] = useState<Record<string, string>[]>([])
   const [mapping, setMapping] = useState<Record<string, string>>({})
+  const { boards } = useTransactionBoards()
   const [preview, setPreview] = useState<PreviewRow[]>([])
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<{ success: number; errors: number; duplicates: number; fixed: number; errorMessage?: string } | null>(null)
@@ -801,7 +804,13 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
     setStep('preview')
   }
 
-  // ── Import with deduplication ──
+  function shiftDays(date: string, days: number): string {
+  const d = new Date(`${date}T12:00:00`)
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+// ── Import with deduplication ──
   async function handleImport() {
     setImporting(true)
     const supabase = createClient()
@@ -936,8 +945,16 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
       if (!toInsert.length) continue
 
       // Build insert payload — track IDs separately so we only add to review AFTER confirmed insert
-      const tracking = toInsert.map(r => ({ id: uid(), row: r }))
-      const payload = tracking.map(({ id, row }) => ({
+      const tracking = toInsert.map(r => ({
+        id: uid(),
+        row: r,
+        // Só movimentação interna tem destino: uma compra no mercado não
+        // "vai" para outra conta sua.
+        counterpart: r.is_internal
+          ? findCounterpartBoard(r.description, boards, boardId ?? null)
+          : null,
+      }))
+      const payload = tracking.map(({ id, row, counterpart }) => ({
         id,
         user_id: user.id,
         description: row.description,
@@ -945,6 +962,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
         date: row.date,
         type: row.type,
         is_internal: row.is_internal ?? false,
+        counterpart_board_id: counterpart?.id ?? null,
         category: row.category,
         board_id: boardId ?? null,
         tags: [],
@@ -964,6 +982,51 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
         }
       } else {
         success += toInsert.length
+
+        // Perna do pagamento: credita a conta de destino.
+        // O extrato do cartão de alguns bancos (C6) não lista o pagamento
+        // recebido, então sem isto o cartão acumula compras para sempre e o
+        // mesmo dinheiro sai duas vezes do patrimônio. Nos bancos que listam
+        // (Inter), a perna real já existe — por isso o hasExistingLeg antes.
+        const withDestination = tracking.filter(t => t.counterpart)
+        if (withDestination.length > 0) {
+          const destIds = [...new Set(withDestination.map(t => t.counterpart!.id))]
+          const dates = withDestination.map(t => t.row.date).sort()
+          const { data: existingLegs } = await supabase
+            .from('transactions')
+            .select('board_id, amount, date, is_internal')
+            .eq('user_id', user.id)
+            .in('board_id', destIds)
+            .gte('date', shiftDays(dates[0], -3))
+            .lte('date', shiftDays(dates[dates.length - 1], 3))
+
+          const legs = withDestination
+            .filter(t => !hasExistingLeg(existingLegs ?? [], t.counterpart!.id, t.row.amount, t.row.date))
+            .map(t => buildCounterpartLeg(
+              {
+                id: t.id,
+                description: t.row.description,
+                amount: t.row.amount,
+                date: t.row.date,
+                type: t.row.type,
+                category: t.row.category,
+                counterpartBoardId: t.counterpart!.id,
+              },
+              user.id,
+              uid(),
+            ))
+
+          if (legs.length > 0) {
+            const { error: legError } = await supabase.from('transactions').insert(legs)
+            // Falha aqui não invalida a importação: as transações entraram. O
+            // saldo do destino fica como antes até uma nova importação, então
+            // o erro precisa aparecer, não ser engolido.
+            if (legError && !firstErrorMessage) {
+              firstErrorMessage = `Transações importadas, mas não foi possível creditar a conta de destino: ${legError.message}`
+            }
+          }
+        }
+
         // Only track Outros items that were actually inserted
         for (const { id, row } of tracking) {
           if (row.category === 'Outros') {
