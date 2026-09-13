@@ -638,11 +638,18 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
 
         setFileError('Não reconhecemos o formato desse PDF. Hoje suportamos fatura do Inter, Extrato de Conta do Mercado Pago e Extrato de Conta do Itaú.')
       } catch (err) {
-        const msg = err instanceof Error ? err.message : ''
+        const msg = err instanceof Error ? err.message : String(err)
         if (msg === 'empty-pdf') {
           setFileError('O PDF não contém texto extraível. Certifique-se de que não é um arquivo escaneado.')
         } else {
-          setFileError('Erro ao processar o PDF. Verifique se o arquivo não está corrompido.')
+          // A mensagem genérica antiga ("verifique se o arquivo não está
+          // corrompido") culpava o arquivo do usuário em TODA falha — inclusive
+          // quando a causa era o app não conseguir carregar o worker do pdf.js.
+          // Mostrar o erro real é a diferença entre o usuário poder relatar algo
+          // acionável e ficar tentando outro PDF sem saber por quê.
+          const name = err instanceof Error ? err.name : 'Erro'
+          console.error('[handlePDF] falha ao processar PDF:', err)
+          setFileError(`Não foi possível ler o PDF. Detalhe técnico: ${name} — ${msg || 'sem mensagem'}`)
         }
       } finally {
         setImporting(false)
