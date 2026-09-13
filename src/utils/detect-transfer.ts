@@ -56,6 +56,39 @@ export function isTransferDescription(raw: string): boolean {
 export function classifyTransaction(
   description: string,
   naturalType: 'receita' | 'despesa',
+  ownerName?: string | null,
 ): { type: TransactionType; is_internal: boolean } {
-  return { type: naturalType, is_internal: isTransferDescription(description) }
+  return {
+    type: naturalType,
+    is_internal: isTransferDescription(description) || mentionsOwner(description, ownerName),
+  }
+}
+
+function normalizeName(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * A descrição cita o próprio titular da conta?
+ *
+ * "Pix recebido de MARCIO FAGUNDES ANSELMO" é o usuário mandando dinheiro de
+ * uma conta sua para outra — interna, por definição. Nenhum padrão de texto
+ * pega isso: o rótulo do banco é idêntico ao de um Pix para terceiro, e a
+ * única coisa que diferencia é o nome ser o dele.
+ *
+ * Exige nome completo (2+ palavras) e casa o nome inteiro, não pedaços: um
+ * usuário chamado "Ana Silva" não pode marcar como interna toda transferência
+ * para qualquer outra Silva. Nomes de uma palavra só são ignorados de
+ * propósito — "Marcio" sozinho casaria com metade dos Pix do Brasil.
+ */
+export function mentionsOwner(description: string, ownerName?: string | null): boolean {
+  if (!ownerName) return false
+  const owner = normalizeName(ownerName)
+  if (owner.split(' ').length < 2) return false
+  return normalizeName(description).includes(owner)
 }

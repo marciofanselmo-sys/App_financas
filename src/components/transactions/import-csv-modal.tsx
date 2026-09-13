@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import Papa from 'papaparse'
 import { validateImportFile, validateImportRowCount } from '@/lib/import-limits'
 import { readXlsxSheetNames, readXlsxSheetRows, rowsToHeaderObjects } from '@/utils/read-xlsx'
@@ -282,7 +282,7 @@ function parseNubankCheckingCSV(content: string): PreviewRow[] {
     })
 }
 
-function parseNubankCSV(content: string): PreviewRow[] {
+function parseNubankCSV(content: string, ownerName?: string | null): PreviewRow[] {
   const result = Papa.parse<Record<string, string>>(content, { header: true, skipEmptyLines: true })
   return result.data
     .filter(row => (row['amount'] ?? '').trim() !== '')
@@ -296,7 +296,7 @@ function parseNubankCSV(content: string): PreviewRow[] {
       const amount = Math.abs(valorNum)
       if (isNaN(amount) || amount <= 0) errors.push('Valor inválido')
       // Fatura do cartão: valor positivo = compra (despesa); negativo = estorno/pagamento (receita)
-      const { type, is_internal } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa')
+      const { type, is_internal } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa', ownerName)
       return { description, amount: isNaN(amount) ? 0 : amount, date, type, is_internal, category: 'Outros', valid: errors.length === 0, errors }
     })
 }
@@ -319,7 +319,7 @@ function mapC6Category(raw: string): string {
   return 'Outros'
 }
 
-function parseC6Credit(content: string): PreviewRow[] {
+function parseC6Credit(content: string, ownerName?: string | null): PreviewRow[] {
   const result = Papa.parse<Record<string, string>>(content, {
     header: true,
     delimiter: ';',
@@ -344,7 +344,7 @@ function parseC6Credit(content: string): PreviewRow[] {
       const valorNum = parseFloat((row['Valor (em R$)'] ?? '0').trim())
       const amount = Math.abs(valorNum)
       if (isNaN(amount) || amount <= 0) errors.push('Valor inválido')
-      const { type, is_internal } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa')
+      const { type, is_internal } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa', ownerName)
       const category = mapC6Category(row['Categoria'] ?? '')
       let installment_current: number | null = null
       let installment_total: number | null = null
@@ -369,7 +369,7 @@ function parseC6Credit(content: string): PreviewRow[] {
     })
 }
 
-function parseC6Checking(content: string): PreviewRow[] {
+function parseC6Checking(content: string, ownerName?: string | null): PreviewRow[] {
   const lines = content.split('\n')
   const headerIdx = lines.findIndex(l => l.trim().startsWith('Data Lançamento'))
   if (headerIdx === -1) return []
@@ -394,7 +394,7 @@ function parseC6Checking(content: string): PreviewRow[] {
       const entrada = parseFloat(row['Entrada(R$)'] ?? '0')
       const saida = parseFloat(row['Saída(R$)'] ?? '0')
       // Aqui a direção vem das colunas Entrada/Saída, não do sinal.
-      const { type, is_internal } = classifyTransaction(description, entrada > 0 ? 'receita' : 'despesa')
+      const { type, is_internal } = classifyTransaction(description, entrada > 0 ? 'receita' : 'despesa', ownerName)
       const amount = entrada > 0 ? entrada : saida
       if (isNaN(amount) || amount <= 0) errors.push('Valor inválido')
       return { description, amount: isNaN(amount) ? 0 : amount, date, type, is_internal, category: 'Outros', valid: errors.length === 0, errors }
@@ -415,7 +415,17 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   const [rawRows, setRawRows] = useState<Record<string, string>[]>([])
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const { boards } = useTransactionBoards()
+  // Nome do titular: é a única pista que separa "Pix recebido de <você>" —
+  // dinheiro seu mudando de conta — de um Pix de terceiro. O rótulo do banco
+  // é idêntico nos dois casos; só o nome diferencia.
+  const [ownerName, setOwnerName] = useState<string | null>(null)
   const [preview, setPreview] = useState<PreviewRow[]>([])
+
+  useEffect(() => {
+    createClient().auth.getUser().then(({ data }) => {
+      setOwnerName(data.user?.user_metadata?.full_name ?? null)
+    })
+  }, [])
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<{ success: number; errors: number; duplicates: number; fixed: number; errorMessage?: string } | null>(null)
   const [fileError, setFileError] = useState('')
@@ -506,7 +516,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   // ── OFX ──
   function handleOFX(content: string) {
     try {
-      const rows = parseOFX(content)
+      const rows = parseOFX(content, ownerName)
       if (!rows.length) { setFileError('Nenhuma transação encontrada no arquivo OFX.'); return }
       const preview: PreviewRow[] = rows.map(r => ({
         description: r.description, amount: r.amount, date: r.date, type: r.type,
@@ -529,17 +539,17 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
       const content = ev.target?.result as string
       const bankFormat = detectBankFormat(content)
       if (bankFormat === 'c6-credit') {
-        const rows = parseC6Credit(content)
+        const rows = parseC6Credit(content, ownerName)
         if (!rows.length) { setFileError('Nenhuma transação encontrada na fatura C6.'); return }
         setPreview(enhanceWithUserRules(rows)); setFileType('c6-credit'); setStep('preview'); return
       }
       if (bankFormat === 'c6-checking') {
-        const rows = parseC6Checking(content)
+        const rows = parseC6Checking(content, ownerName)
         if (!rows.length) { setFileError('Nenhuma transação encontrada no extrato C6.'); return }
         setPreview(enhanceWithUserRules(rows)); setFileType('c6-checking'); setStep('preview'); return
       }
       if (bankFormat === 'nubank') {
-        const rows = parseNubankCSV(content)
+        const rows = parseNubankCSV(content, ownerName)
         if (!rows.length) { setFileError('Nenhuma transação encontrada no extrato Nubank.'); return }
         setPreview(enhanceWithUserRules(rows)); setFileType('nubank'); setStep('preview'); return
       }
@@ -794,7 +804,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
         }
       }
       else if (!isNaN(valorNum)) {
-        ({ type, is_internal } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa'))
+        ({ type, is_internal } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa', ownerName))
       }
       else { type = 'despesa'; errors.push('Tipo não mapeado — assumido "despesa"') }
       const category = normalizeCategory(mapping.categoria ? raw[mapping.categoria] : 'Outros', categoryNames)

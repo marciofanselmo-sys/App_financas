@@ -119,7 +119,7 @@ function extractTagValue(block: string, tag: string): string {
   return block.match(re)?.[1]?.trim() ?? ''
 }
 
-export function parseOFX(content: string): OFXTransaction[] {
+export function parseOFX(content: string, ownerName?: string | null): OFXTransaction[] {
   const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 
   const trnRegex = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi
@@ -127,28 +127,29 @@ export function parseOFX(content: string): OFXTransaction[] {
 
   if (matches.length === 0) {
     const parts = normalized.split(/<STMTTRN>/i).slice(1)
-    return parts.map(block => parseSGMLBlock(block)).filter(Boolean) as OFXTransaction[]
+    return parts.map(block => parseSGMLBlock(block, ownerName)).filter(Boolean) as OFXTransaction[]
   }
 
-  return matches.map(m => parseXMLBlock(m[1])).filter(Boolean) as OFXTransaction[]
+  return matches.map(m => parseXMLBlock(m[1], ownerName)).filter(Boolean) as OFXTransaction[]
 }
 
-function parseXMLBlock(block: string): OFXTransaction | null {
+function parseXMLBlock(block: string, ownerName?: string | null): OFXTransaction | null {
   return buildTransaction(
     extractTagValue(block, 'MEMO') || extractTagValue(block, 'NAME'),
     extractTagValue(block, 'TRNAMT'),
     extractTagValue(block, 'DTPOSTED'),
+    ownerName,
   )
 }
 
-function parseSGMLBlock(block: string): OFXTransaction | null {
+function parseSGMLBlock(block: string, ownerName?: string | null): OFXTransaction | null {
   const memo = extractTagValue(block, 'MEMO') || extractTagValue(block, 'NAME')
   const amount = extractTagValue(block, 'TRNAMT')
   const date = extractTagValue(block, 'DTPOSTED')
-  return buildTransaction(memo, amount, date)
+  return buildTransaction(memo, amount, date, ownerName)
 }
 
-function buildTransaction(memo: string, amountRaw: string, dateRaw: string): OFXTransaction | null {
+function buildTransaction(memo: string, amountRaw: string, dateRaw: string, ownerName?: string | null): OFXTransaction | null {
   if (!memo || !amountRaw || !dateRaw) return null
 
   const amount = parseFloat(amountRaw.replace(',', '.'))
@@ -156,7 +157,7 @@ function buildTransaction(memo: string, amountRaw: string, dateRaw: string): OFX
 
   // O sinal do TRNAMT define receita/despesa; a detecção só marca se é
   // movimentação interna, sem mexer no tipo.
-  const { type, is_internal } = classifyTransaction(memo, amount > 0 ? 'receita' : 'despesa')
+  const { type, is_internal } = classifyTransaction(memo, amount > 0 ? 'receita' : 'despesa', ownerName)
   const absAmount = Math.abs(amount)
   const date = parseOFXDate(dateRaw)
 
