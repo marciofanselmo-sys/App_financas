@@ -1,5 +1,5 @@
-import { TransactionType } from '@/types'
-import { isTransferDescription } from './detect-transfer'
+import { TransactionType, TransferDirection } from '@/types'
+import { classifyTransaction } from './detect-transfer'
 import { stripEmbeddedDate } from './strip-embedded-date'
 
 interface OFXTransaction {
@@ -7,6 +7,7 @@ interface OFXTransaction {
   amount: number
   date: string
   type: TransactionType
+  direction?: TransferDirection
   category: string
 }
 
@@ -153,14 +154,14 @@ function buildTransaction(memo: string, amountRaw: string, dateRaw: string): OFX
   const amount = parseFloat(amountRaw.replace(',', '.'))
   if (isNaN(amount) || amount === 0) return null
 
-  const type: TransactionType = isTransferDescription(memo)
-    ? 'transferencia'
-    : (amount > 0 ? 'receita' : 'despesa')
+  // O sinal do TRNAMT é a única fonte da direção — preservá-la é o que permite
+  // a transferência mexer no saldo da conta sem virar receita/despesa do mês.
+  const { type, direction } = classifyTransaction(memo, amount > 0 ? 'receita' : 'despesa')
   const absAmount = Math.abs(amount)
   const date = parseOFXDate(dateRaw)
 
   const description = cleanDescription(memo)
   const category = guessCategory(description, type)
 
-  return { description, amount: absAmount, date, type, category }
+  return { description, amount: absAmount, date, type, direction, category }
 }

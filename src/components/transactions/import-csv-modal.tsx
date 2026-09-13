@@ -2,25 +2,26 @@
 
 import { useState, useRef, useCallback } from 'react'
 import Papa from 'papaparse'
-import * as XLSX from 'xlsx'
+import { validateImportFile, validateImportRowCount } from '@/lib/import-limits'
+import { readXlsxSheetNames, readXlsxSheetRows, rowsToHeaderObjects } from '@/utils/read-xlsx'
 import { createClient } from '@/lib/supabase/client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { TransactionType } from '@/types'
+import { TransactionType, TransferDirection} from '@/types'
 import { useCategories } from '@/hooks/use-categories'
 import { useRules, applyUserRules } from '@/hooks/use-rules'
 import { Upload, Download, CheckCircle, AlertCircle, FileText, Zap, Tag, TrendingUp } from 'lucide-react'
 import { parseOFX } from '@/utils/parse-ofx'
 import { parseRICOXLSX } from '@/utils/parse-rico'
-import { parseRicoExtratoXLSX, isRicoExtratoXLSX } from '@/utils/parse-rico-extrato'
+import { parseRicoExtratoXLSX, isRicoExtratoRows } from '@/utils/parse-rico-extrato'
 import { extractPdfText } from '@/utils/extract-pdf-text'
 import { parseMercadoPagoPDF, isMercadoPagoPDF } from '@/utils/parse-mercadopago-pdf'
 import { parseInterInvoicePDF, isInterInvoicePDF } from '@/utils/parse-inter-pdf'
 import { parseItauExtratoPDF, isItauExtratoPDF } from '@/utils/parse-itau-extrato-pdf'
 import { stripEmbeddedDate } from '@/utils/strip-embedded-date'
-import { isTransferDescription } from '@/utils/detect-transfer'
+import { isTransferDescription, classifyTransaction } from '@/utils/detect-transfer'
 import { parseAmountBR } from '@/utils/parse-amount'
 import { addMonths } from '@/utils/add-months'
 import { installmentLabel } from '@/utils/format-installment'
@@ -57,6 +58,9 @@ interface PreviewRow {
   amount: number
   date: string
   type: TransactionType
+  // Só em transferência: diz se o dinheiro saiu ou entrou nesta conta. Sem
+  // isso a linha não move saldo nenhum (era a causa de 14.1 / 14.2).
+  direction?: TransferDirection | null
   category: string
   subcategory?: string | null
   installment_current?: number | null
@@ -290,10 +294,8 @@ function parseNubankCSV(content: string): PreviewRow[] {
       const amount = Math.abs(valorNum)
       if (isNaN(amount) || amount <= 0) errors.push('Valor inválido')
       // Fatura do cartão: valor positivo = compra (despesa); negativo = estorno/pagamento (receita)
-      const type: TransactionType = isTransferDescription(description)
-        ? 'transferencia'
-        : (valorNum < 0 ? 'receita' : 'despesa')
-      return { description, amount: isNaN(amount) ? 0 : amount, date, type, category: 'Outros', valid: errors.length === 0, errors }
+      const { type, direction } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa')
+      return { description, amount: isNaN(amount) ? 0 : amount, date, type, direction, category: 'Outros', valid: errors.length === 0, errors }
     })
 }
 
@@ -340,9 +342,7 @@ function parseC6Credit(content: string): PreviewRow[] {
       const valorNum = parseFloat((row['Valor (em R$)'] ?? '0').trim())
       const amount = Math.abs(valorNum)
       if (isNaN(amount) || amount <= 0) errors.push('Valor inválido')
-      const type: TransactionType = isTransferDescription(description)
-        ? 'transferencia'
-        : (valorNum < 0 ? 'receita' : 'despesa')
+      const { type, direction } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa')
       const category = mapC6Category(row['Categoria'] ?? '')
       let installment_current: number | null = null
       let installment_total: number | null = null
@@ -363,7 +363,7 @@ function parseC6Credit(content: string): PreviewRow[] {
       const effectiveDate = installment_current && installment_current > 1 && date
         ? addMonths(date, installment_current - 1)
         : date
-      return { description, amount: isNaN(amount) ? 0 : amount, date: effectiveDate, type, category, installment_current, installment_total, valid: errors.length === 0, errors }
+      return { description, amount: isNaN(amount) ? 0 : amount, date: effectiveDate, type, direction, category, installment_current, installment_total, valid: errors.length === 0, errors }
     })
 }
 
@@ -391,12 +391,11 @@ function parseC6Checking(content: string): PreviewRow[] {
       if (!date) errors.push('Data inválida')
       const entrada = parseFloat(row['Entrada(R$)'] ?? '0')
       const saida = parseFloat(row['Saída(R$)'] ?? '0')
-      const type: TransactionType = isTransferDescription(description)
-        ? 'transferencia'
-        : (entrada > 0 ? 'receita' : 'despesa')
+      // Aqui a direção vem das colunas Entrada/Saída, não do sinal.
+      const { type, direction } = classifyTransaction(description, entrada > 0 ? 'receita' : 'despesa')
       const amount = entrada > 0 ? entrada : saida
       if (isNaN(amount) || amount <= 0) errors.push('Valor inválido')
-      return { description, amount: isNaN(amount) ? 0 : amount, date, type, category: 'Outros', valid: errors.length === 0, errors }
+      return { description, amount: isNaN(amount) ? 0 : amount, date, type, direction, category: 'Outros', valid: errors.length === 0, errors }
     })
 }
 
@@ -508,6 +507,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
       if (!rows.length) { setFileError('Nenhuma transação encontrada no arquivo OFX.'); return }
       const preview: PreviewRow[] = rows.map(r => ({
         description: r.description, amount: r.amount, date: r.date, type: r.type,
+        direction: r.direction,
         category: r.category,
         valid: true, errors: [],
       }))
@@ -560,9 +560,9 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   }
 
   // ── RICO / XP XLSX ──
-  function handleRICOXLSX(buffer: ArrayBuffer, fileDate: string) {
+  async function handleRICOXLSX(buffer: ArrayBuffer, fileDate: string) {
     try {
-      const ricoData = parseRICOXLSX(buffer)
+      const ricoData = await parseRICOXLSX(buffer)
       if (!ricoData.positions.length) {
         setFileError('Nenhuma posição encontrada no arquivo RICO. Verifique se é o PosicaoDetalhada.xlsx correto.')
         return
@@ -660,53 +660,69 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   }
 
   // ── XLS / XLSX ──
-  function handleXLS(file: File) {
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      try {
-        const buffer = ev.target?.result as ArrayBuffer
-        const wb = XLSX.read(new Uint8Array(buffer), { type: 'array', cellDates: true })
-
-        // Detect RICO / XP format by sheet name
-        if (wb.SheetNames.includes('Sua carteira')) {
-          const ws = wb.Sheets['Sua carteira']
-          const rawRows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, defval: '' })
-          let fileDate = new Date().toISOString().split('T')[0]
-          const headerCell = String(rawRows[0]?.[5] ?? '')
-          const dateMatch = headerCell.match(/(\d{2})\/(\d{2})\/(\d{4})/)
-          if (dateMatch) fileDate = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`
-          handleRICOXLSX(buffer, fileDate)
-          return
-        }
-
-        // Detect RICO / XP "Extrato da conta" (histórico de movimentações)
-        if (isRicoExtratoXLSX(wb)) {
-          const rows = parseRicoExtratoXLSX(buffer)
-          if (!rows.length) {
-            setFileError('Nenhuma movimentação encontrada nesse extrato. Verifique se o período selecionado no site da RICO/XP tem lançamentos.')
-            return
-          }
-          setPreview(enhanceWithUserRules(rows))
-          setFileType('rico-extrato-xlsx')
-          setStep('preview')
-          return
-        }
-
-        const sheet = wb.Sheets[wb.SheetNames[0]]
-        const rows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { defval: '', raw: false })
-        if (!rows.length) { setFileError('Planilha vazia ou sem dados.'); return }
-        const hs = Object.keys(rows[0])
-        setHeaders(hs); setRawRows(rows); setMapping(guessCSVMapping(hs)); setFileType('csv'); setStep('map')
-      } catch {
-        setFileError('Erro ao ler o arquivo Excel. Verifique se não está corrompido.')
-      }
+  async function handleXLS(file: File) {
+    const fileCheck = validateImportFile(file)
+    if (!fileCheck.ok) {
+      setFileError(fileCheck.error)
+      return
     }
-    reader.onerror = () => setFileError('Erro ao ler o arquivo.')
-    reader.readAsArrayBuffer(file)
+
+    try {
+      const buffer = await file.arrayBuffer()
+      const sheetNames = await readXlsxSheetNames(file)
+
+      if (sheetNames.includes('Sua carteira')) {
+        const rawRows = await readXlsxSheetRows(buffer, 'Sua carteira')
+        let fileDate = new Date().toISOString().split('T')[0]
+        const headerCell = String(rawRows[0]?.[5] ?? '')
+        const dateMatch = headerCell.match(/(\d{2})\/(\d{2})\/(\d{4})/)
+        if (dateMatch) fileDate = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`
+        await handleRICOXLSX(buffer, fileDate)
+        return
+      }
+
+      const firstSheetRows = await readXlsxSheetRows(buffer, 1)
+      const rowCheck = validateImportRowCount(firstSheetRows.length)
+      if (!rowCheck.ok) {
+        setFileError(rowCheck.error)
+        return
+      }
+
+      if (isRicoExtratoRows(firstSheetRows)) {
+        const rows = await parseRicoExtratoXLSX(buffer)
+        if (!rows.length) {
+          setFileError('Nenhuma movimentação encontrada nesse extrato. Verifique se o período selecionado no site da RICO/XP tem lançamentos.')
+          return
+        }
+        setPreview(enhanceWithUserRules(rows))
+        setFileType('rico-extrato-xlsx')
+        setStep('preview')
+        return
+      }
+
+      const objects = rowsToHeaderObjects(firstSheetRows)
+      if (!objects.length) {
+        setFileError('Planilha vazia ou sem dados.')
+        return
+      }
+      const hs = Object.keys(objects[0])
+      setHeaders(hs)
+      setRawRows(objects)
+      setMapping(guessCSVMapping(hs))
+      setFileType('csv')
+      setStep('map')
+    } catch {
+      setFileError('Erro ao ler o arquivo Excel. Use .xlsx (formato atual) e verifique se não está corrompido.')
+    }
   }
 
   function processFile(file: File) {
     setFileError('')
+    const fileCheck = validateImportFile(file)
+    if (!fileCheck.ok) {
+      setFileError(fileCheck.error)
+      return
+    }
     const ext = file.name.split('.').pop()?.toLowerCase()
     if (ext === 'ofx' || ext === 'qfx') {
       const reader = new FileReader()
@@ -761,13 +777,25 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
       const date = normalizeDate(mapping.data ? raw[mapping.data] : '') ?? ''
       if (!date) errors.push('Data inválida')
       let type: TransactionType
+      // Direção só existe quando dá pra saber o sinal. Se o tipo veio escrito
+      // numa coluna do CSV ("transferencia"), o arquivo não diz para onde o
+      // dinheiro foi — fica indefinida e a linha segue neutra no saldo, em vez
+      // de entrar com um sinal chutado.
+      let direction: TransferDirection | undefined
       const mappedType = mapping.tipo ? normalizeType(raw[mapping.tipo]) : null
-      if (mappedType) { type = mappedType }
+      if (mappedType) {
+        type = mappedType
+        if (mappedType === 'transferencia' && !isNaN(valorNum)) {
+          direction = valorNum < 0 ? 'entrada' : 'saida'
+        }
+      }
+      else if (!isNaN(valorNum)) {
+        ({ type, direction } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa'))
+      }
       else if (isTransferDescription(description)) { type = 'transferencia' }
-      else if (!isNaN(valorNum)) { type = valorNum < 0 ? 'receita' : 'despesa' }
       else { type = 'despesa'; errors.push('Tipo não mapeado — assumido "despesa"') }
       const category = normalizeCategory(mapping.categoria ? raw[mapping.categoria] : 'Outros', categoryNames)
-      return { description, amount: isNaN(amount) ? 0 : amount, date, type, category, valid: errors.filter(e => !e.includes('assumido')).length === 0, errors }
+      return { description, amount: isNaN(amount) ? 0 : amount, date, type, direction, category, valid: errors.filter(e => !e.includes('assumido')).length === 0, errors }
     })
     setPreview(enhanceWithUserRules(rows))
     setStep('preview')
@@ -916,6 +944,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
         amount: row.amount,
         date: row.date,
         type: row.type,
+        direction: row.direction ?? null,
         category: row.category,
         board_id: boardId ?? null,
         tags: [],

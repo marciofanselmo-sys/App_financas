@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
+import { balanceFromTransactions } from '@/lib/dashboard-patrimony'
 import { useParams, useRouter } from 'next/navigation'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useTransactions } from '@/hooks/use-transactions'
@@ -117,8 +118,15 @@ export default function BoardDetailPage() {
   const stats = useMemo(() => {
     const income = transactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
     const expenses = transactions.filter(t => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0)
-    const transfers = transactions.filter(t => t.type === 'transferencia').reduce((s, t) => s + Number(t.amount), 0)
-    return { income, expenses, balance: income - expenses, transfers }
+    // Líquido, não bruto: com direção, uma transferência que saiu e outra que
+    // entrou não se somam — se anulam. É o mesmo critério que o saldo usa.
+    const transfers = transactions
+      .filter(t => t.type === 'transferencia')
+      .reduce((s, t) => t.direction === 'entrada' ? s + Number(t.amount)
+                      : t.direction === 'saida'   ? s - Number(t.amount)
+                      : s, 0)
+    // Saldo inclui a movimentação interna (ver balanceFromTransactions).
+    return { income, expenses, balance: balanceFromTransactions(transactions), transfers }
   }, [transactions])
 
   // collect all tags from all transactions for this board (no filters applied)
@@ -310,7 +318,7 @@ export default function BoardDetailPage() {
             <BoardIcon icon={board.icon} className="h-5 w-5" style={{ color: board.color }} />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">{board.name}</h1>
+            <h1 className="font-heading text-xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">{board.name}</h1>
             {board.description && (
               <p className="text-xs text-slate-400 dark:text-slate-500">{board.description}</p>
             )}

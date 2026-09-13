@@ -6,11 +6,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Transaction, TransactionType } from '@/types'
+import { Transaction, TransactionType, TransferDirection} from '@/types'
 import { useCategories } from '@/hooks/use-categories'
 import { categoriesForDate, isCategoryUsableForDate } from '@/lib/special-category-filter'
 import { addMonths } from '@/utils/add-months'
 import { X } from 'lucide-react'
+import { parseTransactionInput } from '@/lib/schemas/transaction'
+import { formatUserError } from '@/lib/supabase-error'
 
 type TransactionData = Omit<Transaction, 'id' | 'user_id' | 'created_at'>
 interface SubmitOptions {
@@ -35,6 +37,8 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState('')
   const [type, setType] = useState<TransactionType>('despesa')
+  // Só usada em transferência: sem ela a linha não mexe no saldo de conta nenhuma.
+  const [direction, setDirection] = useState<TransferDirection>('saida')
   const [category, setCategory] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
@@ -80,6 +84,7 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
       setAmount(initialData ? String(initialData.amount) : '')
       setDate(initialData?.date ?? new Date().toISOString().split('T')[0])
       setType(initialData?.type ?? 'despesa')
+      setDirection(initialData?.direction ?? 'saida')
       setCategory(initialData?.category ?? '')
       setTags(initialData?.tags ?? [])
       setTagInput('')
@@ -127,16 +132,29 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
     setError('')
 
     const amountNum = parseFloat(amount.replace(',', '.'))
-    if (isNaN(amountNum) || amountNum <= 0) { setError('Informe um valor válido.'); return }
-    if (!category) { setError('Selecione uma categoria.'); return }
-
-    const baseData = {
+    const parsed = parseTransactionInput({
       description,
       amount: amountNum,
+      date,
       type,
+      direction: type === 'transferencia' ? direction : null,
       category,
       tags,
       board_id: initialData?.board_id ?? boardId ?? null,
+    })
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message ?? 'Dados inválidos.')
+      return
+    }
+
+    const baseData = {
+      description: parsed.data.description,
+      amount: parsed.data.amount,
+      type: parsed.data.type,
+      direction: parsed.data.direction ?? null,
+      category: parsed.data.category,
+      tags: parsed.data.tags,
+      board_id: parsed.data.board_id ?? null,
     }
 
     setLoading(true)
@@ -150,18 +168,14 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
       }))
       const { error } = await onSubmitBatch(items)
       if (error) {
-        const msg = typeof error === 'object' && error !== null && 'message' in error
-          ? (error as { message: string }).message : String(error)
-        setError(msg || 'Erro ao salvar parcelamento. Tente novamente.')
+        setError(formatUserError(error, 'Erro ao salvar parcelamento. Tente novamente.'))
         setLoading(false)
         return
       }
     } else {
-      const { error } = await onSubmit({ ...baseData, date }, { skipRuleSync })
+      const { error } = await onSubmit({ ...baseData, date: parsed.data.date }, { skipRuleSync })
       if (error) {
-        const msg = typeof error === 'object' && error !== null && 'message' in error
-          ? (error as { message: string }).message : String(error)
-        setError(msg || 'Erro ao salvar transação. Tente novamente.')
+        setError(formatUserError(error, 'Erro ao salvar transação. Tente novamente.'))
         setLoading(false)
         return
       }
@@ -207,6 +221,36 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
               ))}
             </div>
           </div>
+
+          {/* Transferência não entra em receita/despesa do mês, mas move o saldo
+              da conta — e para isso precisa saber para que lado o dinheiro foi. */}
+          {type === 'transferencia' && (
+            <div className="space-y-2">
+              <Label>Nesta conta, o dinheiro</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { value: 'saida' as const,   label: 'Saiu daqui' },
+                  { value: 'entrada' as const, label: 'Entrou aqui' },
+                ]).map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setDirection(opt.value)}
+                    className={`py-2 px-3 rounded-lg text-sm font-medium border transition-colors ${
+                      direction === opt.value
+                        ? 'bg-slate-700 text-white border-slate-700'
+                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Não conta como receita nem despesa do mês — só ajusta o saldo desta conta.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="description">Descrição</Label>

@@ -1,4 +1,5 @@
 import { useRouter } from 'next/navigation'
+import { balanceFromTransactions } from '@/lib/dashboard-patrimony'
 import { TransactionBoard, Transaction } from '@/types'
 import { BoardIcon } from '@/components/transactions/board-icon'
 import { ArrowRight, TrendingUp, TrendingDown } from 'lucide-react'
@@ -16,14 +17,17 @@ export function BoardSummaryCard({ board, transactions }: BoardSummaryCardProps)
   const router = useRouter()
   const income = transactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
   const expenses = transactions.filter(t => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0)
-  // transferencias are excluded from both totals
-  const balance = income - expenses
+  // Transferência fica fora de Entradas/Saídas (não é receita nem despesa),
+  // mas entra no saldo: o dinheiro saiu mesmo desta conta. Por isso o saldo
+  // vem de balanceFromTransactions e não de `income - expenses`, que ignorava
+  // a movimentação interna e mostrava mais dinheiro do que a conta tinha.
+  const balance = balanceFromTransactions(transactions)
   const positive = balance >= 0
 
   return (
     <button
       onClick={() => router.push(`/transactions/${board.id}`)}
-      className="w-full text-left bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden hover:shadow-md transition-shadow group"
+      className="w-full text-left nobli-card overflow-hidden hover:shadow-[var(--nobli-shadow-m)] transition-shadow group"
     >
       <div className="h-1 w-full" style={{ backgroundColor: board.color }} />
       <div className="p-4">

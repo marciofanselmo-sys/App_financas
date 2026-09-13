@@ -5,10 +5,27 @@ const fmt = (v: number) =>
 
 export { fmt as formatDashboardCurrency }
 
-/** Saldo acumulado: receitas − despesas (transferências não entram no saldo). */
+/**
+ * Saldo acumulado de um conjunto de transações.
+ *
+ * Transferência é neutra em receita/despesa, mas NÃO é neutra no saldo: o
+ * dinheiro sai mesmo de uma conta e entra mesmo na outra. Quando as duas
+ * pernas do movimento existem (os dois extratos importados), elas se anulam
+ * sozinhas no total — não é preciso deduplicar nada — e cada conta fica com
+ * o saldo certo. Quando só uma perna existe (ex: TED para a corretora, cujo
+ * outro lado entra pela posição importada), a saída desconta do caixa e a
+ * posição soma o lado investido, sem contar o mesmo dinheiro duas vezes.
+ *
+ * Transferência sem `direction` (importada antes de set/2026) continua neutra:
+ * é o comportamento antigo, preferível a chutar o sinal do saldo.
+ */
 export function balanceFromTransactions(transactions: Transaction[]): number {
   return transactions.reduce((acc, t) => {
-    if (t.type === 'transferencia') return acc
+    if (t.type === 'transferencia') {
+      if (t.direction === 'entrada') return acc + Number(t.amount)
+      if (t.direction === 'saida') return acc - Number(t.amount)
+      return acc
+    }
     if (t.type === 'receita') return acc + Number(t.amount)
     return acc - Number(t.amount)
   }, 0)
