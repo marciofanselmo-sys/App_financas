@@ -446,10 +446,14 @@ export default function DashboardPage() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {pinnedBoards.map(board => (
+                // Todas as transações da conta, não as do mês: o card mostra
+                // SALDO, e saldo é a soma de tudo que passou pela conta. Com o
+                // recorte do mês, a mesma conta aparecia com um número aqui e
+                // outro no bloco Patrimônio, logo abaixo na mesma tela.
                 <BoardSummaryCard
                   key={board.id}
                   board={board}
-                  transactions={transactions.filter(t => t.board_id === board.id)}
+                  transactions={allTransactions.filter(t => t.board_id === board.id)}
                 />
               ))}
             </div>

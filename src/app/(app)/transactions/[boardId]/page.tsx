@@ -86,6 +86,11 @@ export default function BoardDetailPage() {
       type: typeFilter === 'all' ? undefined : typeFilter,
     })
 
+  // Todas as transações da conta, sem nenhum filtro — é daqui que sai o saldo
+  // e a lista de tags. O `transactions` acima respeita mês, busca e filtros,
+  // e serve para a tabela e para os totais do período.
+  const { transactions: allBoardTxs } = useTransactions({ board_id: boardId })
+
   // Se o tipo selecionado mudar, uma categoria já escolhida que não pertence
   // mais a esse tipo (e não é "Ambos") deixa de fazer sentido como filtro.
   const categoryOptions = useMemo(
@@ -112,20 +117,21 @@ export default function BoardDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typeFilter])
 
-  // Entradas / Saídas / Saldo do que está na tela (respeita mês e filtros)
+  // Entradas e Saídas seguem o período e os filtros da tela. Saldo, não:
+  // é o histórico completo da conta (ver o useMemo abaixo).
   const stats = useMemo(() => {
     const income = transactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
     const expenses = transactions.filter(t => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0)
-    // Saldo = saldo inicial da conta + entradas − saídas.
+    // Entradas e Saídas refletem o período e os filtros da tela. O SALDO, não:
+    // ele é a soma de tudo que passou pela conta, sempre. Um "saldo" que muda
+    // quando você troca o mês ou digita na busca não é o saldo da conta.
     return {
       income,
       expenses,
-      balance: Number(board?.opening_balance ?? 0) + balanceFromTransactions(transactions),
+      balance: Number(board?.opening_balance ?? 0) + balanceFromTransactions(allBoardTxs),
     }
-  }, [transactions, board?.opening_balance])
+  }, [transactions, allBoardTxs, board?.opening_balance])
 
-  // collect all tags from all transactions for this board (no filters applied)
-  const { transactions: allBoardTxs } = useTransactions({ board_id: boardId })
   const allTags = useMemo(() => {
     const set = new Set<string>()
     allBoardTxs.forEach(t => (t.tags ?? []).forEach(tag => set.add(tag)))
@@ -351,7 +357,7 @@ export default function BoardDetailPage() {
         </div>
       </div>
 
-      {/* Entradas / Saídas / Saldo — reflete o período e os filtros ativos */}
+      {/* Entradas e Saídas refletem o período e os filtros; Saldo é o total da conta */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06]">
           <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Entradas</p>
@@ -362,7 +368,7 @@ export default function BoardDetailPage() {
           <p className="text-sm sm:text-base font-semibold text-red-500">{formatCurrency(stats.expenses)}</p>
         </div>
         <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06]">
-          <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Saldo</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Saldo da conta</p>
           <p className={`text-sm sm:text-base font-semibold ${stats.balance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500'}`}>
             {formatCurrency(stats.balance)}
           </p>
