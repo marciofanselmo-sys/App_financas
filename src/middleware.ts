@@ -59,6 +59,13 @@ export async function middleware(request: NextRequest) {
   return supabaseResponse
 }
 
+// Arquivos estáticos NUNCA podem passar por aqui. A lista antiga só excluía
+// imagens, então o worker do pdf.js (`/pdf.worker.min.mjs`) e os ícones em
+// subpastas (`/nobli/favicon.ico`) eram redirecionados para /auth/login: o
+// pdf.js pedia o worker, recebia HTML e a importação de PDF quebrava com
+// "Erro ao processar o PDF".
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|avif|ico|mjs|js|css|json|txt|xml|map|woff|woff2|ttf|otf|eot|wasm|pdf)$).*)',
+  ],
 }
