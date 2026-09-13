@@ -47,6 +47,10 @@ export interface TransactionBoard {
   type: BoardType
   is_investment: boolean
   show_on_dashboard: boolean
+  // Saldo anterior ao primeiro lançamento importado. Ninguém começa a usar o
+  // app no dia em que abriu a conta: o cartão já tem fatura, a conta já tem
+  // saldo. Negativo em cartão (fatura em aberto), positivo em conta.
+  opening_balance: number
   last_position_import?: BoardPositionImport
   position_import_history?: PositionHistoryEntry[]
   created_at: string

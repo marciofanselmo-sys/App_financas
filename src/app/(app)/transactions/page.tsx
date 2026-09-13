@@ -50,6 +50,9 @@ interface FormState {
   icon: string
   description: string
   type: BoardType
+  // Texto, não número: o campo aceita vírgula e pode estar vazio enquanto o
+  // usuário digita. Vira número só na hora de salvar.
+  openingBalance: string
 }
 
 const EMPTY_FORM: FormState = {
@@ -58,6 +61,7 @@ const EMPTY_FORM: FormState = {
   icon: 'wallet',
   description: '',
   type: 'ambos',
+  openingBalance: '',
 }
 
 export default function TransactionsPage() {
@@ -114,13 +118,18 @@ export default function TransactionsPage() {
       icon: tpl.icon,
       description: '',
       type: tpl.type,
+      openingBalance: '',
     })
     setFormStep('form')
   }
 
   function openEdit(board: TransactionBoard) {
     setEditing(board)
-    setForm({ name: board.name, color: board.color, icon: board.icon, description: board.description ?? '', type: board.type })
+    setForm({
+      name: board.name, color: board.color, icon: board.icon,
+      description: board.description ?? '', type: board.type,
+      openingBalance: board.opening_balance ? String(board.opening_balance).replace('.', ',') : '',
+    })
     setFormStep('form')
     setFormOpen(true)
   }
@@ -135,6 +144,7 @@ export default function TransactionsPage() {
       type: form.type,
       is_investment: false,
       show_on_dashboard: editing?.show_on_dashboard ?? false,
+      opening_balance: parseFloat(form.openingBalance.replace(/\./g, '').replace(',', '.')) || 0,
     }
     if (editing) updateBoard(editing.id, data)
     else createBoard(data)
@@ -151,7 +161,7 @@ export default function TransactionsPage() {
     <div className="space-y-6 max-w-3xl mx-auto">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Contas e Cartões</h1>
+          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Contas e Cartões</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             {boards.length === 0 ? 'Adicione sua primeira conta ou cartão' : `${boards.length} conta${boards.length > 1 ? 's' : ''} cadastrada${boards.length > 1 ? 's' : ''}`}
           </p>
@@ -323,6 +333,27 @@ export default function TransactionsPage() {
                   value={form.description}
                   onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                 />
+              </div>
+
+              {/* Ninguém começa a usar o app no dia em que abriu a conta: o
+                  cartão já tem fatura, a conta já tem saldo. Sem isso o app
+                  assume zero e o patrimônio nasce errado — e não se corrige
+                  sozinho, porque é histórico que nunca vai ser importado. */}
+              <div className="space-y-2">
+                <Label htmlFor="board-opening">Saldo antes de começar (opcional)</Label>
+                <Input
+                  id="board-opening"
+                  inputMode="decimal"
+                  placeholder="0,00"
+                  value={form.openingBalance}
+                  onChange={e => setForm(f => ({ ...f, openingBalance: e.target.value }))}
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Quanto esta conta tinha antes do primeiro lançamento que você
+                  vai importar. Em cartão de crédito, use <strong>negativo</strong>
+                  {' '}para a fatura em aberto (ex: <code>-1200,00</code>). Deixe
+                  vazio se o histórico começa do zero.
+                </p>
               </div>
 
               <div className="space-y-2">

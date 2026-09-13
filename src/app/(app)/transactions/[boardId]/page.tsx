@@ -123,9 +123,16 @@ export default function BoardDetailPage() {
     const transfers = transactions
       .filter(t => t.is_internal)
       .reduce((s, t) => t.type === 'receita' ? s + Number(t.amount) : s - Number(t.amount), 0)
-    // Saldo inclui a movimentação interna (ver balanceFromTransactions).
-    return { income, expenses, balance: balanceFromTransactions(transactions), transfers }
-  }, [transactions])
+    // Saldo inclui a movimentação interna (ver balanceFromTransactions) e o
+    // saldo inicial da conta, que representa o que existia antes do primeiro
+    // lançamento importado.
+    return {
+      income,
+      expenses,
+      balance: Number(board?.opening_balance ?? 0) + balanceFromTransactions(transactions),
+      transfers,
+    }
+  }, [transactions, board?.opening_balance])
 
   // collect all tags from all transactions for this board (no filters applied)
   const { transactions: allBoardTxs } = useTransactions({ board_id: boardId })

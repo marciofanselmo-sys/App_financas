@@ -61,7 +61,11 @@ export function computePatrimonyOverview(
     boardId: board.id,
     name: board.name,
     color: board.color,
-    balance: balanceFromTransactions(
+    // Saldo inicial + o que os lançamentos movimentaram. Sem a primeira
+    // parcela, uma conta cujo histórico começa no meio nasce com o saldo
+    // errado e nunca se corrige — não há lançamento que represente o que
+    // já existia antes da primeira importação.
+    balance: Number(board.opening_balance ?? 0) + balanceFromTransactions(
       cashTransactions.filter(t => t.board_id === board.id),
     ),
   }))

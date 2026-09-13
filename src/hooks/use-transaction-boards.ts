@@ -16,6 +16,7 @@ function fromRow(row: any): TransactionBoard {
     type: (row.type ?? 'ambos') as BoardType,
     is_investment: row.is_investment ?? false,
     show_on_dashboard: row.show_on_dashboard,
+    opening_balance: Number(row.opening_balance ?? 0),
     last_position_import: row.last_position_import ?? undefined,
     position_import_history: row.position_import_history ?? undefined,
     created_at: row.created_at,
@@ -126,6 +127,7 @@ export function useTransactionBoards() {
         type: board.type,
         is_investment: board.is_investment,
         show_on_dashboard: board.show_on_dashboard,
+        opening_balance: board.opening_balance ?? 0,
       })
       .select()
       .single()

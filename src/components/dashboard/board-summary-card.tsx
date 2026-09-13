@@ -21,7 +21,7 @@ export function BoardSummaryCard({ board, transactions }: BoardSummaryCardProps)
   // mas entra no saldo: o dinheiro saiu mesmo desta conta. Por isso o saldo
   // vem de balanceFromTransactions e não de `income - expenses`, que ignorava
   // a movimentação interna e mostrava mais dinheiro do que a conta tinha.
-  const balance = balanceFromTransactions(transactions)
+  const balance = Number(board.opening_balance ?? 0) + balanceFromTransactions(transactions)
   const positive = balance >= 0
 
   return (

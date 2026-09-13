@@ -17,8 +17,8 @@ import {
 import { EmptyState } from '@/components/ui/empty-state'
 import { createClient } from '@/lib/supabase/client'
 import { AllocationChartsPanel } from '@/components/investments/allocation-charts-panel'
-import { PatrimonyHistoryChart } from '@/components/investments/patrimony-history-chart'
-import { buildConsolidatedPatrimonyHistory, hasPatrimonyHistory } from '@/lib/position-history'
+import { PatrimonyVariationCard } from '@/components/investments/patrimony-variation-card'
+import { computeConsolidatedPatrimonyVariation, hasPatrimonyHistory } from '@/lib/position-history'
 
 interface AccountTemplate {
   id: string
@@ -157,6 +157,7 @@ export default function InvestmentsPage() {
       description: form.description || undefined,
       type: form.type,
       is_investment: true,
+      opening_balance: 0,
       show_on_dashboard: editing?.show_on_dashboard ?? false,
     }
     if (editing) {
@@ -167,8 +168,8 @@ export default function InvestmentsPage() {
     setFormOpen(false)
   }
 
-  const patrimonyHistory = useMemo(() => buildConsolidatedPatrimonyHistory(boards), [boards])
-  const showHistory = hasPatrimonyHistory(boards)
+  const patrimonyVariation = useMemo(() => computeConsolidatedPatrimonyVariation(boards), [boards])
+  const showVariation = hasPatrimonyHistory(boards)
 
   if (loading) return null
 
@@ -176,7 +177,7 @@ export default function InvestmentsPage() {
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Investimentos</h1>
+          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Investimentos</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             {boards.length === 0 ? 'Adicione sua primeira conta de investimento' : `${boards.length} conta${boards.length > 1 ? 's' : ''} cadastrada${boards.length > 1 ? 's' : ''}`}
           </p>
@@ -201,12 +202,8 @@ export default function InvestmentsPage() {
         <div className="space-y-4">
           <AllocationChartsPanel boards={boards} />
 
-          {showHistory && (
-            <PatrimonyHistoryChart
-              data={patrimonyHistory}
-              title="Evolução do patrimônio importado"
-              subtitle="Consolidado · cada ponto = uma importação de posição (XLSX)"
-            />
+          {showVariation && patrimonyVariation && (
+            <PatrimonyVariationCard variation={patrimonyVariation} />
           )}
 
           {boards.map(board => {
