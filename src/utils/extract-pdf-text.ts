@@ -25,12 +25,11 @@ export async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
   const pdfjsLib = await import('pdfjs-dist')
   // Cópia local do worker (public/pdf.worker.min.mjs) — o CDN é instável nessa versão.
   //
-  // O `?v=` existe por um motivo específico: até set/2026 o matcher do
-  // middleware não excluía .mjs, então esta URL respondia 307 para /auth/login
-  // e o navegador guardava esse HTML em cache. Depois de corrigido o matcher,
-  // quem já tinha importado um PDF continuava recebendo a resposta velha do
-  // cache. Mudar a query força o navegador a buscar de novo.
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs?v=2'
+  // A query carrega a versão do próprio pdf.js, e não um número fixo, por dois
+  // motivos: força o navegador a largar uma resposta velha em cache, e garante
+  // que uma atualização do pacote nunca seja servida com o worker antigo em
+  // cache — o pdf.js recusa API e worker de versões diferentes.
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs?v=${pdfjsLib.version}`
 
   const original = new Uint8Array(buffer)
 
