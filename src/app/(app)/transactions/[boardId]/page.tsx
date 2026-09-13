@@ -117,20 +117,20 @@ export default function BoardDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typeFilter])
 
-  // Entradas e Saídas seguem o período e os filtros da tela. Saldo, não:
-  // é o histórico completo da conta (ver o useMemo abaixo).
+  // Entradas / Saídas / Saldo do recorte que está na tela (mês + filtros)
   const stats = useMemo(() => {
     const income = transactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
     const expenses = transactions.filter(t => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0)
-    // Entradas e Saídas refletem o período e os filtros da tela. O SALDO, não:
-    // ele é a soma de tudo que passou pela conta, sempre. Um "saldo" que muda
-    // quando você troca o mês ou digita na busca não é o saldo da conta.
+    // Os três números descrevem o MESMO recorte: o período e os filtros ativos.
+    // O saldo total da conta (histórico inteiro + saldo inicial) fica em Contas
+    // e Cartões e no bloco Patrimônio — somar saldo inicial a um recorte de mês,
+    // como era antes, não representava nada.
     return {
       income,
       expenses,
-      balance: Number(board?.opening_balance ?? 0) + balanceFromTransactions(allBoardTxs),
+      balance: balanceFromTransactions(transactions),
     }
-  }, [transactions, allBoardTxs, board?.opening_balance])
+  }, [transactions])
 
   const allTags = useMemo(() => {
     const set = new Set<string>()
@@ -357,7 +357,7 @@ export default function BoardDetailPage() {
         </div>
       </div>
 
-      {/* Entradas e Saídas refletem o período e os filtros; Saldo é o total da conta */}
+      {/* Os três refletem o período e os filtros ativos */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06]">
           <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Entradas</p>
@@ -368,7 +368,7 @@ export default function BoardDetailPage() {
           <p className="text-sm sm:text-base font-semibold text-red-500">{formatCurrency(stats.expenses)}</p>
         </div>
         <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06]">
-          <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Saldo da conta</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Saldo do período</p>
           <p className={`text-sm sm:text-base font-semibold ${stats.balance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500'}`}>
             {formatCurrency(stats.balance)}
           </p>
