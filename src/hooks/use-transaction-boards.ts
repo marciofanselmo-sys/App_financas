@@ -30,6 +30,8 @@ function fromRow(row: any): TransactionBoard {
 let boardsCache: TransactionBoard[] = []
 let loadingCache = true
 let fetchedOnce = false
+let currentUserId: string | null = null
+let authWatcherStarted = false
 const listeners = new Set<() => void>()
 
 function notify() {
@@ -57,9 +59,42 @@ async function fetchBoards() {
     .eq('user_id', user.id)
     .order('created_at', { ascending: true })
 
+  currentUserId = user.id
   boardsCache = (data ?? []).map(fromRow)
   loadingCache = false
   notify()
+}
+
+// O cache acima vive no módulo, fora do React — sobrevive a logout e a troca de
+// conta na mesma aba. Sem este reset, o próximo usuário a entrar no mesmo
+// navegador via as contas do anterior (nomes, cores, saldos) até o fetch novo
+// resolver — vazamento de dado entre usuários, não só UI velha.
+function resetBoardsCache() {
+  boardsCache = []
+  loadingCache = true
+  fetchedOnce = false
+  currentUserId = null
+  notify()
+}
+
+function startAuthWatcher() {
+  if (authWatcherStarted) return
+  authWatcherStarted = true
+  const supabase = createClient()
+  supabase.auth.onAuthStateChange((event, session) => {
+    const nextUserId = session?.user?.id ?? null
+    if (event === 'SIGNED_OUT') {
+      resetBoardsCache()
+      return
+    }
+    // Troca de usuário sem desmontar a árvore (login direto por cima de uma
+    // sessão viva): limpa e já recarrega, senão a tela fica no loading pra sempre.
+    if (nextUserId && currentUserId && nextUserId !== currentUserId) {
+      resetBoardsCache()
+      fetchedOnce = true
+      fetchBoards()
+    }
+  })
 }
 
 export function useTransactionBoards() {
@@ -67,6 +102,7 @@ export function useTransactionBoards() {
   const loading = useSyncExternalStore(subscribe, getLoadingSnapshot, getLoadingSnapshot)
 
   useEffect(() => {
+    startAuthWatcher()
     if (!fetchedOnce) {
       fetchedOnce = true
       fetchBoards()

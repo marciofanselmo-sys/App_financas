@@ -123,12 +123,13 @@ const EMPTY_FORM: FormState = {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function GoalsPage() {
-  const { goals, loading, createGoal, updateGoal, deleteGoal } = useGoals()
+  const { goals, loading, error, clearError, createGoal, updateGoal, deleteGoal } = useGoals()
   const { boards } = useTransactionBoards()
   const [formOpen, setFormOpen]       = useState(false)
   const [editing, setEditing]         = useState<Goal | null>(null)
   const [form, setForm]               = useState<FormState>(EMPTY_FORM)
   const [deleteTarget, setDeleteTarget] = useState<Goal | null>(null)
+  const [saving, setSaving]           = useState(false)
 
   // Puxar patrimônio de uma conta de investimento existente (Opção A, 2026-07-09)
   // — só o valor + um link leve pra conta, sem trazer posições/proventos pro
@@ -139,9 +140,9 @@ export default function GoalsPage() {
   const [boardPickerOpen, setBoardPickerOpen] = useState(false)
   const investmentBoardsWithPosition = boards.filter(b => b.is_investment && b.last_position_import)
 
-  function pullFromBoard(goal: Goal, board: (typeof boards)[number]) {
+  async function pullFromBoard(goal: Goal, board: (typeof boards)[number]) {
     if (!board.last_position_import) return
-    updateGoal(goal.id, {
+    const { error: updateError } = await updateGoal(goal.id, {
       currentAmount: board.last_position_import.patrimonio,
       lastImport: {
         source: 'board',
@@ -151,6 +152,7 @@ export default function GoalsPage() {
         boardName: board.name,
       },
     })
+    if (updateError) return // banner na página mostra o motivo; o seletor fica aberto
     setBoardPickerOpen(false)
     setImportingFor(null)
   }
@@ -168,12 +170,13 @@ export default function GoalsPage() {
     pullFromBoard(goal, board)
   }
 
-  function openCreate() { setEditing(null); setForm(EMPTY_FORM); setFormOpen(true) }
+  function openCreate() { clearError(); setEditing(null); setForm(EMPTY_FORM); setFormOpen(true) }
 
   function openEdit(goal: Goal) {
     const [year, month] = goal.deadline.split('-')
     const created = new Date(goal.created_at)
     const linkedBoardId = goal.lastImport?.source === 'board' ? goal.lastImport.boardId ?? '' : ''
+    clearError()
     setEditing(goal)
     setForm({
       name: goal.name,
@@ -191,7 +194,7 @@ export default function GoalsPage() {
     setFormOpen(true)
   }
 
-  function handleSave(e: React.FormEvent) {
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     const target  = parseFloat(form.targetAmount.replace(',', '.'))
     const deadline = `${form.deadlineYear}-${form.deadlineMonth}`
@@ -222,12 +225,17 @@ export default function GoalsPage() {
       // anterior, senão o card continuaria mostrando "vinculada a X".
       : undefined
 
-    if (editing) {
-      updateGoal(editing.id, { name: form.name, type: form.type, targetAmount: target, currentAmount: current, deadline, color: form.color, created_at, lastImport })
-    } else {
-      createGoal({ name: form.name, type: form.type, targetAmount: target, currentAmount: current, deadline, color: form.color, created_at, lastImport })
-    }
-    setFormOpen(false)
+    const payload = { name: form.name, type: form.type, targetAmount: target, currentAmount: current, deadline, color: form.color, created_at, lastImport }
+
+    setSaving(true)
+    const { error: saveError } = editing
+      ? await updateGoal(editing.id, payload)
+      : await createGoal(payload)
+    setSaving(false)
+
+    // Só fecha se o banco confirmou. Antes fechava sempre, o que fazia a meta
+    // parecer salva mesmo quando a escrita era recusada.
+    if (!saveError) setFormOpen(false)
   }
 
   if (loading) return null
@@ -237,7 +245,7 @@ export default function GoalsPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Minhas Metas</h1>
+          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Minhas Metas</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             {goals.length === 0 ? 'Defina seu primeiro objetivo' : `${goals.length} objetivo${goals.length > 1 ? 's' : ''} em andamento`}
           </p>
@@ -246,6 +254,12 @@ export default function GoalsPage() {
           <Plus className="h-4 w-4" /> Nova meta
         </Button>
       </div>
+
+      {error && !formOpen && (
+        <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
+          {error}
+        </div>
+      )}
 
       <InfoBox id="goals-vincular-conta">
         <p className="text-blue-600 dark:text-blue-400">
@@ -562,9 +576,15 @@ export default function GoalsPage() {
               </div>
             </div>
 
+            {error && (
+              <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
+                {error}
+              </div>
+            )}
+
             <div className="flex gap-2 pt-2">
               <Button type="button" variant="outline" onClick={() => setFormOpen(false)} className="flex-1">Cancelar</Button>
-              <Button type="submit" className="flex-1">{editing ? 'Salvar' : 'Criar meta'}</Button>
+              <Button type="submit" disabled={saving} className="flex-1">{saving ? 'Salvando...' : editing ? 'Salvar' : 'Criar meta'}</Button>
             </div>
           </form>
         </DialogContent>
@@ -596,7 +616,7 @@ export default function GoalsPage() {
           <p className="text-sm text-slate-500 dark:text-slate-400 pt-2">Excluir <strong>&ldquo;{deleteTarget?.name}&rdquo;</strong>? O progresso salvo será perdido.</p>
           <div className="flex gap-2 pt-2">
             <Button variant="outline" onClick={() => setDeleteTarget(null)} className="flex-1">Cancelar</Button>
-            <Button variant="destructive" onClick={() => { deleteGoal(deleteTarget!.id); setDeleteTarget(null) }} className="flex-1">Excluir</Button>
+            <Button variant="destructive" onClick={async () => { const { error: delError } = await deleteGoal(deleteTarget!.id); if (!delError) setDeleteTarget(null) }} className="flex-1">Excluir</Button>
           </div>
         </DialogContent>
       </Dialog>

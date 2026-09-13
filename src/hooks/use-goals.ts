@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react'
 import { Goal } from '@/types'
 import { createClient } from '@/lib/supabase/client'
+import { formatUserError, logSafeError } from '@/lib/supabase-error'
+
+export type GoalResult = { error: string | null }
 
 function uid() {
   return crypto.randomUUID()
@@ -40,17 +43,29 @@ function toRow(goal: Partial<Goal>) {
 export function useGoals() {
   const [goals, setGoals] = useState<Goal[]>([])
   const [loading, setLoading] = useState(true)
+  // Toda escrita checa o { error } do Postgres antes de mexer no estado local.
+  // Antes o estado era atualizado incondicionalmente: uma recusa do banco (RLS,
+  // coluna faltando, rede) deixava a meta na tela como se tivesse salvo, e ela
+  // sumia no primeiro F5 — sem nenhum aviso ao usuário.
+  const [error, setError] = useState<string | null>(null)
 
   async function fetchGoals() {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
 
-    const { data } = await supabase
+    const { data, error: fetchError } = await supabase
       .from('goals')
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: true })
+
+    if (fetchError) {
+      logSafeError('useGoals.fetch', fetchError)
+      setError(formatUserError(fetchError, 'Erro ao carregar suas metas.'))
+      setLoading(false)
+      return
+    }
 
     setGoals((data ?? []).map(fromRow))
     setLoading(false)
@@ -58,13 +73,26 @@ export function useGoals() {
 
   useEffect(() => { fetchGoals() }, [])
 
+  function fail(context: string, cause: unknown, fallback: string): GoalResult {
+    logSafeError(context, cause)
+    const message = formatUserError(cause, fallback)
+    setError(message)
+    return { error: message }
+  }
+
+  function notAuthenticated(): GoalResult {
+    const message = 'Sessão expirada. Entre novamente.'
+    setError(message)
+    return { error: message }
+  }
+
   // created_at é editável pelo usuário (data "meta iniciada em", usada no
   // cálculo de ritmo) — se não vier informado, usa o momento da criação, igual
   // sempre foi.
-  async function createGoal(goal: Omit<Goal, 'id' | 'user_id' | 'created_at'> & { created_at?: string }) {
+  async function createGoal(goal: Omit<Goal, 'id' | 'user_id' | 'created_at'> & { created_at?: string }): Promise<GoalResult> {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) return notAuthenticated()
 
     const id = uid()
     const created_at = goal.created_at ?? new Date().toISOString()
@@ -74,27 +102,39 @@ export function useGoals() {
       ...toRow(goal),
       created_at,
     }
-    await supabase.from('goals').insert(row)
+    const { error: insertError } = await supabase.from('goals').insert(row)
+    if (insertError) return fail('useGoals.create', insertError, 'Erro ao criar a meta.')
+
     setGoals(prev => [...prev, { ...goal, id, user_id: user.id, created_at }])
+    setError(null)
+    return { error: null }
   }
 
-  async function updateGoal(id: string, data: Partial<Omit<Goal, 'id' | 'user_id'>>) {
+  async function updateGoal(id: string, data: Partial<Omit<Goal, 'id' | 'user_id'>>): Promise<GoalResult> {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) return notAuthenticated()
     // Filtro por user_id explícito, não só RLS — defesa em profundidade,
     // no mesmo padrão do resto do app (ex: use-recurring-decisions.ts).
-    await supabase.from('goals').update(toRow(data)).eq('id', id).eq('user_id', user.id)
+    const { error: updateError } = await supabase.from('goals').update(toRow(data)).eq('id', id).eq('user_id', user.id)
+    if (updateError) return fail('useGoals.update', updateError, 'Erro ao salvar a meta.')
+
     setGoals(prev => prev.map(g => (g.id === id ? { ...g, ...data } : g)))
+    setError(null)
+    return { error: null }
   }
 
-  async function deleteGoal(id: string) {
+  async function deleteGoal(id: string): Promise<GoalResult> {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    await supabase.from('goals').delete().eq('id', id).eq('user_id', user.id)
+    if (!user) return notAuthenticated()
+    const { error: deleteError } = await supabase.from('goals').delete().eq('id', id).eq('user_id', user.id)
+    if (deleteError) return fail('useGoals.delete', deleteError, 'Erro ao excluir a meta.')
+
     setGoals(prev => prev.filter(g => g.id !== id))
+    setError(null)
+    return { error: null }
   }
 
-  return { goals, loading, createGoal, updateGoal, deleteGoal }
+  return { goals, loading, error, clearError: () => setError(null), createGoal, updateGoal, deleteGoal }
 }
