@@ -65,6 +65,13 @@ export interface Transaction {
   // é gasto nem renda: fica fora de "Despesas/Receita do mês", das categorias
   // e do Planejamento. Quem preenche é a detecção na importação, não o usuário.
   is_internal?: boolean
+  // Na linha do pagamento: a conta que ele quitou (o cartão, a corretora).
+  // Sem isso o app sabe que o dinheiro saiu e não é gasto, mas não tem como
+  // creditar o destino — e o cartão acumula compras para sempre.
+  counterpart_board_id?: string | null
+  // Só na perna GERADA pelo app: aponta para o pagamento que a originou.
+  // Serve para não duplicar o crédito numa reimportação.
+  counterpart_of_id?: string | null
   category: string
   board_id?: string | null
   tags?: string[]
