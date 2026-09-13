@@ -120,12 +120,11 @@ const SECTIONS: Section[] = [
           '• Descrição: o nome do gasto ou receita.',
           '• Valor: em reais (ex: 1500,00).',
           '• Data: quando ocorreu.',
-          '• Tipo: Receita, Despesa ou Transferência.',
+          '• Tipo: Receita ou Despesa.',
           '• Categoria: associe a uma das suas categorias.',
           '• Tags (opcional): para filtros avançados.',
           '> Exemplo: Descrição "Supermercado Pão de Açúcar" | Valor R$ 347,50 | Data 15/06/2026 | Tipo Despesa | Categoria Alimentação.',
         ],
-        tip: 'Transferências entre contas (ex: pagar fatura do cartão) não entram nos cálculos de receita nem despesa — use o tipo "Transferência" para não distorcer seu saldo.',
       },
       {
         title: 'Importar extrato bancário (OFX / CSV)',
@@ -363,7 +362,7 @@ const SECTIONS: Section[] = [
           '',
           'Como criar e aplicar — passo a passo:',
           '1. Vá em Configurações → Subcategorias.',
-          '2. Dê um nome ao grupo (ex: "Aluguel", "Internet" ou "Condomínio") e escolha o tipo — Despesa, Receita ou Transferência — e clique "Criar".',
+          '2. Dê um nome ao grupo (ex: "Aluguel", "Internet" ou "Condomínio") e escolha o tipo — Despesa ou Receita — e clique "Criar".',
           '3. Volte para Recorrências → abra o card de um dos lançamentos do grupo (do mesmo tipo da subcategoria).',
           '4. Clique em "+ subcat." e escolha o nome criado.',
           '5. Faça o mesmo para as outras variações do mesmo gasto.',
@@ -527,7 +526,7 @@ const SECTIONS: Section[] = [
         title: 'Categorias — criar e editar',
         body: [
           'Em Configurações → Categorias você gerencia todas as categorias usadas no app:',
-          '• Criar: clique em "+ Nova categoria". Defina nome, cor e tipo (Despesa, Receita, Transferência ou Ambos). Categorias de transferência usam sempre a mesma cor cinza, sem opção de escolher.',
+          '• Criar: clique em "+ Nova categoria". Defina nome, cor e tipo (Despesa, Receita ou Ambos).',
           '• Editar: clique no lápis ao lado de qualquer categoria para mudar nome ou cor.',
           '• Mesclar: ao excluir uma categoria que tem transações, você pode mesclar (mover) todas as transações para outra categoria antes.',
           '• Excluir: remove a categoria. Transações, regras e limites de planejamento associados são movidos automaticamente para "Outros" (que por isso não pode ser excluída).',
@@ -543,7 +542,7 @@ const SECTIONS: Section[] = [
           'Servem para agrupar cobranças que chegam com nomes diferentes no extrato, mas representam o mesmo gasto fixo.',
           '> Problema: o aluguel chega como "PIX JOAO DA SILVA" em um mês e "PIX IMOV PREMIUM" em outro. Sem agrupamento, aparecem como 2 gastos diferentes.',
           '> Solução: crie a subcategoria "Aluguel" em Configurações → Subcategorias. Em Recorrências, aplique a subcategoria nos dois cards. Eles viram um único card consolidado.',
-          'Para criar: Configurações → Subcategorias → dê um nome, escolha o tipo (Despesa, Receita ou Transferência) → "Criar".',
+          'Para criar: Configurações → Subcategorias → dê um nome, escolha o tipo (Despesa ou Receita) → "Criar".',
           'Para aplicar: em Recorrências → card do gasto → "+ subcat." → escolha a subcategoria. Só aparecem as subcategorias do mesmo tipo do card (uma despesa não pode ganhar subcategoria de receita, por exemplo).',
         ],
       },
@@ -714,7 +713,7 @@ export default function HelpPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Central de ajuda</h1>
+          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Central de ajuda</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             Guia completo com exemplos práticos de todas as funcionalidades
           </p>
@@ -732,7 +731,7 @@ export default function HelpPage() {
               <BookOpen className="h-4 w-4 text-blue-200" />
               <p className="font-bold text-base">Primeiros passos</p>
             </div>
-            <p className="text-blue-100 text-xs mt-0.5">7 etapas para ter o FinanceApp configurado do zero</p>
+            <p className="text-blue-100 text-xs mt-0.5">7 etapas para ter a NOBLI configurada do zero</p>
           </div>
           <button
             onClick={() => setTourOpen(o => !o)}
@@ -816,7 +815,7 @@ export default function HelpPage() {
 
       {/* Rodapé */}
       <div className="text-center py-4 text-xs text-slate-300 dark:text-slate-600">
-        FinanceApp · Gestão Financeira Pessoal
+        NOBLI · Seu dinheiro. Sob controle.
       </div>
     </div>
   )

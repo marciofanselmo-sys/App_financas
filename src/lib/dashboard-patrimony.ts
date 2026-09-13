@@ -5,25 +5,12 @@ const fmt = (v: number) =>
 
 export { fmt as formatDashboardCurrency }
 
-/**
- * Saldo acumulado de um conjunto de transações.
- *
- * Movimentação interna (`is_internal`) NÃO é exceção aqui: pagar a própria
- * fatura ou mandar dinheiro para a corretora tira dinheiro da conta de
- * verdade. `is_internal` só importa para receita/despesa do mês — o saldo
- * conta toda linha, interna ou não. Foi justamente ignorar essas linhas no
- * saldo que causava 14.1 e 14.2.
- *
- * `transferencia` só aparece em linhas legadas que não foi possível
- * classificar na conversão de set/2026 (descrição sem direção). Continuam
- * neutras, como sempre foram.
- */
+/** Saldo acumulado: entradas menos saídas. Toda linha conta, sem exceção. */
 export function balanceFromTransactions(transactions: Transaction[]): number {
-  return transactions.reduce((acc, t) => {
-    if (t.type === 'transferencia') return acc
-    if (t.type === 'receita') return acc + Number(t.amount)
-    return acc - Number(t.amount)
-  }, 0)
+  return transactions.reduce(
+    (acc, t) => (t.type === 'receita' ? acc + Number(t.amount) : acc - Number(t.amount)),
+    0,
+  )
 }
 
 export interface CashBoardBreakdown {

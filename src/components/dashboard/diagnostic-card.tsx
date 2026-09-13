@@ -31,7 +31,7 @@ export function DiagnosticCard({ transactions, month, year }: DiagnosticCardProp
 
   if (income === 0 && expenses === 0) {
     return (
-      <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-slate-700">
+      <div className="nobli-card p-5">
         <div className="flex items-center gap-2 mb-2">
           <div className="h-7 w-7 rounded-lg bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
             <Lightbulb className="h-3.5 w-3.5 text-amber-500" />
@@ -73,7 +73,7 @@ export function DiagnosticCard({ transactions, month, year }: DiagnosticCardProp
   }
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-slate-700">
+    <div className="nobli-card p-5">
       <div className="flex items-center gap-2 mb-3">
         <div className="h-7 w-7 rounded-lg bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
           <Lightbulb className="h-3.5 w-3.5 text-amber-500" />

@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Plus, Pencil, Trash2, Zap, ToggleLeft, ToggleRight, ChevronDown, ChevronRight, CheckCircle2, X,
-  TrendingDown, TrendingUp, ArrowLeftRight, Layers,
+  TrendingDown, TrendingUp, Layers,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -22,7 +22,7 @@ type MatchType = 'contains' | 'starts_with' | 'ends_with' | 'exact'
 // Tipo é só um filtro client-side pra achar a categoria certa mais rápido — a
 // regra em si não grava tipo nenhum, o tipo efetivo dela é sempre o da
 // categoria que ela aponta.
-type RuleTypeFilter = 'despesa' | 'receita' | 'transferencia'
+type RuleTypeFilter = 'despesa' | 'receita'
 
 interface FormState {
   keyword: string
@@ -37,7 +37,6 @@ const EMPTY: FormState = { keyword: '', matchType: 'contains', type: 'despesa', 
 const RULE_TYPE_OPTIONS: { value: RuleTypeFilter; label: string }[] = [
   { value: 'receita', label: 'Receita' },
   { value: 'despesa', label: 'Despesa' },
-  { value: 'transferencia', label: 'Transferência' },
 ]
 
 const MATCH_LABELS: Record<MatchType, string> = {
@@ -150,11 +149,9 @@ type RetroResult = { count: number; keyword: string; schemaWarning?: boolean; er
 
 // Categorias tipo "Ambos" (ex: "Outros") valem pros três tipos de transação —
 // regras que apontam pra elas caem nesta seção em vez de uma específica. Se uma
-// regra "de transferência" foi criada apontando pra "Outros" em vez de uma
-// categoria com Tipo = Transferência, ela aparece aqui, não em "Transferências".
-type SectionKey = 'despesa' | 'receita' | 'transferencia' | 'ambos'
+type SectionKey = 'despesa' | 'receita' | 'ambos'
 
-const SECTION_ORDER: SectionKey[] = ['despesa', 'receita', 'transferencia', 'ambos']
+const SECTION_ORDER: SectionKey[] = ['despesa', 'receita', 'ambos']
 
 const SECTION_META: Record<SectionKey, { label: string; icon: React.ElementType; iconColor: string; iconBg: string; help: string }> = {
   despesa: {
@@ -165,13 +162,9 @@ const SECTION_META: Record<SectionKey, { label: string; icon: React.ElementType;
     label: 'Receitas', icon: TrendingUp, iconColor: 'text-green-500', iconBg: 'bg-green-50 dark:bg-green-900/20',
     help: 'Regras que apontam pra uma categoria de receita.',
   },
-  transferencia: {
-    label: 'Transferências', icon: ArrowLeftRight, iconColor: 'text-slate-400', iconBg: 'bg-slate-100 dark:bg-slate-700',
-    help: 'Regras que apontam pra uma categoria de transferência.',
-  },
   ambos: {
     label: 'Ambos', icon: Layers, iconColor: 'text-violet-500', iconBg: 'bg-violet-50 dark:bg-violet-900/20',
-    help: 'Regras que apontam pra uma categoria do tipo "Ambos" (ex: "Outros") — vale pra despesa, receita ou transferência ao mesmo tempo, por isso não entra numa seção específica.',
+    help: 'Regras que apontam pra uma categoria do tipo "Ambos" (ex: "Outros") — vale pra despesa e receita ao mesmo tempo, por isso não entra numa seção específica.',
   },
 }
 
@@ -202,7 +195,7 @@ export default function RulesPage() {
 
   function sectionFor(categoryName: string): SectionKey {
     const type = categoryTypeMap.get(categoryName)
-    if (type === 'despesa' || type === 'receita' || type === 'transferencia') return type
+    if (type === 'despesa' || type === 'receita') return type
     return 'ambos'
   }
 
@@ -224,7 +217,7 @@ export default function RulesPage() {
 
   const groupedBySection = useMemo(() => {
     const buckets: Record<SectionKey, [string, CategorizationRule[]][]> = {
-      despesa: [], receita: [], transferencia: [], ambos: [],
+      despesa: [], receita: [], ambos: [],
     }
     for (const entry of grouped) {
       buckets[sectionFor(entry[0])].push(entry)
@@ -244,7 +237,7 @@ export default function RulesPage() {
     setForm({
       keyword: r.keyword,
       matchType: ext.match_type ?? 'contains',
-      type: existingType === 'receita' || existingType === 'despesa' || existingType === 'transferencia' ? existingType : 'despesa',
+      type: existingType === 'receita' || existingType === 'despesa' ? existingType : 'despesa',
       category: r.category,
       board_id: ext.board_id ?? '',
     })
@@ -312,7 +305,7 @@ export default function RulesPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Regras de categorização</h1>
+          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Regras de categorização</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             {rules.length} regra{rules.length !== 1 ? 's' : ''} em {grouped.length} categoria{grouped.length !== 1 ? 's' : ''}
           </p>
@@ -340,7 +333,6 @@ export default function RulesPage() {
         <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
           <p className="font-semibold mb-1">Não achou sua regra na seção esperada?</p>
           <p className="text-blue-600 dark:text-blue-400">
-            A seção é definida pelo <strong>Tipo da categoria</strong> que a regra aponta, não pela intenção de quando você criou. Uma regra que muda a categoria pra &ldquo;Outros&rdquo; sempre aparece em &ldquo;Ambos&rdquo; — mesmo que a transação seja uma transferência — porque &ldquo;Outros&rdquo; é do tipo &ldquo;Ambos&rdquo;. Pra ela aparecer em &ldquo;Transferências&rdquo;, a categoria de destino precisa ser criada com Tipo = Transferência em Configurações → Categorias.
           </p>
         </div>
         <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">

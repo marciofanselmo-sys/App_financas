@@ -8,23 +8,20 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Plus, Pencil, Trash2, Layers, RefreshCw, TrendingDown, TrendingUp, ArrowLeftRight, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, Layers, RefreshCw, TrendingDown, TrendingUp, X } from 'lucide-react'
 import { InfoBox } from '@/components/ui/info-box'
 import { cn } from '@/lib/utils'
 
 const TYPE_OPTIONS: { value: TransactionType; label: string }[] = [
   { value: 'despesa', label: 'Despesa' },
   { value: 'receita', label: 'Receita' },
-  { value: 'transferencia', label: 'Transferência' },
 ]
 
-// Transferência fica sempre por último, mesma convenção do resto do app.
-const SECTION_ORDER: TransactionType[] = ['despesa', 'receita', 'transferencia']
+const SECTION_ORDER: TransactionType[] = ['despesa', 'receita']
 
 const SECTION_META: Record<TransactionType, { label: string; icon: React.ElementType; iconColor: string; iconBg: string }> = {
   despesa:       { label: 'Despesas',       icon: TrendingDown,   iconColor: 'text-red-500',   iconBg: 'bg-red-50 dark:bg-red-900/20' },
   receita:       { label: 'Receitas',       icon: TrendingUp,     iconColor: 'text-green-500', iconBg: 'bg-green-50 dark:bg-green-900/20' },
-  transferencia: { label: 'Transferências', icon: ArrowLeftRight, iconColor: 'text-slate-400', iconBg: 'bg-slate-100 dark:bg-slate-700' },
 }
 
 export default function SubcategoriesPage() {
@@ -142,7 +139,7 @@ export default function SubcategoriesPage() {
   }
 
   const bySection = useMemo(() => {
-    const buckets: Record<TransactionType, Subcategory[]> = { despesa: [], receita: [], transferencia: [] }
+    const buckets: Record<TransactionType, Subcategory[]> = { despesa: [], receita: [] }
     subcategories.forEach(s => buckets[s.type].push(s))
     return buckets
   }, [subcategories])
@@ -151,7 +148,7 @@ export default function SubcategoriesPage() {
     <div className="space-y-6 max-w-3xl mx-auto">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Subcategorias</h1>
+        <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Subcategorias</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">
           {subcategories.length} subcategoria{subcategories.length !== 1 ? 's' : ''} criada{subcategories.length !== 1 ? 's' : ''}
         </p>
@@ -175,7 +172,7 @@ export default function SubcategoriesPage() {
         <div className="border-t border-violet-200 dark:border-violet-700/50 pt-2.5">
           <p className="font-semibold mb-1">Cada subcategoria tem um tipo fixo</p>
           <p className="text-violet-600 dark:text-violet-400">
-            Igual em Recorrências, aqui elas ficam separadas em Despesas, Receitas e Transferências. Em Recorrências, o seletor de subcategoria de um card só mostra as subcategorias do mesmo tipo daquele card — uma despesa nunca pode ganhar uma subcategoria de receita, por exemplo.
+            Igual em Recorrências, aqui elas ficam separadas em Despesas e Receitas. Em Recorrências, o seletor de subcategoria de um card só mostra as subcategorias do mesmo tipo daquele card — uma despesa nunca pode ganhar uma subcategoria de receita, por exemplo.
           </p>
         </div>
         <div className="border-t border-violet-200 dark:border-violet-700/50 pt-2.5">

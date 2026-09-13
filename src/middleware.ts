@@ -29,7 +29,13 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  if (!user && !pathname.startsWith('/auth') && !pathname.startsWith('/demo')) {
+  const isPublicRoute =
+    pathname.startsWith('/auth') ||
+    pathname.startsWith('/demo') ||
+    pathname === '/privacy' ||
+    pathname === '/terms'
+
+  if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone()
     url.pathname = '/auth/login'
     return NextResponse.redirect(url)
@@ -39,6 +45,15 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
+  }
+
+  if (user && pathname.startsWith('/admin')) {
+    const { data: isAdmin } = await supabase.rpc('is_app_admin')
+    if (!isAdmin) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
+    }
   }
 
   return supabaseResponse

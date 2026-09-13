@@ -1,16 +1,17 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { TrendingUp, ArrowRight, CheckCircle, BarChart2, CalendarCheck, Target } from 'lucide-react'
+import { ArrowRight, CheckCircle, BarChart2, CalendarCheck, Target } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { BRAND } from '@/lib/brand'
 
 const STORAGE_KEY = 'financeapp_onboarding_done'
 
 const STEPS = [
   {
-    icon: TrendingUp,
-    color: 'bg-blue-600',
-    title: 'Bem-vindo ao FinanceApp!',
+    icon: CheckCircle,
+    color: 'bg-[#2563EB]',
+    title: `Bem-vindo à ${BRAND.name}!`,
     body: 'Você está a um passo de ter total controle sobre suas finanças. Vamos configurar tudo em menos de 2 minutos.',
     cta: 'Começar',
   },
@@ -18,7 +19,7 @@ const STEPS = [
     icon: ArrowRight,
     color: 'bg-emerald-500',
     title: 'Registre suas movimentações',
-    body: 'Adicione suas receitas e despesas manualmente ou importe extratos. O FinanceApp categoriza automaticamente com as regras que você definir.',
+    body: `Adicione suas receitas e despesas manualmente ou importe extratos. A ${BRAND.name} categoriza automaticamente com as regras que você definir.`,
     cta: 'Entendido',
   },
   {
@@ -75,23 +76,23 @@ export function OnboardingModal() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-[#111c2d] rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+      <div className="bg-white dark:bg-[#101F36] rounded-2xl shadow-[var(--nobli-shadow-m)] w-full max-w-sm overflow-hidden">
         {/* Progress bar */}
-        <div className="h-1 bg-slate-100 dark:bg-slate-700">
+        <div className="h-1 bg-[#E8F2FF] dark:bg-slate-700">
           <div
-            className="h-full bg-blue-600 transition-all duration-500"
+            className="h-full bg-[#2563EB] transition-all duration-500"
             style={{ width: `${((step + 1) / STEPS.length) * 100}%` }}
           />
         </div>
 
         <div className="p-7">
           {/* Icon */}
-          <div className={`h-14 w-14 rounded-2xl ${current.color} flex items-center justify-center mb-5 shadow-lg`}>
+          <div className={`h-14 w-14 rounded-2xl ${current.color} flex items-center justify-center mb-5 shadow-lg shadow-[#2563EB]/20`}>
             <Icon className="h-7 w-7 text-white" />
           </div>
 
           {/* Content */}
-          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-2">{current.title}</h2>
+          <h2 className="font-heading text-xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100 mb-2">{current.title}</h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">{current.body}</p>
 
           {/* Step dots */}
@@ -100,7 +101,7 @@ export function OnboardingModal() {
               <span
                 key={i}
                 className={`h-1.5 rounded-full transition-all duration-300 ${
-                  i === step ? 'w-5 bg-blue-600' : 'w-1.5 bg-slate-200 dark:bg-slate-600'
+                  i === step ? 'w-5 bg-[#2563EB]' : 'w-1.5 bg-[#E8F2FF] dark:bg-slate-600'
                 }`}
               />
             ))}

@@ -31,10 +31,7 @@ export function exportToCSV(transactions: Transaction[], filename = 'transacoes'
     'Subcategoria',
   ]
 
-  const typeLabel = (t: Transaction) =>
-    t.is_internal || t.type === 'transferencia'
-      ? (t.type === 'receita' ? 'Entre contas (entrada)' : 'Entre contas (saída)')
-      : t.type === 'receita' ? 'Receita' : 'Despesa'
+  const typeLabel = (t: Transaction) => (t.type === 'receita' ? 'Receita' : 'Despesa')
 
   const sorted = [...transactions].sort((a, b) =>
     a.date < b.date ? -1 : a.date > b.date ? 1 : 0,

@@ -1,8 +1,8 @@
 'use client'
 
-import * as XLSX from 'xlsx'
 import type { TransactionType } from '@/types'
-import { isTransferDescription } from './detect-transfer'
+import { validateImportRowCount } from '@/lib/import-limits'
+import { excelSerialToISO, readXlsxSheetRows, type XlsxRow } from '@/utils/read-xlsx'
 
 export interface RicoExtratoRow {
   description: string
@@ -15,39 +15,37 @@ export interface RicoExtratoRow {
   errors: string[]
 }
 
-function excelDateToISO(serial: number): string {
-  const d = XLSX.SSF.parse_date_code(serial)
-  return `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`
+function excelDateToISO(value: unknown): string {
+  if (value instanceof Date) {
+    return value.toISOString().slice(0, 10)
+  }
+  if (typeof value === 'number') {
+    return excelSerialToISO(value)
+  }
+  const s = String(value ?? '').trim()
+  const br = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`
+  return s
 }
 
-// Detecta o "Extrato da conta" (histórico de movimentações) da RICO/XP —
-// diferente do "PosicaoDetalhada.xlsx" (posição da carteira), que já é
-// suportado separadamente em parse-rico.ts.
-export function isRicoExtratoXLSX(wb: XLSX.WorkBook): boolean {
-  const ws = wb.Sheets[wb.SheetNames[0]]
-  if (!ws) return false
-  const rows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, defval: '' })
-  // "Extrato da conta" fica numa célula lá pelo meio da linha (ex: coluna 5),
-  // não necessariamente na primeira coluna — varre a linha inteira.
+// Detecta o "Extrato da conta" (histórico de movimentações) da RICO/XP
+export function isRicoExtratoRows(rows: XlsxRow[]): boolean {
   return rows.some(r => r.some(cell => String(cell ?? '').includes('Extrato da conta')))
 }
 
-// Ticker de Fundo Imobiliário/Fiagro termina em "11" (ex: XPML11, BTLG11);
-// ações terminam no dígito de classe (3=ON, 4=PN, 5/6=PN classe A/B) — dá pra
-// separar o tipo de rendimento sem precisar cruzar com o arquivo de posição.
 function classifyTickerType(ticker: string): string | null {
   if (/11[BU]?$/.test(ticker)) return 'Rendimentos FII'
   if (/[3-8]$/.test(ticker)) return 'Dividendos Ações'
   return null
 }
 
-export function parseRicoExtratoXLSX(buffer: ArrayBuffer): RicoExtratoRow[] {
-  const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' })
-  const ws = wb.Sheets[wb.SheetNames[0]]
-  const rows = XLSX.utils.sheet_to_json<(string | number)[]>(ws, { header: 1, defval: '' })
+export async function parseRicoExtratoXLSX(buffer: ArrayBuffer): Promise<RicoExtratoRow[]> {
+  const rows = await readXlsxSheetRows(buffer, 1)
+  const rowCheck = validateImportRowCount(rows.length)
+  if (!rowCheck.ok) throw new Error(rowCheck.error)
 
   const headerIdx = rows.findIndex(r =>
-    String(r[0] ?? '').trim() === 'Movimentação' && String(r[2] ?? '').trim() === 'Lançamento'
+    String(r[0] ?? '').trim() === 'Movimentação' && String(r[2] ?? '').trim() === 'Lançamento',
   )
   if (headerIdx === -1) return []
 
@@ -59,8 +57,7 @@ export function parseRicoExtratoXLSX(buffer: ArrayBuffer): RicoExtratoRow[] {
     const lancamento = String(row[2] ?? '').trim()
     const valorRaw = row[4]
 
-    // Fim da tabela: linha em branco entre seções, ou "Não há lançamentos..."
-    if (!lancamento || typeof dateRaw !== 'number') break
+    if (!lancamento || (typeof dateRaw !== 'number' && !(dateRaw instanceof Date))) break
     if (lancamento.toLowerCase().includes('não há lançamentos')) break
 
     const amount = typeof valorRaw === 'number' ? valorRaw : parseFloat(String(valorRaw))
@@ -81,8 +78,6 @@ export function parseRicoExtratoXLSX(buffer: ArrayBuffer): RicoExtratoRow[] {
       subcategory = classifyTickerType(rendMatch[1])
       type = 'receita'
     } else if (dividendoMatch) {
-      // Rótulo já vem explícito como "dividendo" — não precisa da heurística
-      // de sufixo do ticker pra saber o tipo.
       category = 'Rendimentos'
       subcategory = 'Dividendos'
       type = 'receita'
@@ -91,19 +86,13 @@ export function parseRicoExtratoXLSX(buffer: ArrayBuffer): RicoExtratoRow[] {
       subcategory = 'Juros sobre Capital Próprio'
       type = 'receita'
     } else if (/^FRA[ÇC][ÕO]ES DE A[ÇC][ÕO]ES\b/i.test(lancamento)) {
-      // Venda automática de frações de ações (sobra de bonificação/desdobramento).
       category = 'Investimento'
       subcategory = 'Frações de Ativos'
       type = amount < 0 ? 'despesa' : 'receita'
     } else if (lancamento.toUpperCase().startsWith('OPERAÇÕES EM BOLSA')) {
-      // Negativo = compra de ativo (saída de caixa); positivo = venda (entrada).
       category = 'Investimento'
       subcategory = amount < 0 ? 'Compra de Ativos' : 'Venda de Ativos'
       type = amount < 0 ? 'despesa' : 'receita'
-    } else if (isTransferDescription(lancamento)) {
-      // TED/DOC de entrada ou saída — dinheiro movido entre a própria conta
-      // corrente e a corretora, não uma receita/despesa nova.
-      type = 'transferencia'
     } else {
       type = amount < 0 ? 'despesa' : 'receita'
     }

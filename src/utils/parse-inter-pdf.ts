@@ -1,7 +1,6 @@
 'use client'
 
 import type { TransactionType } from '@/types'
-import { isTransferDescription } from './detect-transfer'
 import { parseAmountBR } from './parse-amount'
 import { stripEmbeddedDate } from './strip-embedded-date'
 
@@ -95,9 +94,9 @@ export function parseInterInvoicePDF(fullText: string): InterInvoiceRow[] {
     // verdade, mesmo quando a descrição não bate com nenhum padrão conhecido
     // de "pagamento de fatura" (ex: "PAGAMENTO ON LINE"). Por isso qualquer "+"
     // vira transferência por padrão, sem depender de reconhecer o texto exato.
-    const type: TransactionType = plusSign || isTransferDescription(description)
-      ? 'transferencia'
-      : 'despesa'
+    // Numa fatura de cartão, "+" é dinheiro entrando (pagamento recebido ou
+    // estorno); qualquer outra linha é compra.
+    const type: TransactionType = plusSign ? 'receita' : 'despesa'
 
     rows.push({
       description,

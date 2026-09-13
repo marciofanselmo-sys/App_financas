@@ -7,9 +7,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, monospace;
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -49,72 +49,91 @@
 }
 
 :root {
-  --background: oklch(0.99 0 0);
-  --foreground: oklch(0.13 0.02 255);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.13 0.02 255);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.13 0.02 255);
-  --primary: oklch(0.52 0.22 245);
-  --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.95 0.01 255);
-  --secondary-foreground: oklch(0.13 0.02 255);
-  --muted: oklch(0.95 0.01 255);
-  --muted-foreground: oklch(0.50 0.01 255);
-  --accent: oklch(0.95 0.01 255);
-  --accent-foreground: oklch(0.13 0.02 255);
+  /* ── NOBLI design tokens — briefing v1.0 ─────────────────────────
+     Paleta oficial:  Blue #2563EB · Deep #0B2D6B · Ice #E8F2FF
+                      White #FFFFFF · Graphite #1F2937
+     Borda 1px #DDE7F3 · Shadow S (0 2 8) · Shadow M (0 12 30)
+     Radius 12–16px cards · Jakarta display / Inter UI            */
+  --nobli-blue: #2563EB;
+  --nobli-blue-hover: #1D4ED8;
+  --nobli-deep: #0B2D6B;
+  --nobli-ice: #E8F2FF;
+  --nobli-graphite: #1F2937;
+  --nobli-border: #DDE7F3;
+  --nobli-shadow-s: 0 2px 8px rgba(11, 45, 107, 0.06);
+  --nobli-shadow-m: 0 12px 30px rgba(11, 45, 107, 0.10);
+
+  --background: #F2F6FC;
+  --foreground: #1F2937;
+  --card: #ffffff;
+  --card-foreground: #1F2937;
+  --popover: #ffffff;
+  --popover-foreground: #1F2937;
+  --primary: #2563EB;
+  --primary-foreground: #ffffff;
+  --secondary: #E8F2FF;
+  --secondary-foreground: #0B2D6B;
+  --muted: #EDF3FB;
+  --muted-foreground: #5B6B84;
+  --accent: #E8F2FF;
+  --accent-foreground: #1D4ED8;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.88 0.01 255);
-  --input: oklch(0.88 0.01 255);
-  --ring: oklch(0.52 0.22 245);
-  --chart-1: oklch(0.52 0.22 245);
-  --chart-2: oklch(0.65 0.18 145);
-  --chart-3: oklch(0.75 0.18 75);
-  --chart-4: oklch(0.60 0.20 300);
-  --chart-5: oklch(0.58 0.22 22);
-  --radius: 0.75rem;
-  --sidebar: oklch(0.98 0.005 255);
-  --sidebar-foreground: oklch(0.13 0.02 255);
-  --sidebar-primary: oklch(0.52 0.22 245);
-  --sidebar-primary-foreground: oklch(0.98 0 0);
-  --sidebar-accent: oklch(0.95 0.01 255);
-  --sidebar-accent-foreground: oklch(0.13 0.02 255);
-  --sidebar-border: oklch(0.88 0.01 255);
-  --sidebar-ring: oklch(0.52 0.22 245);
+  --border: #DDE7F3;
+  --input: #DDE7F3;
+  --ring: #2563EB;
+  --chart-1: #2563EB;
+  --chart-2: #10B981;
+  --chart-3: #60A5FA;
+  --chart-4: #0B2D6B;
+  --chart-5: #F59E0B;
+  --radius: 1rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1F2937;
+  --sidebar-primary: #2563EB;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #E8F2FF;
+  --sidebar-accent-foreground: #2563EB;
+  --sidebar-border: #DDE7F3;
+  --sidebar-ring: #2563EB;
 }
 
 .dark {
-  --background: oklch(0.13 0.025 255);
-  --foreground: oklch(0.93 0.005 255);
-  --card: oklch(0.185 0.025 255);
-  --card-foreground: oklch(0.93 0.005 255);
-  --popover: oklch(0.185 0.025 255);
-  --popover-foreground: oklch(0.93 0.005 255);
-  --primary: oklch(0.55 0.22 245);
-  --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.23 0.025 255);
-  --secondary-foreground: oklch(0.93 0.005 255);
-  --muted: oklch(0.23 0.025 255);
-  --muted-foreground: oklch(0.60 0.015 255);
-  --accent: oklch(0.23 0.025 255);
-  --accent-foreground: oklch(0.93 0.005 255);
+  /* NOBLI dark — espaço profundo (deep navy), mantém azul de marca */
+  --nobli-border: rgba(148, 180, 255, 0.12);
+  --nobli-shadow-s: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --nobli-shadow-m: 0 12px 30px rgba(0, 0, 0, 0.45);
+
+  --background: #0A1526;
+  --foreground: #E5EDF9;
+  --card: #101F36;
+  --card-foreground: #E5EDF9;
+  --popover: #101F36;
+  --popover-foreground: #E5EDF9;
+  --primary: #3B77F6;
+  --primary-foreground: #ffffff;
+  --secondary: #16294A;
+  --secondary-foreground: #C9DCFF;
+  --muted: #16294A;
+  --muted-foreground: #8FA3C4;
+  --accent: #16294A;
+  --accent-foreground: #C9DCFF;
   --destructive: oklch(0.65 0.22 22);
-  --border: oklch(1 0 0 / 8%);
-  --input: oklch(1 0 0 / 10%);
-  --ring: oklch(0.55 0.22 245);
-  --chart-1: oklch(0.55 0.22 245);
-  --chart-2: oklch(0.68 0.18 145);
-  --chart-3: oklch(0.78 0.18 75);
-  --chart-4: oklch(0.62 0.20 300);
-  --chart-5: oklch(0.60 0.22 22);
-  --sidebar: oklch(0.185 0.025 255);
-  --sidebar-foreground: oklch(0.93 0.005 255);
-  --sidebar-primary: oklch(0.55 0.22 245);
-  --sidebar-primary-foreground: oklch(0.98 0 0);
-  --sidebar-accent: oklch(0.23 0.025 255);
-  --sidebar-accent-foreground: oklch(0.93 0.005 255);
-  --sidebar-border: oklch(1 0 0 / 8%);
-  --sidebar-ring: oklch(0.55 0.22 245);
+  --border: rgba(148, 180, 255, 0.12);
+  --input: rgba(148, 180, 255, 0.16);
+  --ring: #3B77F6;
+  --chart-1: #3B77F6;
+  --chart-2: #34D399;
+  --chart-3: #7EA8FA;
+  --chart-4: #93C5FD;
+  --chart-5: #FBBF24;
+  --sidebar: #0D1B30;
+  --sidebar-foreground: #E5EDF9;
+  --sidebar-primary: #3B77F6;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #16294A;
+  --sidebar-accent-foreground: #C9DCFF;
+  --sidebar-border: rgba(148, 180, 255, 0.12);
+  --sidebar-ring: #3B77F6;
 }
 
 @layer base {
@@ -126,6 +145,50 @@
   }
   html {
     @apply font-sans;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading), ui-sans-serif, system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .font-heading {
+    font-family: var(--font-heading), ui-sans-serif, system-ui, sans-serif;
+  }
+
+  /* Card padrão NOBLI: branco, borda #DDE7F3, sombra S do briefing */
+  .nobli-card {
+    background: var(--card);
+    border-radius: 1rem;
+    border: 1px solid var(--nobli-border);
+    box-shadow: var(--nobli-shadow-s);
+  }
+
+  /* Chip de ícone ice-blue (KPIs, listas, nav) — assinatura da REF 01 */
+  .nobli-chip {
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#E8F2FF] text-[#2563EB] dark:bg-blue-500/15 dark:text-blue-300;
+  }
+
+  /* Label de KPI: normal-case, cinza-azulado — como na referência */
+  .nobli-kpi-label {
+    @apply text-[13px] font-medium text-[#5B6B84] dark:text-slate-400;
+  }
+
+  /* Valor de KPI: Jakarta bold navy */
+  .nobli-kpi-value {
+    font-family: var(--font-heading), ui-sans-serif, system-ui, sans-serif;
+    @apply text-[1.55rem] font-bold tracking-tight text-[#0B2D6B] dark:text-slate-100 tabular-nums leading-none;
+  }
+
+  /* Título de seção/card */
+  .nobli-card-title {
+    font-family: var(--font-heading), ui-sans-serif, system-ui, sans-serif;
+    @apply text-[15px] font-bold text-[#0B2D6B] dark:text-slate-100 tracking-tight;
+  }
+
+  /* Gradiente institucional deep→blue (cards hero, saldo, promo) */
+  .nobli-gradient {
+    background: linear-gradient(135deg, #0B2D6B 0%, #1E40AF 55%, #2563EB 100%);
   }
 }
 

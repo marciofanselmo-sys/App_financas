@@ -60,3 +60,42 @@ export function hasPatrimonyHistory(boards: TransactionBoard[]): boolean {
     b.last_position_import != null,
   )
 }
+
+export interface PatrimonyVariation {
+  current: number
+  previous: number | null
+  delta: number | null
+  deltaPercent: number | null
+  currentLabel: string
+  previousLabel: string | null
+  importedAt: string
+  previousAt: string | null
+  canCompare: boolean
+}
+
+/** Variação consolidada entre a última e a penúltima importação (por dia). */
+export function computeConsolidatedPatrimonyVariation(boards: TransactionBoard[]): PatrimonyVariation | null {
+  const history = buildConsolidatedPatrimonyHistory(boards)
+  if (history.length === 0) return null
+
+  const current = history[history.length - 1]
+  const previous = history.length >= 2 ? history[history.length - 2] : null
+  const previousVal = previous?.patrimonio ?? null
+  const delta = previousVal != null ? current.patrimonio - previousVal : null
+  const deltaPercent =
+    delta != null && previousVal != null && previousVal !== 0
+      ? (delta / previousVal) * 100
+      : null
+
+  return {
+    current: current.patrimonio,
+    previous: previousVal,
+    delta,
+    deltaPercent,
+    currentLabel: current.label,
+    previousLabel: previous?.label ?? null,
+    importedAt: current.date,
+    previousAt: previous?.date ?? null,
+    canCompare: previous != null,
+  }
+}

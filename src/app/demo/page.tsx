@@ -8,6 +8,8 @@ import {
   Sparkles, ArrowRight, CheckCircle, AlertTriangle, XCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { NobliLogo } from '@/components/brand/nobli-logo'
+import { BRAND } from '@/lib/brand'
 
 // ── Mock data ────────────────────────────────────────────────────────────────
 const INCOME  = 10000
@@ -86,59 +88,63 @@ function SectionDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Dashboard</h1>
+        <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Dashboard</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Junho 2026</p>
       </div>
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-white/[0.06]">
+        <div className="nobli-card p-5">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Receitas</span>
-            <div className="h-8 w-8 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center">
-              <TrendingUp className="h-4 w-4 text-emerald-500" />
+            <span className="nobli-kpi-label">Receitas</span>
+            <div className="nobli-chip h-8 w-8 rounded-lg">
+              <TrendingUp className="h-4 w-4" />
             </div>
           </div>
-          <p className="text-[1.6rem] font-bold text-emerald-600 dark:text-emerald-400 leading-none tabular-nums">{fmt(INCOME)}</p>
-          <p className="text-xs text-slate-400 mt-2">Total do período</p>
+          <p className="nobli-kpi-value">{fmt(INCOME)}</p>
+          <p className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 mt-2.5">
+            <TrendingUp className="h-3 w-3" /> Entradas do período
+          </p>
         </div>
-        <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-white/[0.06]">
+        <div className="nobli-card p-5">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Despesas</span>
-            <div className="h-8 w-8 rounded-xl bg-red-50 dark:bg-red-500/10 flex items-center justify-center">
-              <TrendingDown className="h-4 w-4 text-red-500" />
+            <span className="nobli-kpi-label">Despesas</span>
+            <div className="nobli-chip h-8 w-8 rounded-lg">
+              <TrendingDown className="h-4 w-4" />
             </div>
           </div>
-          <p className="text-[1.6rem] font-bold text-red-500 leading-none tabular-nums">{fmt(EXPENSE)}</p>
-          <p className="text-xs text-slate-400 mt-2">Total do período</p>
+          <p className="nobli-kpi-value">{fmt(EXPENSE)}</p>
+          <p className="flex items-center gap-1 text-xs font-medium text-red-500 dark:text-red-400 mt-2.5">
+            <TrendingDown className="h-3 w-3" /> Saídas do período
+          </p>
         </div>
-        <div className="bg-blue-600 rounded-2xl p-5 shadow-md shadow-blue-600/20">
+        <div className="nobli-gradient rounded-2xl p-5 shadow-[var(--nobli-shadow-m)]">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-[10px] font-semibold text-white/60 uppercase tracking-widest">Saldo</span>
-            <div className="h-8 w-8 rounded-xl bg-white/15 flex items-center justify-center">
+            <span className="text-[13px] font-medium text-white/80">Saldo</span>
+            <div className="h-8 w-8 rounded-lg bg-white/15 border border-white/20 flex items-center justify-center">
               <Wallet className="h-4 w-4 text-white" />
             </div>
           </div>
-          <p className="text-[1.6rem] font-bold text-white leading-none tabular-nums">{fmt(BALANCE)}</p>
-          <p className="text-xs text-white/50 mt-2">Receitas − Despesas</p>
+          <p className="font-heading text-[1.55rem] font-bold text-white leading-none tabular-nums tracking-tight">{fmt(BALANCE)}</p>
+          <p className="text-xs text-white/60 mt-2.5">Receitas − Despesas</p>
         </div>
-        <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-white/[0.06]">
+        <div className="nobli-card p-5">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Saúde</span>
-            <div className="h-8 w-8 rounded-xl bg-purple-50 dark:bg-purple-500/10 flex items-center justify-center">
-              <Activity className="h-4 w-4 text-purple-500" />
+            <span className="nobli-kpi-label">Saúde</span>
+            <div className="nobli-chip h-8 w-8 rounded-lg">
+              <Activity className="h-4 w-4" />
             </div>
           </div>
-          <p className="text-[1.6rem] font-bold text-blue-500 leading-none tabular-nums">{SCORE}</p>
-          <div className="mt-3 h-1.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
-            <div className="h-full rounded-full bg-blue-500" style={{ width: `${SCORE}%` }} />
+          <p className="nobli-kpi-value">{SCORE}</p>
+          <div className="mt-3 h-1.5 bg-[#E8F2FF] dark:bg-white/10 rounded-full overflow-hidden">
+            <div className="h-full rounded-full bg-[#2563EB]" style={{ width: `${SCORE}%` }} />
           </div>
           <p className="text-xs mt-1.5 font-semibold text-blue-500">Bom</p>
         </div>
       </div>
 
       {/* Evolução */}
-      <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-white/[0.06]">
+      <div className="nobli-card p-6">
         <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-5">Evolução dos últimos 6 meses</h2>
         <div className="flex items-end gap-3 h-36">
           {MONTHLY_EVOLUTION.map(m => (
@@ -158,7 +164,7 @@ function SectionDashboard() {
       </div>
 
       {/* Diagnóstico */}
-      <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl p-5 shadow-md shadow-blue-600/20 text-white">
+      <div className="nobli-gradient rounded-2xl p-5 shadow-[var(--nobli-shadow-m)] text-white">
         <div className="flex items-center gap-2 mb-3">
           <Sparkles className="h-4 w-4 text-blue-200" />
           <span className="text-xs font-semibold text-blue-200 uppercase tracking-wide">Diagnóstico do mês</span>
@@ -176,10 +182,10 @@ function SectionTransacoes() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Movimentações</h1>
+        <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Movimentações</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Junho 2026 · {TRANSACTIONS.length} transações</p>
       </div>
-      <div className="bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] overflow-hidden">
+      <div className="nobli-card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 dark:bg-slate-700/40 border-b border-slate-100 dark:border-white/[0.06]">
             <tr>
@@ -214,10 +220,10 @@ function SectionAnalise() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Análise</h1>
+        <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Análise</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Gastos por categoria · Junho 2026</p>
       </div>
-      <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-white/[0.06] space-y-4">
+      <div className="nobli-card p-6 space-y-4">
         {CATEGORIES.map(cat => (
           <div key={cat.name}>
             <div className="flex items-center justify-between mb-1.5">
@@ -244,10 +250,10 @@ function SectionPlanejamento() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Planejamento</h1>
+        <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Planejamento</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Planejado × Realizado · Junho 2026</p>
       </div>
-      <div className="bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] overflow-hidden">
+      <div className="nobli-card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 dark:bg-slate-700/40 border-b border-slate-100 dark:border-white/[0.06]">
             <tr>
@@ -297,14 +303,14 @@ function SectionMetas() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Metas</h1>
+        <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Metas</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{GOALS.length} objetivos em andamento</p>
       </div>
       <div className="space-y-4">
         {GOALS.map(g => {
           const pct = Math.round((g.current / g.target) * 100)
           return (
-            <div key={g.name} className="bg-white dark:bg-[#111c2d] rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-white/[0.06]">
+            <div key={g.name} className="nobli-card p-5">
               <div className="flex items-start justify-between gap-3 mb-4">
                 <div className="flex items-center gap-3">
                   <div className="h-11 w-11 rounded-xl flex items-center justify-center" style={{ backgroundColor: g.color + '20' }}>
@@ -353,15 +359,15 @@ export default function DemoPage() {
   const [section, setSection] = useState<Section>('dashboard')
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#0d1424] flex flex-col">
+    <div className="min-h-screen bg-[#f8fafc] dark:bg-[#0a1628] flex flex-col">
       {/* Banner CTA */}
-      <div className="bg-blue-600 text-white px-4 py-2.5 flex items-center justify-between gap-4 shrink-0 z-50">
+      <div className="bg-gradient-to-r from-[#0B2D6B] to-[#2563EB] text-white px-4 py-2.5 flex items-center justify-between gap-4 shrink-0 z-50">
         <div className="flex items-center gap-2 text-sm">
           <Sparkles className="h-4 w-4 text-blue-200 shrink-0" />
-          <span className="text-blue-100">Você está explorando o <strong className="text-white">FinanceApp</strong> com dados de demonstração.</span>
+          <span className="text-blue-100">Você está explorando a <strong className="text-white">{BRAND.name}</strong> com dados de demonstração.</span>
         </div>
         <Link href="/auth/register">
-          <Button size="sm" className="bg-white text-blue-600 hover:bg-blue-50 gap-1.5 shrink-0 font-semibold text-xs h-8">
+          <Button size="sm" className="bg-white text-[#2563EB] hover:bg-[#E8F2FF] gap-1.5 shrink-0 font-semibold text-xs h-8">
             Criar conta grátis <ArrowRight className="h-3.5 w-3.5" />
           </Button>
         </Link>
@@ -369,17 +375,10 @@ export default function DemoPage() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <aside className="hidden md:flex w-64 h-[calc(100vh-44px)] sticky top-[44px] bg-white dark:bg-[#111c2d] border-r border-slate-200/80 dark:border-white/[0.06] flex-col shrink-0">
-          <div className="px-5 py-5 border-b border-slate-100 dark:border-white/[0.06]">
-            <div className="flex items-center gap-3">
-              <div className="h-8 w-8 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/30">
-                <TrendingUp className="h-4 w-4 text-white" />
-              </div>
-              <div>
-                <span className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">FinanceApp</span>
-                <p className="text-[10px] text-blue-500 dark:text-blue-400 leading-none mt-0.5 font-semibold">MODO DEMO</p>
-              </div>
-            </div>
+        <aside className="hidden md:flex w-64 h-[calc(100vh-44px)] sticky top-[44px] bg-white dark:bg-[#0a1628] border-r border-[#E2E8F0] dark:border-white/[0.06] flex-col shrink-0">
+          <div className="px-5 py-5 border-b border-[#E2E8F0] dark:border-white/[0.06]">
+            <NobliLogo />
+            <p className="text-[10px] text-[#2563EB] dark:text-blue-400 leading-none mt-2 font-bold uppercase tracking-wider">Modo demo</p>
           </div>
           <nav className="flex-1 px-3 py-4 space-y-0.5">
             {NAV.map(({ id, label, icon: Icon }) => {

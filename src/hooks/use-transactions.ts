@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Transaction, TransactionFilters } from '@/types'
+import { formatUserError } from '@/lib/supabase-error'
 
 export function useTransactions(filters?: TransactionFilters) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -68,7 +69,7 @@ export function useTransactions(filters?: TransactionFilters) {
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await buildQuery().range(from, from + PAGE - 1)
       if (error) {
-        setError(error.message)
+        setError(formatUserError(error, 'Erro ao carregar transações.'))
         setLoading(false)
         return
       }

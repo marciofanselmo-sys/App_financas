@@ -10,9 +10,9 @@ export interface UserProfile {
   updated_at: string
 }
 
-export type TransactionType = 'receita' | 'despesa' | 'transferencia'
+export type TransactionType = 'receita' | 'despesa'
 
-export type CategoryType = 'receita' | 'despesa' | 'transferencia' | 'ambos'
+export type CategoryType = 'receita' | 'despesa' | 'ambos'
 export type BoardType = 'entrada' | 'saida' | 'ambos'
 export type BoardIconKey =
   | 'wallet' | 'credit-card' | 'building' | 'shopping-cart'
@@ -63,19 +63,6 @@ export interface Transaction {
   amount: number
   date: string
   type: TransactionType
-  // Movimentação entre contas do próprio usuário (pagar a própria fatura,
-  // TED para a corretora, Pix de uma conta sua para outra). É uma despesa ou
-  // receita de verdade — move o saldo da conta como qualquer outra — mas NÃO
-  // é gasto nem renda: fica fora de "Despesas/Receita do mês", das categorias
-  // e do Planejamento. Quem preenche é a detecção na importação, não o usuário.
-  is_internal?: boolean
-  // Na linha do pagamento: a conta que ele quitou (o cartão, a corretora).
-  // Sem isso o app sabe que o dinheiro saiu e não é gasto, mas não tem como
-  // creditar o destino — e o cartão acumula compras para sempre.
-  counterpart_board_id?: string | null
-  // Só na perna GERADA pelo app: aponta para o pagamento que a originou.
-  // Serve para não duplicar o crédito numa reimportação.
-  counterpart_of_id?: string | null
   category: string
   board_id?: string | null
   tags?: string[]
@@ -243,6 +230,3 @@ export const CATEGORY_COLORS = [
   '#14b8a6', '#6366f1', '#84cc16', '#6b7280',
 ]
 
-// Cor fixa para categorias de transferência — mesmo cinza neutro usado em
-// toda a UI para representar transferência (tabelas, relatórios, "Outros").
-export const TRANSFER_CATEGORY_COLOR = '#6b7280'

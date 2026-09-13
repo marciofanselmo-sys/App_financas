@@ -4,10 +4,10 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Users, Activity, BarChart2, Clock, RefreshCw, Shield, Eye } from 'lucide-react'
+import { SuggestionsPanel } from '@/components/admin/suggestions-panel'
 import { format, subDays, startOfDay } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
-const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? ''
 const ACTIVE_MINUTES = 15
 const RETENTION_DAYS = 30
 
@@ -34,6 +34,7 @@ const PAGE_LABELS: Record<string, string> = {
   '/settings/rules':         'Regras Auto.',
   '/account':                'Conta',
   '/help':                   'Ajuda',
+  '/suggestions':            'Sugestões',
   '/admin':                  'Admin',
 }
 
@@ -56,9 +57,17 @@ export default function AdminPage() {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
-    if (!user || user.email !== ADMIN_EMAIL) {
+    if (!user) {
       setAuthorized(false)
       setLoading(false)
+      return
+    }
+
+    const { data: isAdmin } = await supabase.rpc('is_app_admin')
+    if (!isAdmin) {
+      setAuthorized(false)
+      setLoading(false)
+      router.replace('/dashboard')
       return
     }
     setAuthorized(true)
@@ -167,7 +176,7 @@ export default function AdminPage() {
             <Shield className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Painel Admin</h1>
+            <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Painel Admin</h1>
             <p className="text-xs text-slate-400 dark:text-slate-500">
               Atualizado às {format(lastRefresh, 'HH:mm:ss')} · últimos {RETENTION_DAYS} dias
             </p>
@@ -323,6 +332,8 @@ export default function AdminPage() {
           </div>
         )}
       </div>
+
+      <SuggestionsPanel enabled={authorized === true} />
 
       {/* Aviso legal */}
       <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-xs text-slate-400 dark:text-slate-500">

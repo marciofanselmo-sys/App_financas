@@ -1,4 +1,5 @@
-import * as XLSX from 'xlsx'
+import { readXlsxSheetRows } from '@/utils/read-xlsx'
+import { validateImportRowCount } from '@/lib/import-limits'
 
 export interface RICOPosition {
   ticker: string
@@ -51,12 +52,16 @@ function parseBRDate(value: unknown): string {
 
 const isEmpty = (v: unknown) => String(v ?? '').trim() === ''
 
-export function parseRICOXLSX(buffer: ArrayBuffer): RICOData {
-  const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' })
-  const ws = wb.Sheets['Sua carteira']
-  if (!ws) throw new Error('Planilha "Sua carteira" não encontrada. Verifique se é o arquivo correto da RICO.')
+export async function parseRICOXLSX(buffer: ArrayBuffer): Promise<RICOData> {
+  let rows: (string | number | boolean | Date | null | undefined)[][]
+  try {
+    rows = await readXlsxSheetRows(buffer, 'Sua carteira')
+  } catch {
+    throw new Error('Planilha "Sua carteira" não encontrada. Verifique se é o arquivo correto da RICO.')
+  }
 
-  const rows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, defval: '' })
+  const rowCheck = validateImportRowCount(rows.length)
+  if (!rowCheck.ok) throw new Error(rowCheck.error)
 
   let patrimonio = 0
   let totalInvestido = 0

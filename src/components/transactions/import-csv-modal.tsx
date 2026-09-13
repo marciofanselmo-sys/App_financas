@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import Papa from 'papaparse'
 import { validateImportFile, validateImportRowCount } from '@/lib/import-limits'
 import { readXlsxSheetNames, readXlsxSheetRows, rowsToHeaderObjects } from '@/utils/read-xlsx'
@@ -21,9 +21,6 @@ import { parseMercadoPagoPDF, isMercadoPagoPDF } from '@/utils/parse-mercadopago
 import { parseInterInvoicePDF, isInterInvoicePDF } from '@/utils/parse-inter-pdf'
 import { parseItauExtratoPDF, isItauExtratoPDF } from '@/utils/parse-itau-extrato-pdf'
 import { stripEmbeddedDate } from '@/utils/strip-embedded-date'
-import { classifyTransaction } from '@/utils/detect-transfer'
-import { findCounterpartBoard, hasExistingLeg, buildCounterpartLeg } from '@/lib/internal-counterpart'
-import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { parseAmountBR } from '@/utils/parse-amount'
 import { addMonths } from '@/utils/add-months'
 import { installmentLabel } from '@/utils/format-installment'
@@ -37,7 +34,6 @@ function downloadTemplate() {
     ['Salário', '5000', '2026-06-01', 'receita', 'Salário'],
     ['Supermercado', '350.50', '2026-06-05', 'despesa', 'Alimentação'],
     ['Uber', '25.90', '2026-06-07', 'despesa', 'Transporte'],
-    ['Transferência para poupança', '500', '2026-06-10', 'transferencia', 'Outros'],
   ]
   const csv = rows.map(r => r.join(',')).join('\n')
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
@@ -60,9 +56,6 @@ interface PreviewRow {
   amount: number
   date: string
   type: TransactionType
-  // Movimentação entre contas do próprio usuário: continua sendo receita ou
-  // despesa (move o saldo), mas fica fora dos totais do mês.
-  is_internal?: boolean
   category: string
   subcategory?: string | null
   installment_current?: number | null
@@ -111,7 +104,7 @@ const FIELD_LABELS: Record<string, string> = {
   descricao: 'Descrição',
   valor: 'Valor (R$)',
   data: 'Data',
-  tipo: 'Tipo (receita/despesa/transferência)',
+  tipo: 'Tipo (receita/despesa)',
   categoria: 'Categoria',
 }
 
@@ -144,7 +137,6 @@ function normalizeDate(raw: string): string | null {
 
 function normalizeType(raw: string): TransactionType | null {
   const s = raw.toLowerCase().trim()
-  if (['transferencia', 'transferência', 'transfer', 'ted', 'doc'].some(k => s === k || s.includes(k))) return 'transferencia'
   if (['receita', 'entrada', 'credito', 'crédito', 'credit', 'income', 'c'].some(k => s === k || s.includes(k))) return 'receita'
   if (['despesa', 'saida', 'saída', 'debito', 'débito', 'debit', 'expense', 'd'].some(k => s === k || s.includes(k))) return 'despesa'
   return null
@@ -282,7 +274,7 @@ function parseNubankCheckingCSV(content: string): PreviewRow[] {
     })
 }
 
-function parseNubankCSV(content: string, ownerName?: string | null): PreviewRow[] {
+function parseNubankCSV(content: string): PreviewRow[] {
   const result = Papa.parse<Record<string, string>>(content, { header: true, skipEmptyLines: true })
   return result.data
     .filter(row => (row['amount'] ?? '').trim() !== '')
@@ -296,8 +288,8 @@ function parseNubankCSV(content: string, ownerName?: string | null): PreviewRow[
       const amount = Math.abs(valorNum)
       if (isNaN(amount) || amount <= 0) errors.push('Valor inválido')
       // Fatura do cartão: valor positivo = compra (despesa); negativo = estorno/pagamento (receita)
-      const { type, is_internal } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa', ownerName)
-      return { description, amount: isNaN(amount) ? 0 : amount, date, type, is_internal, category: 'Outros', valid: errors.length === 0, errors }
+      const type: TransactionType = valorNum < 0 ? 'receita' : 'despesa'
+      return { description, amount: isNaN(amount) ? 0 : amount, date, type, category: 'Outros', valid: errors.length === 0, errors }
     })
 }
 
@@ -319,7 +311,7 @@ function mapC6Category(raw: string): string {
   return 'Outros'
 }
 
-function parseC6Credit(content: string, ownerName?: string | null): PreviewRow[] {
+function parseC6Credit(content: string): PreviewRow[] {
   const result = Papa.parse<Record<string, string>>(content, {
     header: true,
     delimiter: ';',
@@ -344,7 +336,7 @@ function parseC6Credit(content: string, ownerName?: string | null): PreviewRow[]
       const valorNum = parseFloat((row['Valor (em R$)'] ?? '0').trim())
       const amount = Math.abs(valorNum)
       if (isNaN(amount) || amount <= 0) errors.push('Valor inválido')
-      const { type, is_internal } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa', ownerName)
+      const type: TransactionType = valorNum < 0 ? 'receita' : 'despesa'
       const category = mapC6Category(row['Categoria'] ?? '')
       let installment_current: number | null = null
       let installment_total: number | null = null
@@ -365,11 +357,11 @@ function parseC6Credit(content: string, ownerName?: string | null): PreviewRow[]
       const effectiveDate = installment_current && installment_current > 1 && date
         ? addMonths(date, installment_current - 1)
         : date
-      return { description, amount: isNaN(amount) ? 0 : amount, date: effectiveDate, type, is_internal, category, installment_current, installment_total, valid: errors.length === 0, errors }
+      return { description, amount: isNaN(amount) ? 0 : amount, date: effectiveDate, type, category, installment_current, installment_total, valid: errors.length === 0, errors }
     })
 }
 
-function parseC6Checking(content: string, ownerName?: string | null): PreviewRow[] {
+function parseC6Checking(content: string): PreviewRow[] {
   const lines = content.split('\n')
   const headerIdx = lines.findIndex(l => l.trim().startsWith('Data Lançamento'))
   if (headerIdx === -1) return []
@@ -394,10 +386,10 @@ function parseC6Checking(content: string, ownerName?: string | null): PreviewRow
       const entrada = parseFloat(row['Entrada(R$)'] ?? '0')
       const saida = parseFloat(row['Saída(R$)'] ?? '0')
       // Aqui a direção vem das colunas Entrada/Saída, não do sinal.
-      const { type, is_internal } = classifyTransaction(description, entrada > 0 ? 'receita' : 'despesa', ownerName)
+      const type: TransactionType = entrada > 0 ? 'receita' : 'despesa'
       const amount = entrada > 0 ? entrada : saida
       if (isNaN(amount) || amount <= 0) errors.push('Valor inválido')
-      return { description, amount: isNaN(amount) ? 0 : amount, date, type, is_internal, category: 'Outros', valid: errors.length === 0, errors }
+      return { description, amount: isNaN(amount) ? 0 : amount, date, type, category: 'Outros', valid: errors.length === 0, errors }
     })
 }
 
@@ -414,18 +406,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   const [headers, setHeaders] = useState<string[]>([])
   const [rawRows, setRawRows] = useState<Record<string, string>[]>([])
   const [mapping, setMapping] = useState<Record<string, string>>({})
-  const { boards } = useTransactionBoards()
-  // Nome do titular: é a única pista que separa "Pix recebido de <você>" —
-  // dinheiro seu mudando de conta — de um Pix de terceiro. O rótulo do banco
-  // é idêntico nos dois casos; só o nome diferencia.
-  const [ownerName, setOwnerName] = useState<string | null>(null)
   const [preview, setPreview] = useState<PreviewRow[]>([])
-
-  useEffect(() => {
-    createClient().auth.getUser().then(({ data }) => {
-      setOwnerName(data.user?.user_metadata?.full_name ?? null)
-    })
-  }, [])
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<{ success: number; errors: number; duplicates: number; fixed: number; errorMessage?: string } | null>(null)
   const [fileError, setFileError] = useState('')
@@ -516,11 +497,10 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   // ── OFX ──
   function handleOFX(content: string) {
     try {
-      const rows = parseOFX(content, ownerName)
+      const rows = parseOFX(content)
       if (!rows.length) { setFileError('Nenhuma transação encontrada no arquivo OFX.'); return }
       const preview: PreviewRow[] = rows.map(r => ({
         description: r.description, amount: r.amount, date: r.date, type: r.type,
-        is_internal: r.is_internal,
         category: r.category,
         valid: true, errors: [],
       }))
@@ -539,17 +519,17 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
       const content = ev.target?.result as string
       const bankFormat = detectBankFormat(content)
       if (bankFormat === 'c6-credit') {
-        const rows = parseC6Credit(content, ownerName)
+        const rows = parseC6Credit(content)
         if (!rows.length) { setFileError('Nenhuma transação encontrada na fatura C6.'); return }
         setPreview(enhanceWithUserRules(rows)); setFileType('c6-credit'); setStep('preview'); return
       }
       if (bankFormat === 'c6-checking') {
-        const rows = parseC6Checking(content, ownerName)
+        const rows = parseC6Checking(content)
         if (!rows.length) { setFileError('Nenhuma transação encontrada no extrato C6.'); return }
         setPreview(enhanceWithUserRules(rows)); setFileType('c6-checking'); setStep('preview'); return
       }
       if (bankFormat === 'nubank') {
-        const rows = parseNubankCSV(content, ownerName)
+        const rows = parseNubankCSV(content)
         if (!rows.length) { setFileError('Nenhuma transação encontrada no extrato Nubank.'); return }
         setPreview(enhanceWithUserRules(rows)); setFileType('nubank'); setStep('preview'); return
       }
@@ -790,35 +770,23 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
       const date = normalizeDate(mapping.data ? raw[mapping.data] : '') ?? ''
       if (!date) errors.push('Data inválida')
       let type: TransactionType
-      let is_internal = false
       const mappedType = mapping.tipo ? normalizeType(raw[mapping.tipo]) : null
       if (mappedType) {
         // Coluna "tipo" escrita à mão no CSV. "transferencia" ali significa
         // "é interna" — o tipo real vem do sinal do valor, como em qualquer
         // outra linha.
-        if (mappedType === 'transferencia') {
-          is_internal = true
-          type = !isNaN(valorNum) && valorNum < 0 ? 'receita' : 'despesa'
-        } else {
-          type = mappedType
-        }
+        type = mappedType
       }
       else if (!isNaN(valorNum)) {
-        ({ type, is_internal } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa', ownerName))
+        type = valorNum < 0 ? 'receita' : 'despesa'
       }
       else { type = 'despesa'; errors.push('Tipo não mapeado — assumido "despesa"') }
       const category = normalizeCategory(mapping.categoria ? raw[mapping.categoria] : 'Outros', categoryNames)
-      return { description, amount: isNaN(amount) ? 0 : amount, date, type, is_internal, category, valid: errors.filter(e => !e.includes('assumido')).length === 0, errors }
+      return { description, amount: isNaN(amount) ? 0 : amount, date, type, category, valid: errors.filter(e => !e.includes('assumido')).length === 0, errors }
     })
     setPreview(enhanceWithUserRules(rows))
     setStep('preview')
   }
-
-  function shiftDays(date: string, days: number): string {
-  const d = new Date(`${date}T12:00:00`)
-  d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
-}
 
 // ── Import with deduplication ──
   async function handleImport() {
@@ -955,24 +923,14 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
       if (!toInsert.length) continue
 
       // Build insert payload — track IDs separately so we only add to review AFTER confirmed insert
-      const tracking = toInsert.map(r => ({
-        id: uid(),
-        row: r,
-        // Só movimentação interna tem destino: uma compra no mercado não
-        // "vai" para outra conta sua.
-        counterpart: r.is_internal
-          ? findCounterpartBoard(r.description, boards, boardId ?? null)
-          : null,
-      }))
-      const payload = tracking.map(({ id, row, counterpart }) => ({
+      const tracking = toInsert.map(r => ({ id: uid(), row: r }))
+      const payload = tracking.map(({ id, row }) => ({
         id,
         user_id: user.id,
         description: row.description,
         amount: row.amount,
         date: row.date,
         type: row.type,
-        is_internal: row.is_internal ?? false,
-        counterpart_board_id: counterpart?.id ?? null,
         category: row.category,
         board_id: boardId ?? null,
         tags: [],
@@ -992,50 +950,6 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
         }
       } else {
         success += toInsert.length
-
-        // Perna do pagamento: credita a conta de destino.
-        // O extrato do cartão de alguns bancos (C6) não lista o pagamento
-        // recebido, então sem isto o cartão acumula compras para sempre e o
-        // mesmo dinheiro sai duas vezes do patrimônio. Nos bancos que listam
-        // (Inter), a perna real já existe — por isso o hasExistingLeg antes.
-        const withDestination = tracking.filter(t => t.counterpart)
-        if (withDestination.length > 0) {
-          const destIds = [...new Set(withDestination.map(t => t.counterpart!.id))]
-          const dates = withDestination.map(t => t.row.date).sort()
-          const { data: existingLegs } = await supabase
-            .from('transactions')
-            .select('board_id, amount, date, is_internal')
-            .eq('user_id', user.id)
-            .in('board_id', destIds)
-            .gte('date', shiftDays(dates[0], -3))
-            .lte('date', shiftDays(dates[dates.length - 1], 3))
-
-          const legs = withDestination
-            .filter(t => !hasExistingLeg(existingLegs ?? [], t.counterpart!.id, t.row.amount, t.row.date))
-            .map(t => buildCounterpartLeg(
-              {
-                id: t.id,
-                description: t.row.description,
-                amount: t.row.amount,
-                date: t.row.date,
-                type: t.row.type,
-                category: t.row.category,
-                counterpartBoardId: t.counterpart!.id,
-              },
-              user.id,
-              uid(),
-            ))
-
-          if (legs.length > 0) {
-            const { error: legError } = await supabase.from('transactions').insert(legs)
-            // Falha aqui não invalida a importação: as transações entraram. O
-            // saldo do destino fica como antes até uma nova importação, então
-            // o erro precisa aparecer, não ser engolido.
-            if (legError && !firstErrorMessage) {
-              firstErrorMessage = `Transações importadas, mas não foi possível creditar a conta de destino: ${legError.message}`
-            }
-          }
-        }
 
         // Only track Outros items that were actually inserted
         for (const { id, row } of tracking) {
@@ -1292,12 +1206,12 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
                         </td>
                         <td className="px-3 py-2 text-slate-700 dark:text-slate-200 truncate overflow-hidden">{row.description}</td>
                         <td className="px-3 py-2 font-medium">
-                          <span className={row.is_internal ? 'text-slate-400 dark:text-slate-500' : row.type === 'receita' ? 'text-green-600' : 'text-red-500'}>R$ {row.amount.toFixed(2)}</span>
+                          <span className={row.type === 'receita' ? 'text-green-600' : 'text-red-500'}>R$ {row.amount.toFixed(2)}</span>
                         </td>
                         <td className="px-3 py-2 text-slate-500 dark:text-slate-400">{row.date}</td>
                         <td className="px-3 py-2 text-slate-500 dark:text-slate-400">{installmentLabel(row)}</td>
                         <td className="px-3 py-2">
-                          <Badge variant="outline" className={`text-[10px] ${row.is_internal ? 'text-slate-400 dark:text-slate-500' : row.type === 'receita' ? 'text-green-600' : 'text-red-500'}`}>{row.is_internal ? 'entre contas' : row.type}</Badge>
+                          <Badge variant="outline" className={`text-[10px] ${row.type === 'receita' ? 'text-green-600' : 'text-red-500'}`}>{row.type}</Badge>
                         </td>
                         <td className="px-3 py-2">
                           <span className={row.category === 'Outros' ? 'text-amber-500 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'}>
@@ -1430,7 +1344,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{item.description}</p>
                         <div className="flex items-center gap-2 mt-0.5">
-                          <span className={`text-xs ${item.type === 'receita' ? 'text-green-600 dark:text-green-400' : item.type === 'transferencia' ? 'text-slate-400 dark:text-slate-500' : 'text-red-500'}`}>
+                          <span className={`text-xs ${item.type === 'receita' ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>
                             {fmt(item.amount)}
                           </span>
                           <span className="text-xs text-slate-400">· {item.date}</span>

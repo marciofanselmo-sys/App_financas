@@ -5,27 +5,25 @@ import Link from 'next/link'
 import { useCategories } from '@/hooks/use-categories'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useSubcategories } from '@/hooks/use-subcategories'
-import { Category, CategoryType, CATEGORY_COLORS, TRANSFER_CATEGORY_COLOR } from '@/types'
+import { Category, CategoryType, CATEGORY_COLORS } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Pencil, Trash2, Tag, RotateCcw, Search, AlertTriangle, ArrowRight, Sparkles, TrendingDown, TrendingUp, ArrowLeftRight, Layers } from 'lucide-react'
+import { Plus, Pencil, Trash2, Tag, RotateCcw, Search, AlertTriangle, ArrowRight, Sparkles, TrendingDown, TrendingUp, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const TYPE_LABELS: Record<CategoryType, string> = {
   receita: 'Receita',
   despesa: 'Despesa',
-  transferencia: 'Transferência',
   ambos: 'Ambos',
 }
 
 const TYPE_BADGE: Record<CategoryType, string> = {
   receita: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400',
   despesa: 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400',
-  transferencia: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400',
   ambos:   'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
 }
 
@@ -33,13 +31,12 @@ const TYPE_FILTER: { value: string; label: string }[] = [
   { value: 'todos',   label: 'Todos' },
   { value: 'despesa', label: 'Despesa' },
   { value: 'receita', label: 'Receita' },
-  { value: 'transferencia', label: 'Transferência' },
   { value: 'ambos',   label: 'Ambos' },
 ]
 
 // Mesma convenção visual da aba Subcategorias: seções por tipo, transferência por último.
-type SectionType = 'despesa' | 'receita' | 'transferencia'
-const SECTION_ORDER: SectionType[] = ['despesa', 'receita', 'transferencia']
+type SectionType = 'despesa' | 'receita'
+const SECTION_ORDER: SectionType[] = ['despesa', 'receita']
 
 const SECTION_META: Record<SectionType, { label: string; icon: React.ElementType; iconColor: string; iconBg: string; help: string }> = {
   despesa: {
@@ -49,10 +46,6 @@ const SECTION_META: Record<SectionType, { label: string; icon: React.ElementType
   receita: {
     label: 'Receitas', icon: TrendingUp, iconColor: 'text-green-500', iconBg: 'bg-green-50 dark:bg-green-900/20',
     help: 'Dinheiro que entra: salário, freelance, vendas... Conta como ganho real no saldo, no dashboard e nos relatórios.',
-  },
-  transferencia: {
-    label: 'Transferências', icon: ArrowLeftRight, iconColor: 'text-slate-400', iconBg: 'bg-slate-100 dark:bg-slate-700',
-    help: 'Movimentação entre suas próprias contas — não é ganho nem gasto real. Categorizar ajuda só a organizar pra onde o dinheiro foi.',
   },
 }
 
@@ -120,7 +113,6 @@ export default function CategoriesPage() {
   const bySection: Record<SectionType, Category[]> = {
     despesa: filtered.filter(c => c.type === 'despesa' || c.type === 'ambos'),
     receita: filtered.filter(c => c.type === 'receita' || c.type === 'ambos'),
-    transferencia: filtered.filter(c => c.type === 'transferencia' || c.type === 'ambos'),
   }
 
   function openCreate() {
@@ -140,7 +132,7 @@ export default function CategoriesPage() {
     const payload = {
       name: form.name,
       type: form.type,
-      color: form.type === 'transferencia' ? TRANSFER_CATEGORY_COLOR : form.color,
+      color: form.color,
     }
     const { error } = editing
       ? await updateCategory(editing.id, payload)
@@ -360,7 +352,7 @@ export default function CategoriesPage() {
                 onValueChange={v => setForm(f => ({
                   ...f,
                   type: v as CategoryType,
-                  color: v === 'transferencia' ? TRANSFER_CATEGORY_COLOR : f.color,
+                  color: f.color,
                 }))}
                 items={TYPE_LABELS}
               >
@@ -368,17 +360,11 @@ export default function CategoriesPage() {
                 <SelectContent>
                   <SelectItem value="despesa">Despesa</SelectItem>
                   <SelectItem value="receita">Receita</SelectItem>
-                  <SelectItem value="transferencia">Transferência</SelectItem>
                   <SelectItem value="ambos">Ambos</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            {form.type === 'transferencia' ? (
-              <p className="text-xs text-slate-400 dark:text-slate-500">
-                Categorias de transferência usam sempre a cor cinza padrão, a mesma já usada pra representar transferência no resto do app.
-              </p>
-            ) : (
-              <div className="space-y-2">
+                          <div className="space-y-2">
                 <Label>Cor</Label>
                 <div className="flex flex-wrap gap-2 pt-1">
                   {CATEGORY_COLORS.map(color => (
@@ -389,7 +375,7 @@ export default function CategoriesPage() {
                   ))}
                 </div>
               </div>
-            )}
+            
             <div className="flex gap-2 pt-2">
               <Button type="button" variant="outline" onClick={() => setFormOpen(false)} className="flex-1">Cancelar</Button>
               <Button type="submit" disabled={saving} className="flex-1">{saving ? 'Salvando...' : editing ? 'Salvar' : 'Criar'}</Button>

@@ -11,7 +11,7 @@ interface PatrimonyCompositionChartProps {
 
 export function PatrimonyCompositionChart({ data, loading }: PatrimonyCompositionChartProps) {
   if (loading) {
-    return <div className="h-72 rounded-2xl animate-pulse bg-white dark:bg-[#111c2d] border border-slate-100 dark:border-white/[0.06]" />
+    return <div className="h-72 nobli-card animate-pulse" />
   }
 
   return (

@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import { useCategories } from '@/hooks/use-categories'
 import { useTransactions } from '@/hooks/use-transactions'
-import { Category, CategoryType, CATEGORY_COLORS, TRANSFER_CATEGORY_COLOR, SpecialCategoryDate } from '@/types'
+import { Category, CategoryType, CATEGORY_COLORS, SpecialCategoryDate } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,31 +12,28 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge'
 import { InfoBox } from '@/components/ui/info-box'
 import { SpecialDatesPicker, formatSpecialDateGroups } from '@/components/categories/special-dates-picker'
-import { Plus, Pencil, Trash2, Sparkles, AlertTriangle, ArrowRight, TrendingDown, TrendingUp, ArrowLeftRight } from 'lucide-react'
+import { Plus, Pencil, Trash2, Sparkles, AlertTriangle, ArrowRight, TrendingDown, TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const TYPE_LABELS: Record<CategoryType, string> = {
   receita: 'Receita',
   despesa: 'Despesa',
-  transferencia: 'Transferência',
   ambos: 'Ambos',
 }
 
 const TYPE_BADGE: Record<CategoryType, string> = {
   receita: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400',
   despesa: 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400',
-  transferencia: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400',
   ambos:   'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
 }
 
 // Mesma convenção visual das abas Categorias e Subcategorias: seções por tipo, transferência por último.
-type SectionType = 'despesa' | 'receita' | 'transferencia'
-const SECTION_ORDER: SectionType[] = ['despesa', 'receita', 'transferencia']
+type SectionType = 'despesa' | 'receita'
+const SECTION_ORDER: SectionType[] = ['despesa', 'receita']
 
 const SECTION_META: Record<SectionType, { label: string; icon: React.ElementType; iconColor: string; iconBg: string }> = {
   despesa:       { label: 'Despesas',       icon: TrendingDown,   iconColor: 'text-red-500',   iconBg: 'bg-red-50 dark:bg-red-900/20' },
   receita:       { label: 'Receitas',       icon: TrendingUp,     iconColor: 'text-green-500', iconBg: 'bg-green-50 dark:bg-green-900/20' },
-  transferencia: { label: 'Transferências', icon: ArrowLeftRight, iconColor: 'text-slate-400', iconBg: 'bg-slate-100 dark:bg-slate-700' },
 }
 
 interface FormState {
@@ -93,7 +90,6 @@ export default function IsolatedCategoriesPage() {
   const bySection: Record<SectionType, Category[]> = {
     despesa: isolatedCategories.filter(c => c.type === 'despesa' || c.type === 'ambos'),
     receita: isolatedCategories.filter(c => c.type === 'receita' || c.type === 'ambos'),
-    transferencia: isolatedCategories.filter(c => c.type === 'transferencia' || c.type === 'ambos'),
   }
 
   function openCreate() {
@@ -118,7 +114,7 @@ export default function IsolatedCategoriesPage() {
     const payload = {
       name: form.name,
       type: form.type,
-      color: form.type === 'transferencia' ? TRANSFER_CATEGORY_COLOR : form.color,
+      color: form.color,
       special_dates: form.specialDates,
     }
     const { error } = editing
@@ -164,7 +160,7 @@ export default function IsolatedCategoriesPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Categorias isoladas</h1>
+          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Categorias isoladas</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
             {isolatedCategories.length} categoria{isolatedCategories.length !== 1 ? 's' : ''} isolada{isolatedCategories.length !== 1 ? 's' : ''}
           </p>
@@ -291,7 +287,7 @@ export default function IsolatedCategoriesPage() {
                 onValueChange={v => setForm(f => ({
                   ...f,
                   type: v as CategoryType,
-                  color: v === 'transferencia' ? TRANSFER_CATEGORY_COLOR : f.color,
+                  color: f.color,
                 }))}
                 items={TYPE_LABELS}
               >
@@ -299,17 +295,11 @@ export default function IsolatedCategoriesPage() {
                 <SelectContent>
                   <SelectItem value="despesa">Despesa</SelectItem>
                   <SelectItem value="receita">Receita</SelectItem>
-                  <SelectItem value="transferencia">Transferência</SelectItem>
                   <SelectItem value="ambos">Ambos</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            {form.type === 'transferencia' ? (
-              <p className="text-xs text-slate-400 dark:text-slate-500">
-                Categorias de transferência usam sempre a cor cinza padrão, a mesma já usada pra representar transferência no resto do app.
-              </p>
-            ) : (
-              <div className="space-y-2">
+                          <div className="space-y-2">
                 <Label>Cor</Label>
                 <div className="flex flex-wrap gap-2 pt-1">
                   {CATEGORY_COLORS.map(color => (
@@ -320,7 +310,7 @@ export default function IsolatedCategoriesPage() {
                   ))}
                 </div>
               </div>
-            )}
+            
 
             <div className="border-t border-slate-100 dark:border-slate-700 pt-3 space-y-1.5">
               <Label className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">

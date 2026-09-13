@@ -8,9 +8,10 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, ArrowLeftRight, CalendarCheck, Target,
   MoreHorizontal, BarChart2, CreditCard, RefreshCw, FileText,
-  Settings, LogOut, X, TrendingUp, HelpCircle, UserCircle, PiggyBank,
+  Settings, LogOut, X, HelpCircle, UserCircle, PiggyBank, MessageSquarePlus,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { NobliLogo } from '@/components/brand/nobli-logo'
 
 // Primary items always visible in the bottom bar
 const PRIMARY = [
@@ -30,6 +31,7 @@ const SECONDARY = [
   { href: '/settings/categories', label: 'Config.',   icon: Settings     },
   { href: '/account',     label: 'Minha conta',       icon: UserCircle   },
   { href: '/help',        label: 'Ajuda',             icon: HelpCircle   },
+  { href: '/suggestions', label: 'Sugestões',         icon: MessageSquarePlus },
 ]
 
 export function MobileNav() {
@@ -67,15 +69,10 @@ export function MobileNav() {
         )}
         style={{ bottom: '64px' }}
       >
-        <div className="mx-3 mb-1 bg-white dark:bg-[#111c2d] rounded-2xl shadow-2xl border border-slate-200/80 dark:border-white/[0.06] overflow-hidden">
+        <div className="mx-3 mb-1 bg-white dark:bg-[#101F36] rounded-2xl shadow-2xl border border-[#DDE7F3] dark:border-white/[0.08] overflow-hidden">
           {/* Drawer header */}
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-white/[0.06]">
-            <div className="flex items-center gap-2">
-              <div className="h-6 w-6 rounded-lg bg-blue-600 flex items-center justify-center">
-                <TrendingUp className="h-3.5 w-3.5 text-white" />
-              </div>
-              <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Menu</span>
-            </div>
+            <NobliLogo variant="compact" showTagline={false} />
             <button
               onClick={() => setOpen(false)}
               className="h-7 w-7 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-slate-700 transition-colors"
@@ -95,11 +92,11 @@ export function MobileNav() {
                   className={cn(
                     'flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl text-[11px] font-medium transition-all',
                     active
-                      ? 'bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400'
-                      : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-700 dark:hover:text-slate-200'
+                      ? 'bg-[#E8F2FF] dark:bg-blue-500/15 text-[#2563EB] dark:text-blue-400'
+                      : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-[#0B2D6B] dark:hover:text-slate-200'
                   )}
                 >
-                  <Icon className={cn('h-5 w-5', active && 'text-blue-600 dark:text-blue-400')} />
+                  <Icon className={cn('h-5 w-5', active && 'text-[#2563EB] dark:text-blue-400')} />
                   <span className="text-center leading-tight">{label}</span>
                 </Link>
               )
@@ -123,7 +120,7 @@ export function MobileNav() {
       </div>
 
       {/* Bottom bar */}
-      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-white/95 dark:bg-[#111c2d]/95 backdrop-blur-md border-t border-slate-200/80 dark:border-white/[0.06] flex items-center z-50 md:hidden">
+      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-white/90 dark:bg-[#101F36]/90 backdrop-blur-xl border-t border-[#DDE7F3] dark:border-white/[0.08] flex items-center z-50 md:hidden">
         {PRIMARY.map(({ href, label, icon: Icon }) => {
           const active = pathname === href
           return (
@@ -133,12 +130,12 @@ export function MobileNav() {
               className={cn(
                 'flex flex-1 flex-col items-center justify-center gap-1 h-full text-[10px] font-semibold transition-colors relative',
                 active
-                  ? 'text-blue-600 dark:text-blue-400'
-                  : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                  ? 'text-[#2563EB] dark:text-blue-400'
+                  : 'text-slate-400 dark:text-slate-500 hover:text-[#0B2D6B] dark:hover:text-slate-300'
               )}
             >
               {active && (
-                <span className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full bg-blue-500" />
+                <span className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full bg-[#2563EB]" />
               )}
               <Icon className="h-5 w-5" />
               {label}
@@ -152,18 +149,18 @@ export function MobileNav() {
           className={cn(
             'flex flex-1 flex-col items-center justify-center gap-1 h-full text-[10px] font-semibold transition-colors relative',
             (open || isSecondaryActive)
-              ? 'text-blue-600 dark:text-blue-400'
-              : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              ? 'text-[#2563EB] dark:text-blue-400'
+              : 'text-slate-400 dark:text-slate-500 hover:text-[#0B2D6B] dark:hover:text-slate-300'
           )}
         >
           {(open || isSecondaryActive) && (
-            <span className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full bg-blue-500" />
+            <span className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full bg-[#2563EB]" />
           )}
           <div className={cn(
-            'h-7 w-7 rounded-full flex items-center justify-center transition-all',
+            'h-8 w-8 rounded-full flex items-center justify-center transition-all shadow-md shadow-[#2563EB]/25',
             open
-              ? 'bg-blue-600 text-white rotate-90 scale-110'
-              : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+              ? 'nobli-gradient text-white rotate-90 scale-110'
+              : 'nobli-gradient text-white'
           )}>
             <MoreHorizontal className="h-4 w-4" />
           </div>

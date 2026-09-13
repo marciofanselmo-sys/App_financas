@@ -7,7 +7,7 @@ import { usePageTracker } from '@/hooks/use-page-tracker'
 function LayoutInner({ children }: { children: React.ReactNode }) {
   usePageTracker()
   return (
-    <div className="flex min-h-screen bg-slate-50 dark:bg-[#0d1424]">
+    <div className="flex min-h-screen bg-background">
       <div className="hidden md:block sticky top-0 h-screen shrink-0 print:hidden">
         <Sidebar />
       </div>

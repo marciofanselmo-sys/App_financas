@@ -48,7 +48,7 @@ export function useSubcategories() {
       const label = row.group_label as string | null
       const type = row.type as TransactionType
       if (!label) continue
-      const v = votes.get(label) ?? { despesa: 0, receita: 0, transferencia: 0 }
+      const v = votes.get(label) ?? { despesa: 0, receita: 0 }
       v[type] = (v[type] ?? 0) + 1
       votes.set(label, v)
     }

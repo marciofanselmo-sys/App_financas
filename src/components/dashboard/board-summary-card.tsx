@@ -17,10 +17,7 @@ export function BoardSummaryCard({ board, transactions }: BoardSummaryCardProps)
   const router = useRouter()
   const income = transactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
   const expenses = transactions.filter(t => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0)
-  // Transferência fica fora de Entradas/Saídas (não é receita nem despesa),
-  // mas entra no saldo: o dinheiro saiu mesmo desta conta. Por isso o saldo
-  // vem de balanceFromTransactions e não de `income - expenses`, que ignorava
-  // a movimentação interna e mostrava mais dinheiro do que a conta tinha.
+  // Saldo = saldo inicial da conta + entradas − saídas.
   const balance = Number(board.opening_balance ?? 0) + balanceFromTransactions(transactions)
   const positive = balance >= 0
 

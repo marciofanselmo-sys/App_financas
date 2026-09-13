@@ -22,7 +22,6 @@ const TYPE_OPTIONS: { value: 'all' | TransactionType; label: string }[] = [
   { value: 'all', label: 'Todos os tipos' },
   { value: 'despesa', label: 'Despesa' },
   { value: 'receita', label: 'Receita' },
-  { value: 'transferencia', label: 'Transferência' },
 ]
 
 interface ExportCSVModalProps {

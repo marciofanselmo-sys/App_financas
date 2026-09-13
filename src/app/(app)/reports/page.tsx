@@ -284,8 +284,8 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
                     </td>
                     <td className="px-4 py-2 text-slate-700 dark:text-slate-300 print:text-slate-700 max-w-[200px] truncate">{t.description}</td>
                     <td className="px-4 py-2 text-slate-500 dark:text-slate-400 print:text-slate-500 text-xs">{t.category}</td>
-                    <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap ${t.is_internal || t.type === 'transferencia' ? 'text-slate-400 dark:text-slate-500 print:text-slate-400' : t.type === 'receita' ? 'text-emerald-600 dark:text-emerald-400 print:text-emerald-600' : 'text-red-500'}`}>
-                      {t.type === 'transferencia' ? '' : t.type === 'receita' ? '+' : '-'}{fmt(Number(t.amount))}
+                    <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap ${t.type === 'receita' ? 'text-emerald-600 dark:text-emerald-400 print:text-emerald-600' : 'text-red-500'}`}>
+                      {t.type === 'receita' ? '+' : '-'}{fmt(Number(t.amount))}
                     </td>
                   </tr>
                 ))}

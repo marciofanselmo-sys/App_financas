@@ -81,7 +81,7 @@ export function NextActionCard({ hasTransactions, hasBoards, pendingRecurring, a
   const pct = Math.round((done / total) * 100)
 
   return (
-    <div className="bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] overflow-hidden">
+    <div className="nobli-card overflow-hidden">
       {/* Header */}
       <div className="px-5 pt-5 pb-4 border-b border-slate-100 dark:border-white/[0.06]">
         <div className="flex items-center justify-between gap-3 mb-3">

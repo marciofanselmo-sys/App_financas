@@ -31,13 +31,11 @@ const TYPE_FILTER_OPTIONS: { value: 'all' | TransactionType; label: string }[] =
   { value: 'all', label: 'Todos os Tipos' },
   { value: 'despesa', label: 'Despesa' },
   { value: 'receita', label: 'Receita' },
-  { value: 'transferencia', label: 'Transferência' },
 ]
 
 const TYPE_LABELS: Record<TransactionType, string> = {
   despesa: 'Despesa',
   receita: 'Receita',
-  transferencia: 'Transferência',
 }
 
 export default function BoardDetailPage() {
@@ -114,23 +112,15 @@ export default function BoardDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typeFilter])
 
-  // Entradas / Saídas / Saldo / Transferências do que está na tela (respeita mês e filtros)
+  // Entradas / Saídas / Saldo do que está na tela (respeita mês e filtros)
   const stats = useMemo(() => {
     const income = transactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
     const expenses = transactions.filter(t => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0)
-    // Movimentação interna líquida: o que entrou menos o que saiu entre contas
-    // suas. Não é gasto nem renda, mas move o saldo — por isso aparece à parte.
-    const transfers = transactions
-      .filter(t => t.is_internal)
-      .reduce((s, t) => t.type === 'receita' ? s + Number(t.amount) : s - Number(t.amount), 0)
-    // Saldo inclui a movimentação interna (ver balanceFromTransactions) e o
-    // saldo inicial da conta, que representa o que existia antes do primeiro
-    // lançamento importado.
+    // Saldo = saldo inicial da conta + entradas − saídas.
     return {
       income,
       expenses,
       balance: Number(board?.opening_balance ?? 0) + balanceFromTransactions(transactions),
-      transfers,
     }
   }, [transactions, board?.opening_balance])
 
@@ -157,7 +147,7 @@ export default function BoardDetailPage() {
       const result = await updateTransaction(editingTx.id, data)
       // Categoria E Tipo mudados de verdade "grudam" em todas as transações com
       // esse nome exato (categoria especial nunca entra aqui). Antes, só a
-      // categoria propagava — mudar o Tipo (ex: Despesa -> Transferência) pra
+      // categoria propagava — mudar o Tipo (ex: Despesa -> Receita) pra
       // corrigir uma classificação errada deixava as outras transações da mesma
       // descrição presas no tipo antigo. Usuário marca "só esta transação" no
       // formulário pra pular os dois quando não quiser esse comportamento.
@@ -361,8 +351,8 @@ export default function BoardDetailPage() {
         </div>
       </div>
 
-      {/* Entradas / Saídas / Saldo / Transferências — reflete o período e os filtros ativos */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* Entradas / Saídas / Saldo — reflete o período e os filtros ativos */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06]">
           <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Entradas</p>
           <p className="text-sm sm:text-base font-semibold text-green-600">{formatCurrency(stats.income)}</p>
@@ -376,10 +366,6 @@ export default function BoardDetailPage() {
           <p className={`text-sm sm:text-base font-semibold ${stats.balance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500'}`}>
             {formatCurrency(stats.balance)}
           </p>
-        </div>
-        <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06]">
-          <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Transferências</p>
-          <p className="text-sm sm:text-base font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(stats.transfers)}</p>
         </div>
       </div>
 

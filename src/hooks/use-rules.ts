@@ -39,9 +39,9 @@ function ruleUsableForDate(rule: CategorizationRule, date: string, categories: C
 }
 
 // Uma regra só pode ser aplicada a uma transação do mesmo tipo da sua categoria
-// alvo (receita/despesa/transferência) — "ambos" (ex: "Outros") vale pra qualquer
-// tipo. Evita que uma descrição igual por coincidência (ex: "Ajuste") em contextos
-// diferentes espalhe categoria de transferência pra despesa ou vice-versa.
+// alvo (receita/despesa) — "ambos" (ex: "Outros") vale pra qualquer tipo. Evita
+// que uma descrição igual por coincidência (ex: "Ajuste") em contextos
+// diferentes espalhe a categoria errada.
 function ruleUsableForType(rule: CategorizationRule, type: TransactionType, categories: Category[]): boolean {
   const cat = categories.find(c => c.name === rule.category)
   if (!cat) return true
@@ -68,12 +68,11 @@ export function applyUserRules(
   return { category: null, board_id: null }
 }
 
-// Igual applyRuleToExisting, mas pro campo `type` (Despesa/Receita/Transferência)
+// Igual applyRuleToExisting, mas pro campo `type` (Despesa/Receita)
 // em vez de categoria — mudar o Tipo de uma transação editada também "gruda"
 // em todas as outras com a mesma descrição exata, do mesmo jeito que já
-// acontecia só com categoria. Sem isso, corrigir o tipo de UMA transação de
-// Pix (ex: de Despesa pra Transferência) deixava as demais com a mesma
-// descrição presas no tipo antigo.
+// acontecia só com categoria. Sem isso, corrigir o tipo de UMA transação
+// deixava as demais com a mesma descrição presas no tipo antigo.
 export async function applyTypeToExisting(
   description: string,
   newType: TransactionType,
@@ -109,7 +108,7 @@ export async function applyTypeToExisting(
   if (error) {
     console.error('[applyTypeToExisting] update error:', error.message, '| code:', error.code, '| details:', error.details)
     const friendly = error.code === '23514'
-      ? 'Tipo não permitido pelo banco de dados. Rode a migração migration_transferencia_categories.sql no Supabase.'
+      ? 'Tipo não permitido pelo banco de dados.'
       : error.message
     return { count: 0, error: friendly }
   }

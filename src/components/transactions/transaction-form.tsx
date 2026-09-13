@@ -37,9 +37,6 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState('')
   const [type, setType] = useState<TransactionType>('despesa')
-  // "É movimentação entre minhas contas": não muda o tipo nem o saldo, só tira
-  // a linha dos totais do mês.
-  const [isInternal, setIsInternal] = useState(false)
   const [category, setCategory] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
@@ -69,7 +66,6 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
   // Só faz sentido oferecer a opção quando editar de fato muda categoria OU
   // tipo — são esses dois gatilhos (não a edição em si) que propagam pra
   // outras transações com a mesma descrição. Mudar só o Tipo (ex: Despesa ->
-  // Transferência) sem mudar a categoria também dispara isso.
   const categoryChanged = !isNewTransaction && category !== initialData?.category
   const typeChanged = !isNewTransaction && type !== initialData?.type
   const hasChangeToSync = categoryChanged || typeChanged
@@ -85,7 +81,6 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
       setAmount(initialData ? String(initialData.amount) : '')
       setDate(initialData?.date ?? new Date().toISOString().split('T')[0])
       setType(initialData?.type ?? 'despesa')
-      setIsInternal(initialData?.is_internal ?? false)
       setCategory(initialData?.category ?? '')
       setTags(initialData?.tags ?? [])
       setTagInput('')
@@ -138,7 +133,6 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
       amount: amountNum,
       date,
       type,
-      is_internal: isInternal,
       category,
       tags,
       board_id: initialData?.board_id ?? boardId ?? null,
@@ -152,7 +146,6 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
       description: parsed.data.description,
       amount: parsed.data.amount,
       type: parsed.data.type,
-      is_internal: parsed.data.is_internal ?? false,
       category: parsed.data.category,
       tags: parsed.data.tags,
       board_id: parsed.data.board_id ?? null,
@@ -220,25 +213,6 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
               ))}
             </div>
           </div>
-
-          {/* Movimentação interna: a linha continua sendo receita ou despesa
-              (move o saldo da conta), só não conta como renda nem gasto do mês.
-              Na importação isso é detectado sozinho — esta caixinha é para o
-              lançamento manual, onde o usuário sabe o que fez. */}
-          <label className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={isInternal}
-              onChange={e => setIsInternal(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-slate-300 dark:border-slate-600 accent-blue-600 cursor-pointer"
-            />
-            <span>
-              É movimentação entre minhas contas
-              <span className="block text-xs text-slate-400 dark:text-slate-500">
-                Move o saldo da conta, mas não conta como {type === 'receita' ? 'renda' : 'gasto'} do mês
-              </span>
-            </span>
-          </label>
 
           <div className="space-y-2">
             <Label htmlFor="description">Descrição</Label>

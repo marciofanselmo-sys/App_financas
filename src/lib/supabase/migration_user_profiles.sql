@@ -37,16 +37,23 @@ create policy "Users can update own profile"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
--- Admin lê todos os perfis (checa role na própria tabela user_profiles)
+-- Admin lê todos os perfis (via JWT — evita recursão infinita na policy)
+create or replace function public.is_app_admin()
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select coalesce(
+    (auth.jwt() ->> 'email') in ('marcio.fanselmo@gmail.com'),
+    false
+  );
+$$;
+
 create policy "Admin can view all profiles"
   on user_profiles for select
-  using (
-    exists (
-      select 1 from user_profiles admin
-      where admin.user_id = auth.uid()
-        and admin.role = 'admin'
-    )
-  );
+  using (auth.uid() = user_id or public.is_app_admin());
 
 -- Impede usuário comum de promover a si mesmo a admin
 create or replace function public.prevent_profile_role_escalation()

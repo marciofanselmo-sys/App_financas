@@ -315,7 +315,7 @@ export default function PlanningPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Planejamento Mensal</h1>
+          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Planejamento Mensal</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Defina metas e acompanhe Planejado × Realizado</p>
         </div>
         <PeriodFilter month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />

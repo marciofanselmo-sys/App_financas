@@ -12,8 +12,7 @@ import { TransactionType } from '@/types'
 import {
   RefreshCw, CheckCircle, EyeOff, Eye, AlertCircle, Clock,
   Layers, Plus, Tag, ChevronDown, X, CreditCard, ArrowRight,
-  TrendingDown, TrendingUp, ArrowLeftRight,
-} from 'lucide-react'
+  TrendingDown, TrendingUp, } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/components/ui/button'
 import { InfoBox } from '@/components/ui/info-box'
@@ -295,11 +294,6 @@ const TYPE_SECTIONS: {
   {
     type: 'receita', label: 'Receitas', icon: TrendingUp, iconColor: 'text-green-500', iconBg: 'bg-green-50 dark:bg-green-900/20', totalColor: 'text-green-600',
     help: 'Entradas fixas que se repetem todo mês (ex: salário). Confirmar ajuda a identificar sua renda previsível — não entra no total de gasto fixo.',
-  },
-  {
-    // Transferência fica sempre por último — é o tipo "secundário" entre os três.
-    type: 'transferencia', label: 'Transferências', icon: ArrowLeftRight, iconColor: 'text-slate-400', iconBg: 'bg-slate-100 dark:bg-slate-700', totalColor: 'text-slate-500 dark:text-slate-400',
-    help: 'Movimentações fixas entre suas próprias contas (ex: aplicação mensal num investimento). Confirmar só ajuda a identificar o padrão — não entra em nenhum total de gasto.',
   },
 ]
 
@@ -627,9 +621,9 @@ export default function FixosPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Recorrências</h1>
+          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Recorrências</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Receitas, despesas e transferências fixas detectadas nos últimos 12 meses — organizadas por tipo, cada uma com sua própria categoria
+            Receitas e despesas fixas detectadas nos últimos 12 meses — organizadas por tipo, cada uma com sua própria categoria
           </p>
         </div>
         <Link
@@ -649,7 +643,7 @@ export default function FixosPage() {
         <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
           <p className="font-semibold mb-1">Por que três seções?</p>
           <p className="text-blue-600 dark:text-blue-400">
-            Receita, despesa e transferência têm naturezas diferentes, então cada uma tem sua própria lista de pendentes/confirmados/ignorados. Só o lado de <strong>Despesas</strong> entra no número &ldquo;Despesas fixas / mês&rdquo; aqui em cima e no campo &ldquo;Gastos Previstos&rdquo; do Planejamento — confirmar uma receita ou transferência fixa não afeta esses totais, é só pra você identificar o padrão.
+            Receita e despesa têm naturezas diferentes, então cada uma tem sua própria lista de pendentes/confirmados/ignorados. Só o lado de <strong>Despesas</strong> entra no número &ldquo;Despesas fixas / mês&rdquo; aqui em cima e no campo &ldquo;Gastos Previstos&rdquo; do Planejamento — confirmar uma receita fixa não afeta esses totais, é só pra você identificar o padrão.
           </p>
         </div>
         <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
@@ -686,7 +680,7 @@ export default function FixosPage() {
           iconColor="text-sky-500"
           iconBg="bg-sky-50 dark:bg-sky-500/15"
           title="Nenhuma cobrança fixa detectada"
-          description="O app detecta automaticamente receitas, despesas e transferências que se repetem em 2 ou mais meses consecutivos."
+          description="O app detecta automaticamente receitas e despesas que se repetem em 2 ou mais meses consecutivos."
           primaryLabel="Importar extrato"
           primaryHref="/import"
           secondaryLabel="Como funciona"

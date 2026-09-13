@@ -12,7 +12,7 @@ import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Transaction, TRANSFER_CATEGORY_COLOR } from '@/types'
+import { Transaction } from '@/types'
 import { useRules } from '@/hooks/use-rules'
 import { categoriesForDate } from '@/lib/special-category-filter'
 import { installmentLabel } from '@/utils/format-installment'
@@ -43,7 +43,7 @@ export default function AnalyticsPage() {
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
   const [boardId, setBoardId] = useState<string>('all')
-  const [selectedCategory, setSelectedCategory] = useState<{ cat: string; type: 'despesa' | 'receita' | 'transferencia' } | null>(null)
+  const [selectedCategory, setSelectedCategory] = useState<{ cat: string; type: 'despesa' | 'receita' } | null>(null)
 
   const { boards } = useTransactionBoards()
   const { categories } = useCategories()
@@ -65,24 +65,15 @@ export default function AnalyticsPage() {
     exclude_board_ids: boardId === 'all' ? unpinnedBoardIds : undefined,
   })
 
-  const { totalIncome, totalExpenses, totalTransfers, balance, expenseByCategory, incomeByCategory, transferByCategory } = useMemo(() => {
+  const { totalIncome, totalExpenses, balance, expenseByCategory, incomeByCategory } = useMemo(() => {
     let totalIncome = 0
     let totalExpenses = 0
-    let totalTransfers = 0
     const expenseMap: Record<string, { total: number; count: number }> = {}
     const incomeMap: Record<string, { total: number; count: number }> = {}
-    const transferMap: Record<string, { total: number; count: number }> = {}
 
     for (const t of transactions) {
       const amt = Number(t.amount)
-      // Movimentação entre contas do próprio usuário: some à parte, nunca
-      // junto de receita/despesa.
-      if (t.is_internal || t.type === 'transferencia') {
-        totalTransfers += amt
-        transferMap[t.category] = transferMap[t.category] ?? { total: 0, count: 0 }
-        transferMap[t.category].total += amt
-        transferMap[t.category].count += 1
-      } else if (t.type === 'receita') {
+      if (t.type === 'receita') {
         totalIncome += amt
         incomeMap[t.category] = incomeMap[t.category] ?? { total: 0, count: 0 }
         incomeMap[t.category].total += amt
@@ -103,22 +94,18 @@ export default function AnalyticsPage() {
       .map(([cat, d]) => ({ cat, total: d.total, count: d.count, pct: totalIncome > 0 ? (d.total / totalIncome) * 100 : 0 }))
       .sort((a, b) => b.total - a.total)
 
-    const transferByCategory = Object.entries(transferMap)
-      .map(([cat, d]) => ({ cat, total: d.total, count: d.count, pct: totalTransfers > 0 ? (d.total / totalTransfers) * 100 : 0 }))
       .sort((a, b) => b.total - a.total)
 
-    return { totalIncome, totalExpenses, totalTransfers, balance: totalIncome - totalExpenses, expenseByCategory, incomeByCategory, transferByCategory }
+    return { totalIncome, totalExpenses, balance: totalIncome - totalExpenses, expenseByCategory, incomeByCategory }
   }, [transactions])
 
   const maxExpense = expenseByCategory[0]?.total ?? 1
-  const maxTransfer = transferByCategory[0]?.total ?? 1
 
   async function handleRecategorize(txId: string, newCategory: string) {
     const tx = transactions.find(t => t.id === txId)
     setSavingTxId(txId)
     await updateTransaction(txId, { category: newCategory })
     // Categoria normal: "gruda" em todas as transações com esse nome exato via
-    // regra automática (categoria especial nunca entra aqui). Transferência
     // também entra normalmente (decisão revertida em 2026-07-08).
     if (tx) {
       setRuleSyncSuccess(null)
@@ -387,59 +374,6 @@ export default function AnalyticsPage() {
             </section>
           )}
 
-          {/* Transfer breakdown — sempre na cor cinza de transferência, não por categoria. Fica sempre por último. */}
-          {transferByCategory.length > 0 && (
-            <section>
-              <div className="mb-4">
-                <div className="flex items-center gap-2">
-                  <BarChart2 className="h-4 w-4 text-slate-400" />
-                  <h2 className="text-base font-semibold text-slate-700 dark:text-slate-200">Transferências por Categoria</h2>
-                </div>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 ml-6">
-                  Movimentação entre suas próprias contas (ex: pagar fatura, aplicar num investimento) — não é gasto nem ganho real, por isso fica fora do saldo e do planejamento.
-                </p>
-              </div>
-
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
-                <div className="p-5 space-y-3">
-                  {transferByCategory.map(({ cat, total, count, pct }) => (
-                    <button
-                      key={cat}
-                      className="w-full text-left group"
-                      onClick={() => setSelectedCategory({ cat, type: 'transferencia' })}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
-                            style={{ backgroundColor: TRANSFER_CATEGORY_COLOR }}
-                          />
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:underline">{cat}</span>
-                          <span className="text-xs text-slate-400">({count} {count === 1 ? 'lançamento' : 'lançamentos'})</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs text-slate-400 w-10 text-right">{pct.toFixed(0)}%</span>
-                          <span className="text-sm font-semibold text-slate-500 dark:text-slate-400 w-28 text-right">{fmt(total)}</span>
-                        </div>
-                      </div>
-                      <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all duration-500"
-                          style={{ width: `${(total / maxTransfer) * 100}%`, backgroundColor: TRANSFER_CATEGORY_COLOR }}
-                        />
-                      </div>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="border-t border-slate-100 dark:border-slate-700 px-5 py-3 bg-slate-50 dark:bg-slate-700/40 flex justify-between items-center">
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total transferido</span>
-                  <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{fmt(totalTransfers)}</span>
-                </div>
-              </div>
-            </section>
-          )}
-
           {/* Quick link to recurring */}
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 rounded-xl p-4 flex items-center justify-between gap-4">
             <div>
@@ -466,9 +400,7 @@ export default function AnalyticsPage() {
                 style={{
                   backgroundColor: !selectedCategory
                     ? '#6366f1'
-                    : selectedCategory.type === 'transferencia'
-                      ? TRANSFER_CATEGORY_COLOR
-                      : colorFor(selectedCategory.cat),
+                    : colorFor(selectedCategory.cat),
                 }}
               />
               {selectedCategory?.cat}
@@ -538,8 +470,8 @@ export default function AnalyticsPage() {
                     })()}
 
                     {/* Coluna 3: valor */}
-                    <span className={`text-sm font-semibold shrink-0 w-24 text-right ${tx.is_internal || tx.type === 'transferencia' ? 'text-slate-400' : tx.type === 'receita' ? 'text-green-600' : 'text-red-500'}`}>
-                      {tx.type === 'transferencia' ? '' : tx.type === 'receita' ? '+ ' : '- '}{fmt(Number(tx.amount))}
+                    <span className={`text-sm font-semibold shrink-0 w-24 text-right ${tx.type === 'receita' ? 'text-green-600' : 'text-red-500'}`}>
+                      {tx.type === 'receita' ? '+ ' : '- '}{fmt(Number(tx.amount))}
                     </span>
                   </div>
                 ))}
@@ -549,7 +481,7 @@ export default function AnalyticsPage() {
 
           <div className="border-t border-slate-100 dark:border-slate-700 pt-3 flex justify-between items-center mt-2">
             <span className="text-xs text-slate-500">{categoryTxs.length} {categoryTxs.length === 1 ? 'lançamento' : 'lançamentos'}</span>
-            <span className={`text-sm font-bold ${selectedCategory?.type === 'receita' ? 'text-green-600' : selectedCategory?.type === 'transferencia' ? 'text-slate-500 dark:text-slate-400' : 'text-red-500'}`}>
+            <span className={`text-sm font-bold ${selectedCategory?.type === 'receita' ? 'text-green-600' : 'text-red-500'}`}>
               {fmt(categoryTxs.reduce((s, t) => s + Number(t.amount), 0))}
             </span>
           </div>

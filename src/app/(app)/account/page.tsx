@@ -8,8 +8,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   User, Lock, AlertTriangle, CheckCircle, Eye, EyeOff,
-  Mail, Shield, Trash2,
+  Mail, Shield, Trash2, Download,
 } from 'lucide-react'
+import { changePasswordSchema } from '@/lib/schemas/auth'
+import { formatUserError } from '@/lib/supabase-error'
+import { downloadJsonExport, exportUserData } from '@/lib/account-export'
+import { deleteAccountComplete } from '@/lib/delete-account'
 
 type Tab = 'perfil' | 'senha' | 'conta'
 
@@ -93,8 +97,10 @@ function TabPerfil() {
 
 // ── Tab: Senha ───────────────────────────────────────────────────────────────
 function TabSenha() {
+  const [currentPass, setCurrentPass] = useState('')
   const [newPass, setNewPass]         = useState('')
   const [confirmPass, setConfirmPass] = useState('')
+  const [showCurrent, setShowCurrent] = useState(false)
   const [showNew, setShowNew]         = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [saving, setSaving]           = useState(false)
@@ -104,21 +110,41 @@ function TabSenha() {
     e.preventDefault()
     setMsg(null)
 
-    if (newPass.length < 6) {
-      setMsg({ ok: false, text: 'A nova senha deve ter pelo menos 6 caracteres.' })
-      return
-    }
-    if (newPass !== confirmPass) {
-      setMsg({ ok: false, text: 'As senhas não coincidem.' })
+    const parsed = changePasswordSchema.safeParse({
+      currentPassword: currentPass,
+      newPassword: newPass,
+      confirmPassword: confirmPass,
+    })
+    if (!parsed.success) {
+      setMsg({ ok: false, text: parsed.error.issues[0]?.message ?? 'Dados inválidos.' })
       return
     }
 
     setSaving(true)
-    const { error } = await createClient().auth.updateUser({ password: newPass })
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user?.email) {
+      setMsg({ ok: false, text: 'Sessão inválida. Faça login novamente.' })
+      setSaving(false)
+      return
+    }
+
+    const { error: reauthError } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: currentPass,
+    })
+    if (reauthError) {
+      setMsg({ ok: false, text: 'Senha atual incorreta.' })
+      setSaving(false)
+      return
+    }
+
+    const { error } = await supabase.auth.updateUser({ password: newPass })
     if (error) {
-      setMsg({ ok: false, text: 'Erro ao alterar a senha. Tente novamente.' })
+      setMsg({ ok: false, text: formatUserError(error, 'Erro ao alterar a senha. Tente novamente.') })
     } else {
       setMsg({ ok: true, text: 'Senha alterada com sucesso.' })
+      setCurrentPass('')
       setNewPass('')
       setConfirmPass('')
     }
@@ -126,20 +152,39 @@ function TabSenha() {
   }
 
   const strength = newPass.length === 0 ? null
-    : newPass.length < 6  ? { label: 'Fraca',   color: 'bg-red-500',    w: 'w-1/4' }
-    : newPass.length < 10 ? { label: 'Média',   color: 'bg-amber-500',  w: 'w-2/4' }
-    : newPass.length < 14 ? { label: 'Forte',   color: 'bg-emerald-500',w: 'w-3/4' }
+    : newPass.length < 8  ? { label: 'Fraca',   color: 'bg-red-500',    w: 'w-1/4' }
+    : newPass.length < 12 ? { label: 'Média',   color: 'bg-amber-500',  w: 'w-2/4' }
+    : newPass.length < 16 ? { label: 'Forte',   color: 'bg-emerald-500',w: 'w-3/4' }
     :                        { label: 'Excelente',color:'bg-blue-500',   w: 'w-full' }
 
   return (
     <form onSubmit={handleSave} className="space-y-5">
+      <div className="space-y-2">
+        <Label htmlFor="current-pass">Senha atual</Label>
+        <div className="relative">
+          <Input
+            id="current-pass"
+            type={showCurrent ? 'text' : 'password'}
+            placeholder="Sua senha atual"
+            value={currentPass}
+            onChange={e => setCurrentPass(e.target.value)}
+            required
+            className="pr-10"
+          />
+          <button type="button" onClick={() => setShowCurrent(v => !v)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+            {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+      </div>
+
       <div className="space-y-2">
         <Label htmlFor="new-pass">Nova senha</Label>
         <div className="relative">
           <Input
             id="new-pass"
             type={showNew ? 'text' : 'password'}
-            placeholder="Mínimo 6 caracteres"
+            placeholder="Mínimo 8 caracteres"
             value={newPass}
             onChange={e => setNewPass(e.target.value)}
             required
@@ -185,7 +230,7 @@ function TabSenha() {
         {confirmPass && newPass !== confirmPass && (
           <p className="text-xs text-red-500">As senhas não coincidem.</p>
         )}
-        {confirmPass && newPass === confirmPass && newPass.length >= 6 && (
+        {confirmPass && newPass === confirmPass && newPass.length >= 8 && (
           <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
             <CheckCircle className="h-3 w-3" /> As senhas coincidem.
           </p>
@@ -205,37 +250,41 @@ function TabSenha() {
 function TabConta() {
   const router = useRouter()
   const [confirm, setConfirm]   = useState('')
+  const [deletePassword, setDeletePassword] = useState('')
   const [deleting, setDeleting] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [msg, setMsg]           = useState<{ ok: boolean; text: string } | null>(null)
   const CONFIRM_WORD = 'EXCLUIR'
 
+  async function handleExport() {
+    setExporting(true)
+    setMsg(null)
+    try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Sessão inválida.')
+      const data = await exportUserData(user.id)
+      downloadJsonExport(data, `financeapp-dados-${new Date().toISOString().slice(0, 10)}.json`)
+      setMsg({ ok: true, text: 'Exportação concluída.' })
+    } catch (err) {
+      setMsg({ ok: false, text: formatUserError(err, 'Erro ao exportar dados.') })
+    } finally {
+      setExporting(false)
+    }
+  }
+
   async function handleDelete() {
-    if (confirm !== CONFIRM_WORD) return
+    if (confirm !== CONFIRM_WORD || !deletePassword) return
     setDeleting(true)
     setMsg(null)
 
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setDeleting(false); return }
+    const result = await deleteAccountComplete(deletePassword, CONFIRM_WORD)
+    if (result.error) {
+      setMsg({ ok: false, text: result.error })
+      setDeleting(false)
+      return
+    }
 
-    // Apaga todos os dados do usuário nas tabelas. Lista corrigida em 2026-07-08:
-    // 'planning' era o nome de uma tabela que nunca existiu (a real é
-    // 'budget_plans') — o planejamento nunca era apagado ao excluir a conta.
-    // Também faltavam transaction_boards, categorization_rules,
-    // recurring_groups e recurring_decisions.
-    await Promise.all([
-      supabase.from('transactions').delete().eq('user_id', user.id),
-      supabase.from('goals').delete().eq('user_id', user.id),
-      supabase.from('categories').delete().eq('user_id', user.id),
-      supabase.from('budget_plans').delete().eq('user_id', user.id),
-      supabase.from('transaction_boards').delete().eq('user_id', user.id),
-      supabase.from('categorization_rules').delete().eq('user_id', user.id),
-      supabase.from('recurring_groups').delete().eq('user_id', user.id),
-      supabase.from('recurring_decisions').delete().eq('user_id', user.id),
-      supabase.from('user_profiles').delete().eq('user_id', user.id),
-    ])
-
-    await supabase.auth.signOut()
     router.push('/auth/login')
     router.refresh()
   }
@@ -262,6 +311,24 @@ function TabConta() {
         </div>
       </div>
 
+      <div className="border border-slate-200 dark:border-white/10 rounded-2xl p-5 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="h-9 w-9 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mt-0.5">
+            <Download className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-slate-700 dark:text-slate-200">Exportar meus dados (LGPD)</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+              Baixe um arquivo JSON com transações, categorias, metas, planejamento e preferências.
+            </p>
+          </div>
+        </div>
+        <Button type="button" variant="outline" disabled={exporting} onClick={handleExport} className="gap-2">
+          <Download className="h-4 w-4" />
+          {exporting ? 'Exportando...' : 'Baixar meus dados'}
+        </Button>
+      </div>
+
       {/* Danger zone */}
       <div className="border border-red-200 dark:border-red-800/60 rounded-2xl p-5 space-y-4">
         <div className="flex items-start gap-3">
@@ -274,6 +341,20 @@ function TabConta() {
               Todos os seus dados serão permanentemente excluídos: transações, metas, categorias e planejamento. Esta ação não pode ser desfeita.
             </p>
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="delete-password" className="text-sm text-slate-600 dark:text-slate-400">
+            Sua senha atual
+          </Label>
+          <Input
+            id="delete-password"
+            type="password"
+            placeholder="Confirme com sua senha"
+            value={deletePassword}
+            onChange={e => setDeletePassword(e.target.value)}
+            className="border-red-200 dark:border-red-800/60 focus-visible:ring-red-400"
+          />
         </div>
 
         <div className="space-y-2">
@@ -293,7 +374,7 @@ function TabConta() {
 
         <Button
           variant="destructive"
-          disabled={confirm !== CONFIRM_WORD || deleting}
+          disabled={confirm !== CONFIRM_WORD || !deletePassword || deleting}
           onClick={handleDelete}
           className="w-full gap-2"
         >
@@ -318,7 +399,7 @@ export default function AccountPage() {
   return (
     <div className="space-y-6 max-w-xl mx-auto">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Minha conta</h1>
+        <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Minha conta</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Gerencie suas informações e preferências de segurança</p>
       </div>
 

@@ -161,62 +161,66 @@ export function SummaryCards({ summary }: { summary: DashboardSummary }) {
   return (
     <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Receitas */}
-        <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-white/[0.06]">
+        {/* Receitas — valor navy premium, movimento sinalizado em verde */}
+        <div className="nobli-card p-5">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Receitas</span>
-            <div className="h-8 w-8 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center">
-              <TrendingUp className="h-4 w-4 text-emerald-500" />
+            <span className="nobli-kpi-label">Receitas</span>
+            <div className="nobli-chip h-8 w-8 rounded-lg">
+              <TrendingUp className="h-4 w-4" />
             </div>
           </div>
-          <p className="text-[1.6rem] font-bold text-emerald-600 dark:text-emerald-400 leading-none tabular-nums">
+          <p className="nobli-kpi-value">
             {formatCurrency(totalIncome)}
           </p>
-          <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">Total do período</p>
+          <p className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 mt-2.5">
+            <TrendingUp className="h-3 w-3" /> Entradas do período
+          </p>
         </div>
 
         {/* Despesas */}
-        <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-white/[0.06]">
+        <div className="nobli-card p-5">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Despesas</span>
-            <div className="h-8 w-8 rounded-xl bg-red-50 dark:bg-red-500/10 flex items-center justify-center">
-              <TrendingDown className="h-4 w-4 text-red-500" />
+            <span className="nobli-kpi-label">Despesas</span>
+            <div className="nobli-chip h-8 w-8 rounded-lg">
+              <TrendingDown className="h-4 w-4" />
             </div>
           </div>
-          <p className="text-[1.6rem] font-bold text-red-500 leading-none tabular-nums">
+          <p className="nobli-kpi-value">
             {formatCurrency(totalExpenses)}
           </p>
-          <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">Total do período</p>
+          <p className="flex items-center gap-1 text-xs font-medium text-red-500 dark:text-red-400 mt-2.5">
+            <TrendingDown className="h-3 w-3" /> Saídas do período
+          </p>
         </div>
 
-        {/* Saldo */}
-        <div className={`rounded-2xl p-5 shadow-md ${
+        {/* Saldo — card hero em gradiente institucional (REF mobile) */}
+        <div className={`rounded-2xl p-5 shadow-[var(--nobli-shadow-m)] ${
           positive
-            ? 'bg-blue-600 shadow-blue-600/20'
-            : 'bg-red-500 shadow-red-500/20'
+            ? 'nobli-gradient'
+            : 'bg-gradient-to-br from-red-500 to-red-700'
         }`}>
           <div className="flex items-center justify-between mb-4">
-            <span className="text-[10px] font-semibold text-white/60 uppercase tracking-widest">Saldo</span>
-            <div className="h-8 w-8 rounded-xl bg-white/15 flex items-center justify-center">
+            <span className="text-[13px] font-medium text-white/80">Saldo</span>
+            <div className="h-8 w-8 rounded-lg bg-white/15 border border-white/20 flex items-center justify-center">
               <Wallet className="h-4 w-4 text-white" />
             </div>
           </div>
-          <p className="text-[1.6rem] font-bold text-white leading-none tabular-nums">
+          <p className="font-heading text-[1.55rem] font-bold text-white leading-none tabular-nums tracking-tight">
             {formatCurrency(balance)}
           </p>
-          <p className="text-xs text-white/50 mt-2">Receitas − Despesas</p>
+          <p className="text-xs text-white/60 mt-2.5">Receitas − Despesas</p>
         </div>
 
         {/* Saúde Financeira — clicável */}
         <button
           onClick={() => hasData && setHealthOpen(true)}
-          className={`bg-white dark:bg-[#111c2d] rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-white/[0.06] text-left w-full ${hasData ? 'hover:shadow-md hover:border-purple-200 dark:hover:border-purple-500/30 transition-all cursor-pointer' : 'cursor-default'}`}
+          className={`nobli-card p-5 text-left w-full ${hasData ? 'hover:shadow-[var(--nobli-shadow-m)] hover:border-[#2563EB]/25 transition-all cursor-pointer' : 'cursor-default'}`}
         >
           <div className="flex items-center justify-between mb-4">
-            <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Saúde</span>
-            <div className={`h-8 w-8 rounded-xl flex items-center justify-center ${hasData ? 'bg-purple-50 dark:bg-purple-500/10' : 'bg-slate-100 dark:bg-slate-700/50'}`}>
+            <span className="nobli-kpi-label">Saúde</span>
+            <div className={hasData ? 'nobli-chip h-8 w-8 rounded-lg' : 'h-8 w-8 rounded-lg bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center'}>
               {hasData
-                ? <Activity className="h-4 w-4 text-purple-500" />
+                ? <Activity className="h-4 w-4" />
                 : <MinusCircle className="h-4 w-4 text-slate-400" />
               }
             </div>
@@ -225,8 +229,8 @@ export function SummaryCards({ summary }: { summary: DashboardSummary }) {
           {hasData && cfg ? (
             <>
               <div className="flex items-baseline gap-1.5">
-                <p className={`text-[1.6rem] font-bold leading-none tabular-nums ${cfg.color}`}>{score}</p>
-                <span className="text-sm text-slate-400 dark:text-slate-500 font-normal">/100</span>
+                <p className="nobli-kpi-value">{score}</p>
+                <span className="text-sm text-[#93A5C1] dark:text-slate-500 font-normal">/100</span>
               </div>
               <div className="mt-3 h-1.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
                 <div className={`h-full rounded-full transition-all duration-700 ${cfg.barColor}`} style={{ width: `${score!}%` }} />

@@ -52,9 +52,6 @@ export function aggregateMonthlyFlow(
   )
 
   for (const t of transactions) {
-    // Movimentação interna (pagar a própria fatura, aporte, Pix entre contas
-    // suas) move o saldo, mas não é renda nem gasto — fica fora daqui.
-    if (t.is_internal || t.type === 'transferencia') continue
     const key = t.date.slice(0, 7)
     const bucket = map.get(key)
     if (!bucket) continue

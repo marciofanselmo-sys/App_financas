@@ -1,7 +1,6 @@
 'use client'
 
 import type { TransactionType } from '@/types'
-import { isTransferDescription } from './detect-transfer'
 import { parseAmountBR } from './parse-amount'
 import { stripEmbeddedDate } from './strip-embedded-date'
 
@@ -65,9 +64,7 @@ export function parseMercadoPagoPDF(fullText: string): MercadoPagoRow[] | null {
     if (description.length > 100) continue
 
     const amount = Math.abs(rawValue)
-    const type: TransactionType = isTransferDescription(description)
-      ? 'transferencia'
-      : rawValue < 0 ? 'despesa' : 'receita'
+    const type: TransactionType = rawValue < 0 ? 'despesa' : 'receita'
 
     rows.push({ description, amount, date, type, category: 'Outros', valid: true, errors: [] })
   }

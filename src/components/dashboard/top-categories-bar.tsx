@@ -23,14 +23,14 @@ export function TopCategoriesBar({ transactions }: TopCategoriesBarProps) {
 
   if (data.length === 0) {
     return (
-      <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-slate-700 flex items-center justify-center min-h-[200px]">
+      <div className="nobli-card p-5 flex items-center justify-center min-h-[200px]">
         <p className="text-sm text-slate-400 dark:text-slate-500">Nenhuma despesa no período</p>
       </div>
     )
   }
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-slate-700">
+    <div className="nobli-card p-5">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Top 5 Gastos</h3>
         <Link href="/analytics" className="text-xs text-blue-600 hover:underline">

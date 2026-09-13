@@ -13,7 +13,7 @@ interface CashBalanceTrendChartProps {
 
 export function CashBalanceTrendChart({ data, loading }: CashBalanceTrendChartProps) {
   if (loading) {
-    return <div className="h-72 rounded-2xl animate-pulse bg-white dark:bg-[#111c2d] border border-slate-100 dark:border-white/[0.06]" />
+    return <div className="h-72 nobli-card animate-pulse" />
   }
 
   const hasData = data.some(d => d.saldo !== 0)
@@ -32,19 +32,19 @@ export function CashBalanceTrendChart({ data, loading }: CashBalanceTrendChartPr
           <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="saldoGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.25} />
-                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                <stop offset="5%" stopColor="#2563EB" stopOpacity={0.22} />
+                <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-white/10" vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" className="stroke-[#E8F2FF] dark:stroke-white/10" vertical={false} />
             <XAxis
               dataKey="label"
-              tick={{ fontSize: 11, fill: '#94a3b8' }}
+              tick={{ fontSize: 11, fill: '#93A5C1' }}
               axisLine={false}
               tickLine={false}
             />
             <YAxis
-              tick={{ fontSize: 10, fill: '#94a3b8' }}
+              tick={{ fontSize: 10, fill: '#93A5C1' }}
               axisLine={false}
               tickLine={false}
               tickFormatter={v => (Math.abs(v) >= 1000 ? `${Math.round(v / 1000)}k` : String(v))}
@@ -53,15 +53,17 @@ export function CashBalanceTrendChart({ data, loading }: CashBalanceTrendChartPr
             <Tooltip
               formatter={(value) => formatChartCurrency(Number(value))}
               labelFormatter={label => `Fim de ${label}`}
-              contentStyle={{ borderRadius: 12, fontSize: 12 }}
+              contentStyle={{ borderRadius: 12, fontSize: 12, border: '1px solid #DDE7F3', boxShadow: 'var(--nobli-shadow-s)' }}
             />
             <Area
               type="monotone"
               dataKey="saldo"
               name="Saldo"
-              stroke="#3b82f6"
-              strokeWidth={2}
+              stroke="#2563EB"
+              strokeWidth={2.5}
               fill="url(#saldoGradient)"
+              dot={false}
+              activeDot={{ r: 5, fill: '#2563EB', stroke: '#fff', strokeWidth: 2 }}
             />
           </AreaChart>
         </ResponsiveContainer>

@@ -18,18 +18,18 @@ interface InvestTargetChartProps {
 
 export function InvestTargetChart({ data, loading }: InvestTargetChartProps) {
   if (loading) {
-    return <div className="h-64 rounded-2xl animate-pulse bg-white dark:bg-[#111c2d] border border-slate-100 dark:border-white/[0.06]" />
+    return <div className="h-64 nobli-card animate-pulse" />
   }
 
   const hasData = data.some(d => d.meta > 0 || d.aportes > 0)
   if (!hasData) return null
 
   return (
-    <div className="bg-white dark:bg-[#111c2d] rounded-2xl border border-slate-100 dark:border-white/[0.06] shadow-sm overflow-hidden">
+    <div className="nobli-card overflow-hidden">
       <div className="px-5 pt-5 pb-2">
         <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Meta investir × Aportes reais</h3>
         <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
-          Aportes = transferências para contas de investimento · últimos 6 meses
+          Aportes = dinheiro enviado para contas de investimento · últimos 6 meses
         </p>
       </div>
       <div className="px-3 pb-4">
@@ -46,8 +46,8 @@ export function InvestTargetChart({ data, loading }: InvestTargetChartProps) {
             />
             <Tooltip formatter={(v) => formatChartCurrency(Number(v))} contentStyle={{ borderRadius: 12, fontSize: 12 }} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="meta" name="Meta" fill="#94a3b8" radius={[4, 4, 0, 0]} maxBarSize={24} />
-            <Bar dataKey="aportes" name="Aportes" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={24} />
+            <Bar dataKey="meta" name="Meta" fill="#BFD6F6" radius={[6, 6, 0, 0]} maxBarSize={24} />
+            <Bar dataKey="aportes" name="Aportes" fill="#2563EB" radius={[6, 6, 0, 0]} maxBarSize={24} />
           </BarChart>
         </ResponsiveContainer>
       </div>

@@ -13,7 +13,7 @@ interface MonthlyFlowChartProps {
 
 export function MonthlyFlowChart({ data, loading }: MonthlyFlowChartProps) {
   if (loading) {
-    return <div className="h-72 rounded-2xl animate-pulse bg-white dark:bg-[#111c2d] border border-slate-100 dark:border-white/[0.06]" />
+    return <div className="h-72 nobli-card animate-pulse" />
   }
 
   const hasData = data.some(d => d.receita > 0 || d.despesa > 0)
@@ -31,15 +31,15 @@ export function MonthlyFlowChart({ data, loading }: MonthlyFlowChartProps) {
       ) : (
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-white/10" vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" className="stroke-[#E8F2FF] dark:stroke-white/10" vertical={false} />
             <XAxis
               dataKey="label"
-              tick={{ fontSize: 11, fill: 'var(--chart-axis, #94a3b8)' }}
+              tick={{ fontSize: 11, fill: '#93A5C1' }}
               axisLine={false}
               tickLine={false}
             />
             <YAxis
-              tick={{ fontSize: 10, fill: 'var(--chart-axis, #94a3b8)' }}
+              tick={{ fontSize: 10, fill: '#93A5C1' }}
               axisLine={false}
               tickLine={false}
               tickFormatter={v => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))}
@@ -49,16 +49,18 @@ export function MonthlyFlowChart({ data, loading }: MonthlyFlowChartProps) {
               formatter={(value) => formatChartCurrency(Number(value))}
               contentStyle={{
                 borderRadius: 12,
-                border: '1px solid rgba(148,163,184,0.2)',
+                border: '1px solid #DDE7F3',
+                boxShadow: 'var(--nobli-shadow-s)',
                 fontSize: 12,
               }}
+              cursor={{ fill: 'rgba(37, 99, 235, 0.05)' }}
             />
             <Legend
               wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
               formatter={v => <span className="text-slate-600 dark:text-slate-300">{v}</span>}
             />
-            <Bar dataKey="receita" name="Receita" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={28} />
-            <Bar dataKey="despesa" name="Despesa" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={28} />
+            <Bar dataKey="receita" name="Receita" fill="#10B981" radius={[6, 6, 0, 0]} maxBarSize={28} />
+            <Bar dataKey="despesa" name="Despesa" fill="#F87171" radius={[6, 6, 0, 0]} maxBarSize={28} />
           </BarChart>
         </ResponsiveContainer>
       )}

@@ -51,12 +51,12 @@ export function PeriodFilter({ month, year, onMonthChange, onYearChange }: Perio
 
   return (
     <div className="relative" ref={ref}>
-      <div className="flex items-center gap-1 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl shadow-sm">
+      <div className="flex items-center gap-1 bg-white dark:bg-white/[0.04] border border-[#DDE7F3] dark:border-white/[0.08] rounded-full shadow-[var(--nobli-shadow-s)]">
         {/* Seta anterior */}
         <button
           type="button"
           onClick={prev}
-          className="flex items-center justify-center h-9 w-9 rounded-l-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors"
+          className="flex items-center justify-center h-9 w-9 rounded-full text-[#93A5C1] hover:text-[#2563EB] hover:bg-[#E8F2FF] dark:hover:text-blue-300 dark:hover:bg-white/[0.06] transition-colors"
           aria-label="Mês anterior"
         >
           <ChevronLeft className="h-4 w-4" />
@@ -66,17 +66,17 @@ export function PeriodFilter({ month, year, onMonthChange, onYearChange }: Perio
         <button
           type="button"
           onClick={() => setPickerOpen(o => !o)}
-          className="flex items-center gap-1.5 px-2 py-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 transition-colors min-w-[130px] justify-center"
+          className="flex items-center gap-1.5 px-2 py-1.5 text-sm font-semibold text-[#0B2D6B] dark:text-slate-200 hover:text-[#2563EB] dark:hover:text-blue-400 transition-colors min-w-[130px] justify-center"
         >
           <span>{MONTHS[month - 1]}</span>
-          <span className="font-normal text-slate-400 dark:text-slate-500">{year}</span>
+          <span className="font-normal text-[#93A5C1] dark:text-slate-500">{year}</span>
         </button>
 
         {/* Seta próxima */}
         <button
           type="button"
           onClick={next}
-          className="flex items-center justify-center h-9 w-9 rounded-r-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors"
+          className="flex items-center justify-center h-9 w-9 rounded-full text-[#93A5C1] hover:text-[#2563EB] hover:bg-[#E8F2FF] dark:hover:text-blue-300 dark:hover:bg-white/[0.06] transition-colors"
           aria-label="Próximo mês"
         >
           <ChevronRight className="h-4 w-4" />
@@ -85,7 +85,7 @@ export function PeriodFilter({ month, year, onMonthChange, onYearChange }: Perio
 
       {/* Picker de mês/ano */}
       {pickerOpen && (
-        <div className="absolute right-0 top-full mt-2 z-50 bg-white dark:bg-[#1a2840] border border-slate-200 dark:border-white/[0.08] rounded-2xl shadow-xl p-4 w-72">
+        <div className="absolute right-0 top-full mt-2 z-50 bg-white dark:bg-[#101F36] border border-[#DDE7F3] dark:border-white/[0.08] rounded-2xl shadow-[var(--nobli-shadow-m)] p-4 w-72">
           {/* Seletor de ano */}
           <div className="flex items-center justify-between mb-3">
             <button

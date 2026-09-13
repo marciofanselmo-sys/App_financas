@@ -172,8 +172,6 @@ export default function DashboardPage() {
 
   const summary: DashboardSummary = transactions.reduce(
     (acc, t) => {
-      // Movimentação interna move o saldo da conta, mas não é renda nem gasto.
-      if (t.is_internal || t.type === 'transferencia') return acc
       if (t.type === 'receita') acc.totalIncome += Number(t.amount)
       else acc.totalExpenses += Number(t.amount)
       acc.balance = acc.totalIncome - acc.totalExpenses

@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { TransactionBoard } from '@/types'
+import { validateImportFile } from '@/lib/import-limits'
 import { parseRICOXLSX, RICOData } from '@/utils/parse-rico'
 
 type UpdateBoardFn = (id: string, data: Partial<Omit<TransactionBoard, 'id' | 'user_id' | 'created_at'>>) => void | Promise<void>
@@ -24,28 +25,28 @@ export function usePositionImport(updateBoard: UpdateBoardFn) {
     setTimeout(() => fileRef.current?.click(), 50)
   }
 
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
+
+    const fileCheck = validateImportFile(file)
+    if (!fileCheck.ok) {
+      setError(fileCheck.error)
+      setImportFor(null)
+      return
+    }
+
     setLoading(true)
     setError('')
-    const reader = new FileReader()
-    reader.onload = ev => {
-      try {
-        setPreview(parseRICOXLSX(ev.target?.result as ArrayBuffer))
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Erro ao ler o arquivo.')
-        setImportFor(null)
-      } finally {
-        setLoading(false)
-      }
-    }
-    reader.onerror = () => {
-      setError('Erro ao ler o arquivo.')
-      setLoading(false)
+    try {
+      const buffer = await file.arrayBuffer()
+      setPreview(await parseRICOXLSX(buffer))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao ler o arquivo.')
       setImportFor(null)
+    } finally {
+      setLoading(false)
     }
-    reader.readAsArrayBuffer(file)
   }
 
   function confirm() {
