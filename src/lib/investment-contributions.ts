@@ -13,10 +13,15 @@ export function sumInvestmentContributions(
     .filter(n => n.length >= 2)
 
   const matches = transactions.filter(t => {
-    if (t.type !== 'transferencia') return false
-    if (t.board_id && investmentIds.has(t.board_id)) return true
+    // Só movimentação interna: comprar algo com o cartão não é aporte.
+    if (!t.is_internal) return false
+    // Na própria conta de investimento, aporte é o dinheiro CHEGANDO. Até
+    // set/2026 qualquer movimento contava, então um resgate era somado como
+    // se fosse aporte — inflava o total investido no mês.
+    if (t.board_id && investmentIds.has(t.board_id)) return t.type === 'receita'
+    // Na conta de origem, aporte é o dinheiro SAINDO em direção à corretora.
     const desc = t.description.toLowerCase()
-    return investmentNames.some(name => desc.includes(name))
+    return t.type === 'despesa' && investmentNames.some(name => desc.includes(name))
   })
 
   const seen = new Set<string>()

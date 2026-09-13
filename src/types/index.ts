@@ -12,11 +12,6 @@ export interface UserProfile {
 
 export type TransactionType = 'receita' | 'despesa' | 'transferencia'
 
-// Direção do dinheiro numa transferência. Em receita/despesa a direção é
-// implícita no próprio type (receita entra, despesa sai) — só a transferência
-// precisa guardar, porque ela é neutra em receita/despesa mas mexe no saldo
-// da conta como qualquer outra linha.
-export type TransferDirection = 'entrada' | 'saida'
 export type CategoryType = 'receita' | 'despesa' | 'transferencia' | 'ambos'
 export type BoardType = 'entrada' | 'saida' | 'ambos'
 export type BoardIconKey =
@@ -64,10 +59,12 @@ export interface Transaction {
   amount: number
   date: string
   type: TransactionType
-  // Preenchida só quando type === 'transferencia'. null = direção desconhecida
-  // (linha importada antes de set/2026): tratada como neutra no saldo, que é
-  // o comportamento antigo — nunca se chuta o sinal do saldo de alguém.
-  direction?: TransferDirection | null
+  // Movimentação entre contas do próprio usuário (pagar a própria fatura,
+  // TED para a corretora, Pix de uma conta sua para outra). É uma despesa ou
+  // receita de verdade — move o saldo da conta como qualquer outra — mas NÃO
+  // é gasto nem renda: fica fora de "Despesas/Receita do mês", das categorias
+  // e do Planejamento. Quem preenche é a detecção na importação, não o usuário.
+  is_internal?: boolean
   category: string
   board_id?: string | null
   tags?: string[]

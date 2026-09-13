@@ -8,24 +8,19 @@ export { fmt as formatDashboardCurrency }
 /**
  * Saldo acumulado de um conjunto de transações.
  *
- * Transferência é neutra em receita/despesa, mas NÃO é neutra no saldo: o
- * dinheiro sai mesmo de uma conta e entra mesmo na outra. Quando as duas
- * pernas do movimento existem (os dois extratos importados), elas se anulam
- * sozinhas no total — não é preciso deduplicar nada — e cada conta fica com
- * o saldo certo. Quando só uma perna existe (ex: TED para a corretora, cujo
- * outro lado entra pela posição importada), a saída desconta do caixa e a
- * posição soma o lado investido, sem contar o mesmo dinheiro duas vezes.
+ * Movimentação interna (`is_internal`) NÃO é exceção aqui: pagar a própria
+ * fatura ou mandar dinheiro para a corretora tira dinheiro da conta de
+ * verdade. `is_internal` só importa para receita/despesa do mês — o saldo
+ * conta toda linha, interna ou não. Foi justamente ignorar essas linhas no
+ * saldo que causava 14.1 e 14.2.
  *
- * Transferência sem `direction` (importada antes de set/2026) continua neutra:
- * é o comportamento antigo, preferível a chutar o sinal do saldo.
+ * `transferencia` só aparece em linhas legadas que não foi possível
+ * classificar na conversão de set/2026 (descrição sem direção). Continuam
+ * neutras, como sempre foram.
  */
 export function balanceFromTransactions(transactions: Transaction[]): number {
   return transactions.reduce((acc, t) => {
-    if (t.type === 'transferencia') {
-      if (t.direction === 'entrada') return acc + Number(t.amount)
-      if (t.direction === 'saida') return acc - Number(t.amount)
-      return acc
-    }
+    if (t.type === 'transferencia') return acc
     if (t.type === 'receita') return acc + Number(t.amount)
     return acc - Number(t.amount)
   }, 0)

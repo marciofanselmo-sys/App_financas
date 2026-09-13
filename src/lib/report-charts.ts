@@ -20,7 +20,9 @@ export function aggregateYearMonths(transactions: Transaction[]): YearMonthPoint
   }))
 
   for (const t of transactions) {
-    if (t.type === 'transferencia') continue
+    // Movimentação interna (pagar a própria fatura, aporte, Pix entre contas
+    // suas) move o saldo, mas não é renda nem gasto — fica fora daqui.
+    if (t.is_internal || t.type === 'transferencia') continue
     const m = new Date(`${t.date}T12:00:00`).getMonth()
     const amt = Number(t.amount)
     if (t.type === 'receita') map[m].receita += amt

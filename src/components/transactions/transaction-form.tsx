@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Transaction, TransactionType, TransferDirection} from '@/types'
+import { Transaction, TransactionType} from '@/types'
 import { useCategories } from '@/hooks/use-categories'
 import { categoriesForDate, isCategoryUsableForDate } from '@/lib/special-category-filter'
 import { addMonths } from '@/utils/add-months'
@@ -37,8 +37,9 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState('')
   const [type, setType] = useState<TransactionType>('despesa')
-  // Só usada em transferência: sem ela a linha não mexe no saldo de conta nenhuma.
-  const [direction, setDirection] = useState<TransferDirection>('saida')
+  // "É movimentação entre minhas contas": não muda o tipo nem o saldo, só tira
+  // a linha dos totais do mês.
+  const [isInternal, setIsInternal] = useState(false)
   const [category, setCategory] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
@@ -84,7 +85,7 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
       setAmount(initialData ? String(initialData.amount) : '')
       setDate(initialData?.date ?? new Date().toISOString().split('T')[0])
       setType(initialData?.type ?? 'despesa')
-      setDirection(initialData?.direction ?? 'saida')
+      setIsInternal(initialData?.is_internal ?? false)
       setCategory(initialData?.category ?? '')
       setTags(initialData?.tags ?? [])
       setTagInput('')
@@ -137,7 +138,7 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
       amount: amountNum,
       date,
       type,
-      direction: type === 'transferencia' ? direction : null,
+      is_internal: isInternal,
       category,
       tags,
       board_id: initialData?.board_id ?? boardId ?? null,
@@ -151,7 +152,7 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
       description: parsed.data.description,
       amount: parsed.data.amount,
       type: parsed.data.type,
-      direction: parsed.data.direction ?? null,
+      is_internal: parsed.data.is_internal ?? false,
       category: parsed.data.category,
       tags: parsed.data.tags,
       board_id: parsed.data.board_id ?? null,
@@ -200,8 +201,8 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
 
           <div className="space-y-2">
             <Label>Tipo</Label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['receita', 'despesa', 'transferencia'] as TransactionType[]).map(t => (
+            <div className="grid grid-cols-2 gap-2">
+              {(['receita', 'despesa'] as TransactionType[]).map(t => (
                 <button
                   key={t}
                   type="button"
@@ -210,47 +211,34 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
                     type === t
                       ? t === 'receita'
                         ? 'bg-green-600 text-white border-green-600'
-                        : t === 'despesa'
-                          ? 'bg-red-500 text-white border-red-500'
-                          : 'bg-slate-500 text-white border-slate-500'
+                        : 'bg-red-500 text-white border-red-500'
                       : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'
                   }`}
                 >
-                  {t === 'receita' ? 'Receita' : t === 'despesa' ? 'Despesa' : 'Transferência'}
+                  {t === 'receita' ? 'Receita' : 'Despesa'}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Transferência não entra em receita/despesa do mês, mas move o saldo
-              da conta — e para isso precisa saber para que lado o dinheiro foi. */}
-          {type === 'transferencia' && (
-            <div className="space-y-2">
-              <Label>Nesta conta, o dinheiro</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {([
-                  { value: 'saida' as const,   label: 'Saiu daqui' },
-                  { value: 'entrada' as const, label: 'Entrou aqui' },
-                ]).map(opt => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setDirection(opt.value)}
-                    className={`py-2 px-3 rounded-lg text-sm font-medium border transition-colors ${
-                      direction === opt.value
-                        ? 'bg-slate-700 text-white border-slate-700'
-                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Não conta como receita nem despesa do mês — só ajusta o saldo desta conta.
-              </p>
-            </div>
-          )}
+          {/* Movimentação interna: a linha continua sendo receita ou despesa
+              (move o saldo da conta), só não conta como renda nem gasto do mês.
+              Na importação isso é detectado sozinho — esta caixinha é para o
+              lançamento manual, onde o usuário sabe o que fez. */}
+          <label className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isInternal}
+              onChange={e => setIsInternal(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 dark:border-slate-600 accent-blue-600 cursor-pointer"
+            />
+            <span>
+              É movimentação entre minhas contas
+              <span className="block text-xs text-slate-400 dark:text-slate-500">
+                Move o saldo da conta, mas não conta como {type === 'receita' ? 'renda' : 'gasto'} do mês
+              </span>
+            </span>
+          </label>
 
           <div className="space-y-2">
             <Label htmlFor="description">Descrição</Label>

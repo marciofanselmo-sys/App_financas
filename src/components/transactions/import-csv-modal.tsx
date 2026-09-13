@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { TransactionType, TransferDirection} from '@/types'
+import { TransactionType} from '@/types'
 import { useCategories } from '@/hooks/use-categories'
 import { useRules, applyUserRules } from '@/hooks/use-rules'
 import { Upload, Download, CheckCircle, AlertCircle, FileText, Zap, Tag, TrendingUp } from 'lucide-react'
@@ -58,9 +58,9 @@ interface PreviewRow {
   amount: number
   date: string
   type: TransactionType
-  // Só em transferência: diz se o dinheiro saiu ou entrou nesta conta. Sem
-  // isso a linha não move saldo nenhum (era a causa de 14.1 / 14.2).
-  direction?: TransferDirection | null
+  // Movimentação entre contas do próprio usuário: continua sendo receita ou
+  // despesa (move o saldo), mas fica fora dos totais do mês.
+  is_internal?: boolean
   category: string
   subcategory?: string | null
   installment_current?: number | null
@@ -294,8 +294,8 @@ function parseNubankCSV(content: string): PreviewRow[] {
       const amount = Math.abs(valorNum)
       if (isNaN(amount) || amount <= 0) errors.push('Valor inválido')
       // Fatura do cartão: valor positivo = compra (despesa); negativo = estorno/pagamento (receita)
-      const { type, direction } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa')
-      return { description, amount: isNaN(amount) ? 0 : amount, date, type, direction, category: 'Outros', valid: errors.length === 0, errors }
+      const { type, is_internal } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa')
+      return { description, amount: isNaN(amount) ? 0 : amount, date, type, is_internal, category: 'Outros', valid: errors.length === 0, errors }
     })
 }
 
@@ -342,7 +342,7 @@ function parseC6Credit(content: string): PreviewRow[] {
       const valorNum = parseFloat((row['Valor (em R$)'] ?? '0').trim())
       const amount = Math.abs(valorNum)
       if (isNaN(amount) || amount <= 0) errors.push('Valor inválido')
-      const { type, direction } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa')
+      const { type, is_internal } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa')
       const category = mapC6Category(row['Categoria'] ?? '')
       let installment_current: number | null = null
       let installment_total: number | null = null
@@ -363,7 +363,7 @@ function parseC6Credit(content: string): PreviewRow[] {
       const effectiveDate = installment_current && installment_current > 1 && date
         ? addMonths(date, installment_current - 1)
         : date
-      return { description, amount: isNaN(amount) ? 0 : amount, date: effectiveDate, type, direction, category, installment_current, installment_total, valid: errors.length === 0, errors }
+      return { description, amount: isNaN(amount) ? 0 : amount, date: effectiveDate, type, is_internal, category, installment_current, installment_total, valid: errors.length === 0, errors }
     })
 }
 
@@ -392,10 +392,10 @@ function parseC6Checking(content: string): PreviewRow[] {
       const entrada = parseFloat(row['Entrada(R$)'] ?? '0')
       const saida = parseFloat(row['Saída(R$)'] ?? '0')
       // Aqui a direção vem das colunas Entrada/Saída, não do sinal.
-      const { type, direction } = classifyTransaction(description, entrada > 0 ? 'receita' : 'despesa')
+      const { type, is_internal } = classifyTransaction(description, entrada > 0 ? 'receita' : 'despesa')
       const amount = entrada > 0 ? entrada : saida
       if (isNaN(amount) || amount <= 0) errors.push('Valor inválido')
-      return { description, amount: isNaN(amount) ? 0 : amount, date, type, direction, category: 'Outros', valid: errors.length === 0, errors }
+      return { description, amount: isNaN(amount) ? 0 : amount, date, type, is_internal, category: 'Outros', valid: errors.length === 0, errors }
     })
 }
 
@@ -507,7 +507,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
       if (!rows.length) { setFileError('Nenhuma transação encontrada no arquivo OFX.'); return }
       const preview: PreviewRow[] = rows.map(r => ({
         description: r.description, amount: r.amount, date: r.date, type: r.type,
-        direction: r.direction,
+        is_internal: r.is_internal,
         category: r.category,
         valid: true, errors: [],
       }))
@@ -777,25 +777,25 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
       const date = normalizeDate(mapping.data ? raw[mapping.data] : '') ?? ''
       if (!date) errors.push('Data inválida')
       let type: TransactionType
-      // Direção só existe quando dá pra saber o sinal. Se o tipo veio escrito
-      // numa coluna do CSV ("transferencia"), o arquivo não diz para onde o
-      // dinheiro foi — fica indefinida e a linha segue neutra no saldo, em vez
-      // de entrar com um sinal chutado.
-      let direction: TransferDirection | undefined
+      let is_internal = false
       const mappedType = mapping.tipo ? normalizeType(raw[mapping.tipo]) : null
       if (mappedType) {
-        type = mappedType
-        if (mappedType === 'transferencia' && !isNaN(valorNum)) {
-          direction = valorNum < 0 ? 'entrada' : 'saida'
+        // Coluna "tipo" escrita à mão no CSV. "transferencia" ali significa
+        // "é interna" — o tipo real vem do sinal do valor, como em qualquer
+        // outra linha.
+        if (mappedType === 'transferencia') {
+          is_internal = true
+          type = !isNaN(valorNum) && valorNum < 0 ? 'receita' : 'despesa'
+        } else {
+          type = mappedType
         }
       }
       else if (!isNaN(valorNum)) {
-        ({ type, direction } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa'))
+        ({ type, is_internal } = classifyTransaction(description, valorNum < 0 ? 'receita' : 'despesa'))
       }
-      else if (isTransferDescription(description)) { type = 'transferencia' }
       else { type = 'despesa'; errors.push('Tipo não mapeado — assumido "despesa"') }
       const category = normalizeCategory(mapping.categoria ? raw[mapping.categoria] : 'Outros', categoryNames)
-      return { description, amount: isNaN(amount) ? 0 : amount, date, type, direction, category, valid: errors.filter(e => !e.includes('assumido')).length === 0, errors }
+      return { description, amount: isNaN(amount) ? 0 : amount, date, type, is_internal, category, valid: errors.filter(e => !e.includes('assumido')).length === 0, errors }
     })
     setPreview(enhanceWithUserRules(rows))
     setStep('preview')
@@ -944,7 +944,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
         amount: row.amount,
         date: row.date,
         type: row.type,
-        direction: row.direction ?? null,
+        is_internal: row.is_internal ?? false,
         category: row.category,
         board_id: boardId ?? null,
         tags: [],
@@ -1219,12 +1219,12 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
                         </td>
                         <td className="px-3 py-2 text-slate-700 dark:text-slate-200 truncate overflow-hidden">{row.description}</td>
                         <td className="px-3 py-2 font-medium">
-                          <span className={row.type === 'receita' ? 'text-green-600' : row.type === 'transferencia' ? 'text-slate-400 dark:text-slate-500' : 'text-red-500'}>R$ {row.amount.toFixed(2)}</span>
+                          <span className={row.is_internal ? 'text-slate-400 dark:text-slate-500' : row.type === 'receita' ? 'text-green-600' : 'text-red-500'}>R$ {row.amount.toFixed(2)}</span>
                         </td>
                         <td className="px-3 py-2 text-slate-500 dark:text-slate-400">{row.date}</td>
                         <td className="px-3 py-2 text-slate-500 dark:text-slate-400">{installmentLabel(row)}</td>
                         <td className="px-3 py-2">
-                          <Badge variant="outline" className={`text-[10px] ${row.type === 'receita' ? 'text-green-600' : row.type === 'transferencia' ? 'text-slate-400 dark:text-slate-500' : 'text-red-500'}`}>{row.type}</Badge>
+                          <Badge variant="outline" className={`text-[10px] ${row.is_internal ? 'text-slate-400 dark:text-slate-500' : row.type === 'receita' ? 'text-green-600' : 'text-red-500'}`}>{row.is_internal ? 'entre contas' : row.type}</Badge>
                         </td>
                         <td className="px-3 py-2">
                           <span className={row.category === 'Outros' ? 'text-amber-500 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'}>

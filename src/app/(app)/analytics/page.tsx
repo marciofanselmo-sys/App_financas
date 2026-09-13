@@ -75,7 +75,9 @@ export default function AnalyticsPage() {
 
     for (const t of transactions) {
       const amt = Number(t.amount)
-      if (t.type === 'transferencia') {
+      // Movimentação entre contas do próprio usuário: some à parte, nunca
+      // junto de receita/despesa.
+      if (t.is_internal || t.type === 'transferencia') {
         totalTransfers += amt
         transferMap[t.category] = transferMap[t.category] ?? { total: 0, count: 0 }
         transferMap[t.category].total += amt
@@ -185,7 +187,7 @@ export default function AnalyticsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Análise de Gastos</h1>
+          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Análise de Gastos</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Entradas, saídas e distribuição por categoria</p>
         </div>
 
@@ -536,8 +538,8 @@ export default function AnalyticsPage() {
                     })()}
 
                     {/* Coluna 3: valor */}
-                    <span className={`text-sm font-semibold shrink-0 w-24 text-right ${tx.type === 'receita' ? 'text-green-600' : tx.type === 'transferencia' ? 'text-slate-400' : 'text-red-500'}`}>
-                      {tx.type === 'receita' ? '+ ' : tx.type === 'transferencia' ? '' : '- '}{fmt(Number(tx.amount))}
+                    <span className={`text-sm font-semibold shrink-0 w-24 text-right ${tx.is_internal || tx.type === 'transferencia' ? 'text-slate-400' : tx.type === 'receita' ? 'text-green-600' : 'text-red-500'}`}>
+                      {tx.type === 'transferencia' ? '' : tx.type === 'receita' ? '+ ' : '- '}{fmt(Number(tx.amount))}
                     </span>
                   </div>
                 ))}

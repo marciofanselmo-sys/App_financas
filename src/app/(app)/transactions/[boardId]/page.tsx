@@ -118,13 +118,11 @@ export default function BoardDetailPage() {
   const stats = useMemo(() => {
     const income = transactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
     const expenses = transactions.filter(t => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0)
-    // Líquido, não bruto: com direção, uma transferência que saiu e outra que
-    // entrou não se somam — se anulam. É o mesmo critério que o saldo usa.
+    // Movimentação interna líquida: o que entrou menos o que saiu entre contas
+    // suas. Não é gasto nem renda, mas move o saldo — por isso aparece à parte.
     const transfers = transactions
-      .filter(t => t.type === 'transferencia')
-      .reduce((s, t) => t.direction === 'entrada' ? s + Number(t.amount)
-                      : t.direction === 'saida'   ? s - Number(t.amount)
-                      : s, 0)
+      .filter(t => t.is_internal)
+      .reduce((s, t) => t.type === 'receita' ? s + Number(t.amount) : s - Number(t.amount), 0)
     // Saldo inclui a movimentação interna (ver balanceFromTransactions).
     return { income, expenses, balance: balanceFromTransactions(transactions), transfers }
   }, [transactions])

@@ -31,8 +31,10 @@ export function exportToCSV(transactions: Transaction[], filename = 'transacoes'
     'Subcategoria',
   ]
 
-  const typeLabel = (type: Transaction['type']) =>
-    type === 'receita' ? 'Receita' : type === 'transferencia' ? 'Transferência' : 'Despesa'
+  const typeLabel = (t: Transaction) =>
+    t.is_internal || t.type === 'transferencia'
+      ? (t.type === 'receita' ? 'Entre contas (entrada)' : 'Entre contas (saída)')
+      : t.type === 'receita' ? 'Receita' : 'Despesa'
 
   const sorted = [...transactions].sort((a, b) =>
     a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
@@ -43,7 +45,7 @@ export function exportToCSV(transactions: Transaction[], filename = 'transacoes'
     escapeCell(formatAmount(t.amount)),
     escapeCell(t.date),
     escapeCell(installmentLabel(t)),
-    escapeCell(typeLabel(t.type)),
+    escapeCell(typeLabel(t)),
     escapeCell(t.category),
     escapeCell(t.group_label ?? ''),
   ])

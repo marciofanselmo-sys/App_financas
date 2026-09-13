@@ -52,7 +52,9 @@ export function aggregateMonthlyFlow(
   )
 
   for (const t of transactions) {
-    if (t.type === 'transferencia') continue
+    // Movimentação interna (pagar a própria fatura, aporte, Pix entre contas
+    // suas) move o saldo, mas não é renda nem gasto — fica fora daqui.
+    if (t.is_internal || t.type === 'transferencia') continue
     const key = t.date.slice(0, 7)
     const bucket = map.get(key)
     if (!bucket) continue
@@ -100,7 +102,7 @@ export function buildPatrimonyChartData(overview: PatrimonyOverview): ChartSegme
     segments.push({ name: 'Sem conta', value: Math.abs(overview.unassignedCash), color: '#94a3b8' })
   }
   for (const inv of overview.investments) {
-    segments.push({ name: inv.name, value: inv.patrimonio, color: '#10b981' })
+    segments.push({ name: inv.name, value: inv.patrimonio, color: '#2563EB' })
   }
 
   return segments.filter(s => s.value > 0)
@@ -197,9 +199,10 @@ export function buildPlannedVsActual(
     .slice(0, 6)
 }
 
+/** Paleta NOBLI: azul lidera (marca), acentos entram depois para distinguir categorias. */
 export const CHART_COLORS = [
-  '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
-  '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1',
+  '#2563EB', '#10b981', '#60A5FA', '#f59e0b',
+  '#0B2D6B', '#8b5cf6', '#14b8a6', '#f97316', '#ec4899',
 ]
 
 export function formatChartCurrency(value: number) {

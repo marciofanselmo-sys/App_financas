@@ -31,6 +31,7 @@ import { ExpenseDistributionChart } from '@/components/dashboard/charts/expense-
 import { IncomeCommitmentChart } from '@/components/dashboard/charts/income-commitment-chart'
 import { PlannedVsActualChart } from '@/components/dashboard/charts/planned-vs-actual-chart'
 import { useBudgetPlan } from '@/hooks/use-budget-plan'
+import { useUserPreferences } from '@/hooks/use-user-preferences'
 import { useBudgetPlansRange } from '@/hooks/use-budget-plans-range'
 import { useGoals } from '@/hooks/use-goals'
 import { sumInvestmentContributions, aggregateContributionsByMonth } from '@/lib/investment-contributions'
@@ -39,6 +40,7 @@ import { LayoutGrid, AlertCircle, CreditCard, RefreshCw, Upload, CheckCircle, Ta
 import Link from 'next/link'
 import { OnboardingModal } from '@/components/onboarding-modal'
 import { NextActionCard } from '@/components/dashboard/next-action-card'
+import { AppPageHeader } from '@/components/layout/app-page-header'
 
 // Agrupa por group_label (subcategoria), calcula média ponderada — mesma lógica do fixos/page
 interface GroupedRecurring {
@@ -118,7 +120,9 @@ export default function DashboardPage() {
     () => computePatrimonyOverview(boards, allCashTransactions),
     [boards, allCashTransactions],
   )
-  const { plan, loading: planLoading } = useBudgetPlan(month, year)
+  const { plan, loading: planLoading, savePlan } = useBudgetPlan(month, year)
+  const { defaultInvestmentPct, updatePreferences, loading: prefsLoading } = useUserPreferences()
+  const [savingInvestTarget, setSavingInvestTarget] = useState(false)
   const { targetsByKey, loading: targetsRangeLoading } = useBudgetPlansRange(month, year, 6)
   const { goals, loading: goalsLoading } = useGoals()
 
@@ -132,13 +136,16 @@ export default function DashboardPage() {
     () => aggregateContributionsByMonth(allTransactions, boards, chartMonths),
     [allTransactions, boards, chartMonths],
   )
+  const currentMonthKey = `${year}-${String(month).padStart(2, '0')}`
   const investTargetChartData = useMemo(
     () => contributionsByMonth.map(p => ({
       label: p.label,
-      meta: targetsByKey[p.key] ?? 0,
+      meta: p.key === currentMonthKey
+        ? (plan?.investment_target ?? targetsByKey[p.key] ?? 0)
+        : (targetsByKey[p.key] ?? 0),
       aportes: p.aportes,
     })),
-    [contributionsByMonth, targetsByKey],
+    [contributionsByMonth, targetsByKey, currentMonthKey, plan?.investment_target],
   )
   const monthlyFlowData = useMemo(
     () => aggregateMonthlyFlow(allCashTransactions, chartMonths),
@@ -165,7 +172,8 @@ export default function DashboardPage() {
 
   const summary: DashboardSummary = transactions.reduce(
     (acc, t) => {
-      if (t.type === 'transferencia') return acc
+      // Movimentação interna move o saldo da conta, mas não é renda nem gasto.
+      if (t.is_internal || t.type === 'transferencia') return acc
       if (t.type === 'receita') acc.totalIncome += Number(t.amount)
       else acc.totalExpenses += Number(t.amount)
       acc.balance = acc.totalIncome - acc.totalExpenses
@@ -201,26 +209,43 @@ export default function DashboardPage() {
 
   const chartsLoading = boardsLoading || patrimonyLoading || loading
 
+  async function handleSaveInvestmentTarget(target: number, pct: number) {
+    setSavingInvestTarget(true)
+    const [{ error }, { error: prefError }] = await Promise.all([
+      savePlan({
+        month,
+        year,
+        expected_income: plan?.expected_income ?? summary.totalIncome,
+        expenses_target: plan?.expenses_target ?? 0,
+        investment_target: target,
+        reserve_target: plan?.reserve_target ?? 0,
+        category_limits: plan?.category_limits ?? {},
+      }),
+      updatePreferences({ investment_pct: pct }),
+    ])
+    setSavingInvestTarget(false)
+    return { error: error ?? prefError }
+  }
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <OnboardingModal />
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Dashboard</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Patrimônio acumulado + fluxo do mês</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/import"
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors border border-emerald-200 dark:border-emerald-500/20"
-          >
-            <Upload className="h-4 w-4" />
-            Importar Extrato
-          </Link>
-          <PeriodFilter month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
-        </div>
-      </div>
+      <AppPageHeader
+        title="Dashboard"
+        subtitle="Patrimônio acumulado + fluxo do mês"
+        actions={
+          <>
+            <Link
+              href="/import"
+              className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold bg-white dark:bg-white/[0.04] text-[#2563EB] dark:text-blue-300 hover:bg-[#E8F2FF] dark:hover:bg-blue-500/15 transition-colors border border-[#DDE7F3] dark:border-white/[0.08] shadow-[var(--nobli-shadow-s)]"
+            >
+              <Upload className="h-4 w-4" />
+              Importar Extrato
+            </Link>
+            <PeriodFilter month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
+          </>
+        }
+      />
 
       <MacroOverview overview={patrimony} loading={boardsLoading || patrimonyLoading} />
 
@@ -232,13 +257,13 @@ export default function DashboardPage() {
       <MonthlyFlowChart data={monthlyFlowData} loading={chartsLoading} />
 
       <div>
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-3">
+        <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-[#93A5C1] dark:text-slate-500 mb-3">
           Fluxo do mês
         </h2>
         {loading ? (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-28 bg-white dark:bg-slate-800 rounded-2xl animate-pulse shadow-sm" />
+              <div key={i} className="h-28 nobli-card animate-pulse" />
             ))}
           </div>
         ) : (
@@ -255,8 +280,11 @@ export default function DashboardPage() {
         <InvestMonthCard
           monthlyIncome={summary.totalIncome}
           investmentTarget={plan?.investment_target ?? 0}
+          defaultInvestmentPct={defaultInvestmentPct}
           actualContributions={monthlyContributions}
-          loading={planLoading || loading || allTxLoading}
+          loading={planLoading || loading || allTxLoading || prefsLoading}
+          saving={savingInvestTarget}
+          onSaveTarget={handleSaveInvestmentTarget}
         />
         <GoalsSummaryCard goals={goals} loading={goalsLoading} />
       </div>
@@ -291,21 +319,21 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Top 5 gastos por categoria */}
         {loading ? (
-          <div className="h-56 bg-white dark:bg-slate-800 rounded-2xl animate-pulse shadow-sm" />
+          <div className="h-56 nobli-card animate-pulse" />
         ) : (
           <TopCategoriesBar transactions={transactions} />
         )}
 
         {/* Parcelas Ativas */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-slate-700">
+        <div className="nobli-card p-5">
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="h-7 w-7 rounded-lg bg-violet-50 dark:bg-violet-900/30 flex items-center justify-center">
-                <CreditCard className="h-3.5 w-3.5 text-violet-500" />
+            <div className="flex items-center gap-2.5">
+              <div className="nobli-chip h-8 w-8 rounded-lg">
+                <CreditCard className="h-4 w-4" />
               </div>
-              <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Parcelas Ativas</span>
+              <span className="nobli-card-title">Parcelas Ativas</span>
             </div>
-            <Link href="/recurring" className="text-xs text-blue-600 hover:underline">
+            <Link href="/recurring" className="text-xs font-semibold text-[#2563EB] hover:underline">
               Ver todas →
             </Link>
           </div>
@@ -342,15 +370,15 @@ export default function DashboardPage() {
         </div>
 
         {/* Gastos Fixos */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-slate-700">
+        <div className="nobli-card p-5">
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="h-7 w-7 rounded-lg bg-sky-50 dark:bg-sky-900/30 flex items-center justify-center">
-                <RefreshCw className="h-3.5 w-3.5 text-sky-500" />
+            <div className="flex items-center gap-2.5">
+              <div className="nobli-chip h-8 w-8 rounded-lg">
+                <RefreshCw className="h-4 w-4" />
               </div>
-              <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Gastos Fixos</span>
+              <span className="nobli-card-title">Gastos Fixos</span>
             </div>
-            <Link href="/fixos" className="text-xs text-blue-600 hover:underline">
+            <Link href="/fixos" className="text-xs font-semibold text-[#2563EB] hover:underline">
               Ver todos →
             </Link>
           </div>
@@ -400,11 +428,11 @@ export default function DashboardPage() {
         <div>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <LayoutGrid className="h-4 w-4 text-slate-400" />
-              <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Minhas Contas</h2>
-              <span className="text-xs text-slate-400 dark:text-slate-500">— este mês</span>
+              <LayoutGrid className="h-4 w-4 text-[#93A5C1]" />
+              <h2 className="nobli-card-title">Minhas Contas</h2>
+              <span className="text-xs text-[#93A5C1] dark:text-slate-500">— este mês</span>
             </div>
-            <Link href="/transactions" className="text-xs text-blue-600 hover:underline">
+            <Link href="/transactions" className="text-xs font-semibold text-[#2563EB] hover:underline">
               Gerenciar contas
             </Link>
           </div>

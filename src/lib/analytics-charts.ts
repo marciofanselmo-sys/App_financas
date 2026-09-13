@@ -33,7 +33,9 @@ export function aggregateDailyFlow(
   }
 
   for (const t of transactions) {
-    if (t.type === 'transferencia') continue
+    // Movimentação interna (pagar a própria fatura, aporte, Pix entre contas
+    // suas) move o saldo, mas não é renda nem gasto — fica fora daqui.
+    if (t.is_internal || t.type === 'transferencia') continue
     const day = Number(t.date.slice(8, 10))
     const bucket = points[day - 1]
     if (!bucket) continue

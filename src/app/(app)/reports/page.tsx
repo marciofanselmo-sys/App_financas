@@ -69,7 +69,7 @@ function ReportHeader({ title, subtitle }: { title: string; subtitle: string }) 
           <p className="text-sm text-slate-500 dark:text-slate-400 print:text-slate-500 mt-0.5">{subtitle}</p>
         </div>
         <div className="text-right text-xs text-slate-400 print:text-slate-400">
-          <p className="font-semibold text-slate-600 dark:text-slate-300 print:text-slate-600">FinanceApp</p>
+          <p className="font-heading font-bold text-[#0B2D6B] dark:text-slate-300 print:text-slate-600">NOBLI</p>
           <p>Gerado em {new Date().toLocaleDateString('pt-BR')}</p>
         </div>
       </div>
@@ -284,8 +284,8 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
                     </td>
                     <td className="px-4 py-2 text-slate-700 dark:text-slate-300 print:text-slate-700 max-w-[200px] truncate">{t.description}</td>
                     <td className="px-4 py-2 text-slate-500 dark:text-slate-400 print:text-slate-500 text-xs">{t.category}</td>
-                    <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap ${t.type === 'receita' ? 'text-emerald-600 dark:text-emerald-400 print:text-emerald-600' : t.type === 'transferencia' ? 'text-slate-400 dark:text-slate-500 print:text-slate-400' : 'text-red-500'}`}>
-                      {t.type === 'receita' ? '+' : t.type === 'transferencia' ? '' : '-'}{fmt(Number(t.amount))}
+                    <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap ${t.is_internal || t.type === 'transferencia' ? 'text-slate-400 dark:text-slate-500 print:text-slate-400' : t.type === 'receita' ? 'text-emerald-600 dark:text-emerald-400 print:text-emerald-600' : 'text-red-500'}`}>
+                      {t.type === 'transferencia' ? '' : t.type === 'receita' ? '+' : '-'}{fmt(Number(t.amount))}
                     </td>
                   </tr>
                 ))}
@@ -885,7 +885,7 @@ export default function ReportsPage() {
       {/* Header */}
       <div className="print:hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Relatórios</h1>
+          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Relatórios</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Visualize e exporte relatórios do período desejado</p>
         </div>
         <Button onClick={() => window.print()} size="lg" className="gap-2 shrink-0">

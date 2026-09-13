@@ -291,22 +291,27 @@ export function TransactionTable({
                   )}
                 </TableCell>
                 <TableCell>
+                  {/* Movimentação interna fica em cinza e com rótulo próprio:
+                      é receita/despesa de verdade no saldo, mas não é renda nem
+                      gasto — o cinza evita que o usuário a leia como um deles. */}
                   <Badge
                     className={`text-xs ${
-                      tx.type === 'receita'
-                        ? 'bg-green-50 text-green-700 hover:bg-green-50'
-                        : tx.type === 'transferencia'
-                          ? 'bg-slate-100 text-slate-500 hover:bg-slate-100'
+                      tx.is_internal || tx.type === 'transferencia'
+                        ? 'bg-slate-100 text-slate-500 hover:bg-slate-100'
+                        : tx.type === 'receita'
+                          ? 'bg-green-50 text-green-700 hover:bg-green-50'
                           : 'bg-red-50 text-red-600 hover:bg-red-50'
                     }`}
                     variant="outline"
                   >
-                    {tx.type === 'receita' ? 'Receita' : tx.type === 'transferencia' ? 'Transferência' : 'Despesa'}
+                    {tx.is_internal || tx.type === 'transferencia'
+                      ? 'Entre contas'
+                      : tx.type === 'receita' ? 'Receita' : 'Despesa'}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right font-semibold text-sm">
-                  <span className={tx.type === 'receita' ? 'text-green-600' : tx.type === 'transferencia' ? 'text-slate-400' : 'text-red-500'}>
-                    {tx.type === 'despesa' ? '- ' : tx.type === 'transferencia' ? '' : '+ '}
+                  <span className={tx.is_internal || tx.type === 'transferencia' ? 'text-slate-500 dark:text-slate-400' : tx.type === 'receita' ? 'text-green-600' : 'text-red-500'}>
+                    {tx.type === 'transferencia' ? '' : tx.type === 'despesa' ? '- ' : '+ '}
                     {formatCurrency(Number(tx.amount))}
                   </span>
                 </TableCell>
