@@ -13,10 +13,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Plus, Pencil, Trash2, Wallet, Pin, PinOff, ArrowRight, ChevronRight, AlertTriangle } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { createClient } from '@/lib/supabase/client'
+import { balanceFromTransactions, formatDashboardCurrency } from '@/lib/dashboard-patrimony'
 
-function computeStats(transactions: Transaction[], boardId: string) {
-  const txs = transactions.filter(t => t.board_id === boardId)
-  return { count: txs.length }
+// `monthTxs` é o recorte do mês (usado só na contagem de lançamentos) e
+// `allTxs` é o histórico completo — de onde sai o saldo. São dois conjuntos
+// diferentes de propósito: o saldo da conta não pode mudar quando vira o mês.
+function computeStats(
+  monthTxs: Transaction[],
+  allTxs: Transaction[],
+  board: TransactionBoard,
+) {
+  return {
+    count: monthTxs.filter(t => t.board_id === board.id).length,
+    balance: Number(board.opening_balance ?? 0)
+      + balanceFromTransactions(allTxs.filter(t => t.board_id === board.id)),
+  }
 }
 
 interface AccountTemplate {
@@ -70,6 +81,9 @@ export default function TransactionsPage() {
   const { boards: allBoards, loading, createBoard, updateBoard, deleteBoard } = useTransactionBoards()
   const boards = allBoards.filter(b => !b.is_investment)
   const { transactions } = useTransactions({ month: now.getMonth() + 1, year: now.getFullYear() })
+  // Histórico completo, sem filtro de período: é daqui que sai o saldo de cada
+  // card, o mesmo número que o Patrimônio mostra no dashboard.
+  const { transactions: allTransactions } = useTransactions()
 
   const [formOpen, setFormOpen] = useState(false)
   const [formStep, setFormStep] = useState<'template' | 'form'>('template')
@@ -185,7 +199,7 @@ export default function TransactionsPage() {
       ) : (
         <div className="space-y-4">
           {boards.map(board => {
-            const stats = computeStats(transactions, board.id)
+            const stats = computeStats(transactions, allTransactions, board)
 
             return (
               <div
@@ -244,9 +258,21 @@ export default function TransactionsPage() {
                   </div>
 
                   <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-white/[0.05]">
-                    <p className="text-xs text-slate-400 dark:text-slate-500">
-                      {stats.count} lançamento{stats.count !== 1 ? 's' : ''} este mês
-                    </p>
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                        Saldo da conta
+                      </p>
+                      <p className={`text-lg font-bold tabular-nums ${
+                        stats.balance >= 0
+                          ? 'text-slate-800 dark:text-slate-100'
+                          : 'text-red-500'
+                      }`}>
+                        {formatDashboardCurrency(stats.balance)}
+                      </p>
+                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                        {stats.count} lançamento{stats.count !== 1 ? 's' : ''} este mês
+                      </p>
+                    </div>
                     <Button
                       size="sm"
                       variant="outline"
