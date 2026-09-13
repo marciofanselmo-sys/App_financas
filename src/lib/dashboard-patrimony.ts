@@ -5,6 +5,31 @@ const fmt = (v: number) =>
 
 export { fmt as formatDashboardCurrency }
 
+/**
+ * Data de hoje no fuso local, como YYYY-MM-DD.
+ *
+ * Deliberadamente sem `toISOString()`: ele converte para UTC, então depois das
+ * ~21h no horário de Brasília já devolve o dia seguinte — e uma parcela de
+ * amanhã passaria a contar no saldo de hoje.
+ */
+export function todayISO(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/**
+ * Só o que já aconteceu.
+ *
+ * Parcelas futuras ficam salvas na conta com a data em que vão cair. Elas são
+ * compromisso, não dinheiro que já saiu — somá-las no saldo mostra a conta
+ * mais pobre (ou mais rica) do que ela está hoje.
+ */
+export function upToToday<T extends { date: string }>(transactions: T[]): T[] {
+  const today = todayISO()
+  return transactions.filter(t => t.date <= today)
+}
+
 /** Saldo acumulado: entradas menos saídas. Toda linha conta, sem exceção. */
 export function balanceFromTransactions(transactions: Transaction[]): number {
   return transactions.reduce(
@@ -53,12 +78,12 @@ export function computePatrimonyOverview(
     // errado e nunca se corrige — não há lançamento que represente o que
     // já existia antes da primeira importação.
     balance: Number(board.opening_balance ?? 0) + balanceFromTransactions(
-      cashTransactions.filter(t => t.board_id === board.id),
+      upToToday(cashTransactions.filter(t => t.board_id === board.id)),
     ),
   }))
 
   const unassignedCash = balanceFromTransactions(
-    cashTransactions.filter(t => !t.board_id),
+    upToToday(cashTransactions.filter(t => !t.board_id)),
   )
 
   const cashTotal =

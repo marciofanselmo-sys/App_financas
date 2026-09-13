@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Plus, Pencil, Trash2, Wallet, Pin, PinOff, ArrowRight, ChevronRight, AlertTriangle } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { createClient } from '@/lib/supabase/client'
-import { balanceFromTransactions, formatDashboardCurrency } from '@/lib/dashboard-patrimony'
+import { balanceFromTransactions, formatDashboardCurrency, upToToday } from '@/lib/dashboard-patrimony'
 
 // `monthTxs` é o recorte do mês (usado só na contagem de lançamentos) e
 // `allTxs` é o histórico completo — de onde sai o saldo. São dois conjuntos
@@ -25,8 +25,10 @@ function computeStats(
 ) {
   return {
     count: monthTxs.filter(t => t.board_id === board.id).length,
+    // Até hoje, não o histórico inteiro: parcela futura é compromisso, não
+    // dinheiro que já saiu da conta.
     balance: Number(board.opening_balance ?? 0)
-      + balanceFromTransactions(allTxs.filter(t => t.board_id === board.id)),
+      + balanceFromTransactions(upToToday(allTxs.filter(t => t.board_id === board.id))),
   }
 }
 

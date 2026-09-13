@@ -1,5 +1,5 @@
 import { useRouter } from 'next/navigation'
-import { balanceFromTransactions } from '@/lib/dashboard-patrimony'
+import { balanceFromTransactions, upToToday } from '@/lib/dashboard-patrimony'
 import { TransactionBoard, Transaction } from '@/types'
 import { BoardIcon } from '@/components/transactions/board-icon'
 import { ArrowRight, TrendingUp, TrendingDown } from 'lucide-react'
@@ -18,7 +18,8 @@ export function BoardSummaryCard({ board, transactions }: BoardSummaryCardProps)
   const income = transactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
   const expenses = transactions.filter(t => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0)
   // Saldo = saldo inicial da conta + entradas − saídas.
-  const balance = Number(board.opening_balance ?? 0) + balanceFromTransactions(transactions)
+  // Saldo conta só o que já aconteceu — parcela futura não entra.
+  const balance = Number(board.opening_balance ?? 0) + balanceFromTransactions(upToToday(transactions))
   const positive = balance >= 0
 
   return (
