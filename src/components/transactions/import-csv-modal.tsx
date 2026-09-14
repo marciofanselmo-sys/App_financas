@@ -58,6 +58,9 @@ interface PreviewRow {
   amount: number
   date: string
   type: TransactionType
+  // Preenchido só quando uma regra do usuário manda a transação para outra
+  // conta; senão vale a conta que está sendo importada.
+  board_id?: string | null
   category: string
   subcategory?: string | null
   installment_current?: number | null
@@ -448,8 +451,19 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   const enhanceWithUserRules = useCallback((rows: PreviewRow[]): PreviewRow[] => {
     if (!rules.length) return rows
     return rows.map(r => {
-      const ruleCategory = applyUserRules(r.description, r.date, rules, categories, r.type).category
-      return ruleCategory ? { ...r, category: ruleCategory } : r
+      // A regra devolve categoria E conta de destino. O board_id vinha sendo
+      // descartado: uma regra "toda linha com X vai para a conta Y" aplicava a
+      // categoria e deixava a transação na conta que estava sendo importada.
+      // (14.25)
+      const { category: ruleCategory, board_id: ruleBoardId } = applyUserRules(
+        r.description, r.date, rules, categories, r.type,
+      )
+      if (!ruleCategory && !ruleBoardId) return r
+      return {
+        ...r,
+        ...(ruleCategory ? { category: ruleCategory } : {}),
+        ...(ruleBoardId ? { board_id: ruleBoardId } : {}),
+      }
     })
   }, [rules, categories])
 
@@ -985,7 +999,9 @@ function shiftDays(date: string, days: number): string {
       const tracking = toInsert.map(r => ({
         id: uid(),
         row: r,
-        counterpart: findCounterpartBoard(r.description, boards, boardId ?? null, r.type),
+        // A origem é a conta FINAL da linha: se uma regra mandou a transação
+        // para outra conta, é essa que não pode ser o destino dela mesma.
+        counterpart: findCounterpartBoard(r.description, boards, r.board_id ?? boardId ?? null, r.type),
       }))
       const payload = tracking.map(({ id, row, counterpart }) => ({
         id,
@@ -996,7 +1012,7 @@ function shiftDays(date: string, days: number): string {
         type: row.type,
         counterpart_board_id: counterpart?.id ?? null,
         category: row.category,
-        board_id: boardId ?? null,
+        board_id: row.board_id ?? boardId ?? null,
         tags: [],
         group_label: row.subcategory ?? null,
         installment_current: row.installment_current ?? null,

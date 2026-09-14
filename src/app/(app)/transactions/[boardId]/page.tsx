@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
+import { decisionKey } from '@/lib/recurring-groups'
+import { logSafeError } from '@/lib/supabase-error'
 import { balanceFromTransactions } from '@/lib/dashboard-patrimony'
 import { useParams, useRouter } from 'next/navigation'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
@@ -201,11 +203,17 @@ export default function BoardDetailPage() {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
-      await supabase
+      // decisionKey(), não a descrição crua: a chave gravada em
+      // recurring_decisions leva prefixo de tipo para receita (despesa ficou
+      // sem prefixo por compatibilidade). Apagando pela chave crua, a decisão
+      // de uma receita nunca era encontrada e /fixos continuava mostrando o
+      // item como confirmado depois de desmarcado. (14.12)
+      const { error: decisionError } = await supabase
         .from('recurring_decisions')
         .delete()
         .eq('user_id', user.id)
-        .eq('description_key', tx.description.toLowerCase().trim())
+        .eq('description_key', decisionKey(tx.type, tx.description.toLowerCase().trim()))
+      if (decisionError) logSafeError('handleToggleRecurring.clearDecision', decisionError)
     }
   }
 

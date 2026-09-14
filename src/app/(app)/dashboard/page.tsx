@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { buildDisplayItems } from '@/lib/recurring-groups'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
-import { useRecurring, RecurringItem } from '@/hooks/use-recurring'
+import { useRecurring } from '@/hooks/use-recurring'
 import { useRecurringDecisions } from '@/hooks/use-recurring-decisions'
 import { SummaryCards } from '@/components/dashboard/summary-cards'
 import { DiagnosticCard } from '@/components/dashboard/diagnostic-card'
@@ -41,51 +42,6 @@ import Link from 'next/link'
 import { OnboardingModal } from '@/components/onboarding-modal'
 import { NextActionCard } from '@/components/dashboard/next-action-card'
 import { AppPageHeader } from '@/components/layout/app-page-header'
-
-// Agrupa por group_label (subcategoria), calcula média ponderada — mesma lógica do fixos/page
-interface GroupedRecurring {
-  key: string
-  name: string
-  avgAmount: number
-  monthsCount: number
-  isGroup: boolean
-}
-
-function buildGroupedRecurring(recurring: RecurringItem[]): GroupedRecurring[] {
-  const grouped = new Map<string, RecurringItem[]>()
-  const singles: RecurringItem[] = []
-
-  for (const r of recurring) {
-    const label = r.group_label?.trim() || null
-    if (label) {
-      grouped.set(label, [...(grouped.get(label) ?? []), r])
-    } else {
-      singles.push(r)
-    }
-  }
-
-  const items: GroupedRecurring[] = []
-
-  for (const [label, members] of grouped.entries()) {
-    const totalCount = members.reduce((s, r) => s + r.monthsCount, 0)
-    const avgAmount = totalCount > 0
-      ? members.reduce((s, r) => s + r.avgAmount * r.monthsCount, 0) / totalCount
-      : 0
-    items.push({ key: `group:${label}`, name: label, avgAmount, monthsCount: totalCount, isGroup: true })
-  }
-
-  for (const r of singles) {
-    items.push({
-      key: r.description.toLowerCase(),
-      name: r.description,
-      avgAmount: r.avgAmount,
-      monthsCount: r.monthsCount,
-      isGroup: false,
-    })
-  }
-
-  return items.sort((a, b) => b.monthsCount - a.monthsCount || b.avgAmount - a.avgAmount)
-}
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -187,7 +143,17 @@ export default function DashboardPage() {
   // "Gasto fixo" aqui é só despesa — recorrência também detecta receita e
   // transferência (usadas em /fixos), mas esse card do dashboard é sobre gasto.
   const despesaRecurring = useMemo(() => recurring.filter(r => r.type === 'despesa'), [recurring])
-  const groupedRecurring = useMemo(() => buildGroupedRecurring(despesaRecurring), [despesaRecurring])
+  // buildDisplayItems é a mesma função que /fixos usa. A cópia que existia
+  // aqui divergia em dois pontos, os dois silenciosos:
+  //   - somava o monthsCount dos membros em vez de unir os meses: Netflix e
+  //     Spotify com 3 meses cada viravam um grupo "Streaming" de 6 meses, e a
+  //     média mensal saía pela metade (14.7);
+  //   - montava a chave sem decisionKey(), então o que o usuário confirmava em
+  //     /fixos não era reconhecido aqui.
+  const groupedRecurring = useMemo(
+    () => buildDisplayItems(despesaRecurring, new Map()),
+    [despesaRecurring],
+  )
   const confirmedRecurring = useMemo(
     () => groupedRecurring.filter(i => decisions.get(i.key) === 'confirmed'),
     [groupedRecurring, decisions],

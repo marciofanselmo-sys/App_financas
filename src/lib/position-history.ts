@@ -38,10 +38,18 @@ export function buildConsolidatedPatrimonyHistory(boards: TransactionBoard[]): P
   const dateMap = new Map<string, number>()
 
   for (const board of investmentBoards) {
-    const points = buildBoardPatrimonyHistory(board)
-    for (const p of points) {
-      const dayKey = p.date.slice(0, 10)
-      dateMap.set(dayKey, (dateMap.get(dayKey) ?? 0) + p.patrimonio)
+    // Uma posição POR DIA por conta, ficando com a última importada.
+    //
+    // Somar direto no dateMap parecia certo — e é, entre contas diferentes —
+    // mas dentro da MESMA conta duas importações no mesmo dia viravam a soma
+    // dos dois snapshots. Importar a posição de manhã e de novo à tarde dobrava
+    // o patrimônio daquele dia, e a variação percentual saía absurda. (14.8)
+    const lastOfDay = new Map<string, number>()
+    for (const p of buildBoardPatrimonyHistory(board)) {
+      lastOfDay.set(p.date.slice(0, 10), p.patrimonio)
+    }
+    for (const [dayKey, patrimonio] of lastOfDay) {
+      dateMap.set(dayKey, (dateMap.get(dayKey) ?? 0) + patrimonio)
     }
   }
 
