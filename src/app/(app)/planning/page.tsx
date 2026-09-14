@@ -126,8 +126,20 @@ export default function PlanningPage() {
     setTemplateOpen(false)
   }
 
-  const { transactions } = useTransactions({ month, year })
   const { boards } = useTransactionBoards()
+  // "Realizado" precisa da mesma exclusão do dashboard: conta desafixada e
+  // conta de investimento não entram no gasto do mês. Sem isso, o Planejamento
+  // comparava o planejado contra um realizado que incluía a conta da loja e os
+  // aportes — estourando o plano sem o usuário ter gasto nada a mais. (14.15)
+  const excludedBoardIds = useMemo(
+    () => boards.filter(b => !b.show_on_dashboard || b.is_investment).map(b => b.id),
+    [boards],
+  )
+  const { transactions } = useTransactions({
+    month,
+    year,
+    exclude_board_ids: excludedBoardIds.length > 0 ? excludedBoardIds : undefined,
+  })
   const { categories } = useCategories()
   const { subcategories } = useSubcategories()
   const { plan, loading, savePlan } = useBudgetPlan(month, year)

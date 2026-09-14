@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { addMonths } from '@/utils/add-months'
 import { logSafeError } from '@/lib/supabase-error'
 import { todayISO, currentYearMonth, monthsAgoISO } from '@/utils/local-date'
 import { Transaction, TransactionType } from '@/types'
@@ -113,9 +114,10 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
     const installmentList: InstallmentItem[] = []
     for (const { base, current, total, tx } of instMap.values()) {
       const remaining = total - current
-      const endDate = new Date(tx.date)
-      endDate.setMonth(endDate.getMonth() + remaining)
-      const endYearMonth = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}`
+      // addMonths, não setMonth: `new Date('2026-01-31').setMonth(+1)` cai em
+      // 03/mar, porque fevereiro não tem dia 31 e o JS transborda para o mês
+      // seguinte. O fim do parcelamento saltava um mês inteiro. (14.16)
+      const endYearMonth = addMonths(tx.date, remaining).substring(0, 7)
 
       installmentList.push({
         description: base,
@@ -232,12 +234,17 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return false
 
-    const { error: e1 } = await supabase
+    // Filtra por board_id também: a mesma loja parcelada no Nubank e no Inter
+    // tem descrição idêntica, e descartar o parcelamento de uma conta apagava
+    // o da outra junto. (14.19)
+    let dismissQuery = supabase
       .from('transactions')
       .update({ installment_current: null, installment_total: null })
       .eq('user_id', user.id)
       .eq('description', item.description)
       .eq('installment_total', item.totalInstallments)
+    if (item.board_id) dismissQuery = dismissQuery.eq('board_id', item.board_id)
+    const { error: e1 } = await dismissQuery
 
     const { data: legacyRows, error: e2select } = await supabase
       .from('transactions')

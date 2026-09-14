@@ -14,7 +14,6 @@ import { useCategories } from '@/hooks/use-categories'
 import { useRules, applyUserRules } from '@/hooks/use-rules'
 import { Upload, Download, CheckCircle, AlertCircle, FileText, Zap, Tag, TrendingUp } from 'lucide-react'
 import { parseOFX } from '@/utils/parse-ofx'
-import { parseRICOXLSX } from '@/utils/parse-rico'
 import { parseRicoExtratoXLSX, isRicoExtratoRows } from '@/utils/parse-rico-extrato'
 import { extractPdfText } from '@/utils/extract-pdf-text'
 import { selectAllPages } from '@/lib/supabase/select-all'
@@ -572,35 +571,21 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
     reader.readAsText(file, 'utf-8')
   }
 
-  // ── RICO / XP XLSX ──
-  async function handleRICOXLSX(buffer: ArrayBuffer, fileDate: string) {
-    try {
-      const ricoData = await parseRICOXLSX(buffer)
-      if (!ricoData.positions.length) {
-        setFileError('Nenhuma posição encontrada no arquivo RICO. Verifique se é o PosicaoDetalhada.xlsx correto.')
-        return
-      }
-      const rows: PreviewRow[] = ricoData.positions
-        .filter(p => p.value > 0)
-        .map(p => ({
-          description: p.ticker,
-          amount: p.value,
-          date: fileDate,
-          type: 'receita' as TransactionType,
-          category: 'Investimento',
-          valid: true,
-          errors: [],
-        }))
-      if (!rows.length) {
-        setFileError('Nenhuma posição com valor positivo encontrada no arquivo.')
-        return
-      }
-      setPreview(rows)
-      setFileType('rico-xlsx')
-      setStep('preview')
-    } catch (err) {
-      setFileError(err instanceof Error ? err.message : 'Erro ao ler o arquivo RICO.')
-    }
+  // ── RICO / XP: PosicaoDetalhada.xlsx ──
+  //
+  // Esse arquivo é a CARTEIRA — o que o usuário possui hoje, não o que
+  // movimentou. Até set/2026 cada ativo virava uma transação do tipo receita:
+  // uma carteira de R$ 50 mil criava R$ 50 mil de renda que nunca existiu,
+  // inflando "Receita do mês", o card Investir e os relatórios. (14.13)
+  //
+  // O lugar certo desse arquivo é Investimentos, onde ele vira posição e
+  // alimenta o patrimônio sem passar por transação nenhuma.
+  function rejectPositionFile() {
+    setFileError(
+      'Este é o arquivo de posição da carteira (PosicaoDetalhada.xlsx), não um extrato. '
+      + 'Importe-o em Investimentos → a conta da corretora → Importar posição. '
+      + 'Aqui só entram extratos de movimentação.',
+    )
   }
 
   // ── PDF (Mercado Pago, Inter — detectados pelo conteúdo do texto extraído) ──
@@ -692,12 +677,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
       const sheetNames = await readXlsxSheetNames(file)
 
       if (sheetNames.includes('Sua carteira')) {
-        const rawRows = await readXlsxSheetRows(buffer, 'Sua carteira')
-        let fileDate = new Date().toISOString().split('T')[0]
-        const headerCell = String(rawRows[0]?.[5] ?? '')
-        const dateMatch = headerCell.match(/(\d{2})\/(\d{2})\/(\d{4})/)
-        if (dateMatch) fileDate = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`
-        await handleRICOXLSX(buffer, fileDate)
+        rejectPositionFile()
         return
       }
 

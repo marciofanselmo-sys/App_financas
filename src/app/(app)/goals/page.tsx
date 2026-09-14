@@ -297,7 +297,13 @@ export default function GoalsPage() {
             // Projeção baseada no ritmo atual
             const now = new Date()
             const created = new Date(goal.created_at)
-            const monthsElapsed = Math.max(1, (now.getFullYear() - created.getFullYear()) * 12 + (now.getMonth() - created.getMonth()))
+            // Meses FRACIONÁRIOS. Com Math.max(1, ...), uma meta criada ontem
+            // já contava um mês inteiro: quem guardou R$ 1.000 no primeiro dia
+            // via "ritmo de R$ 1.000/mês" e uma projeção de conclusão
+            // otimista demais. O piso de meio mês evita dividir por ~zero no
+            // dia da criação, que geraria um ritmo infinito. (14.30)
+            const msElapsed = now.getTime() - created.getTime()
+            const monthsElapsed = Math.max(0.5, msElapsed / (1000 * 60 * 60 * 24 * 30.44))
             const currentPace = goal.currentAmount / monthsElapsed
             const projectedMonths = currentPace > 0 ? Math.ceil(remaining / currentPace) : null
             const projectedDate = projectedMonths != null ? (() => {

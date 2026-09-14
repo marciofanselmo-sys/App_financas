@@ -19,7 +19,11 @@ const QUICK_PCTS = [10, 20, 30, 40] as const
 
 function calcTargetFromPct(income: number, pct: number) {
   if (income <= 0 || pct <= 0) return 0
-  return Math.round((income * pct) / 100)
+  // Arredonda em CENTAVOS, não em reais. Math.round() jogava o valor para o
+  // real mais próximo: 20% de R$ 3.333,00 virava R$ 667 em vez de R$ 666,60, e
+  // o usuário via uma meta que não correspondia ao percentual que digitou.
+  // (14.31)
+  return Math.round((income * pct)) / 100
 }
 
 interface InvestMonthCardProps {

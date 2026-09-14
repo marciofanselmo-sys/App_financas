@@ -74,6 +74,13 @@ export default function RegisterPage() {
       return
     }
 
+    // setLoading(false) antes de navegar nos dois caminhos: sem sessão (o
+    // projeto exige confirmação de e-mail) o return saía com loading ligado, e
+    // o botão ficava preso em "Criando conta..." até a rota trocar. Se a
+    // navegação demorasse ou falhasse, travava de vez — e a conta já tinha
+    // sido criada, então tentar de novo dava "e-mail já cadastrado". (14.21)
+    setLoading(false)
+
     if (!data.session) {
       router.push('/auth/login?confirm=email')
       return
@@ -151,7 +158,7 @@ export default function RegisterPage() {
             <Input
               id="password"
               type="password"
-              placeholder="Mínimo 6 caracteres"
+              placeholder="Mínimo 8 caracteres"
               value={password}
               onChange={e => setPassword(e.target.value)}
               required

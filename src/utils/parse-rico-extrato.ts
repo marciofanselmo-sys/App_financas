@@ -1,6 +1,7 @@
 'use client'
 
 import type { TransactionType } from '@/types'
+import { toLocalISO } from './local-date'
 import { validateImportRowCount } from '@/lib/import-limits'
 import { excelSerialToISO, readXlsxSheetRows, type XlsxRow } from '@/utils/read-xlsx'
 
@@ -17,7 +18,11 @@ export interface RicoExtratoRow {
 
 function excelDateToISO(value: unknown): string {
   if (value instanceof Date) {
-    return value.toISOString().slice(0, 10)
+    // toLocalISO, não toISOString: a biblioteca devolve a data como Date à
+    // meia-noite local, e converter para UTC no Brasil joga para o dia
+    // anterior — todo lançamento do extrato entrava com data de véspera.
+    // (14.22)
+    return toLocalISO(value)
   }
   if (typeof value === 'number') {
     return excelSerialToISO(value)
@@ -57,7 +62,15 @@ export async function parseRicoExtratoXLSX(buffer: ArrayBuffer): Promise<RicoExt
     const lancamento = String(row[2] ?? '').trim()
     const valorRaw = row[4]
 
-    if (!lancamento || (typeof dateRaw !== 'number' && !(dateRaw instanceof Date))) break
+    // `continue`, não `break`. A data pode vir como texto ("13/09/2026") em vez
+    // de número/Date — excelDateToISO já sabe ler os dois —, e o break
+    // encerrava o parser na primeira linha assim, descartando em silêncio todo
+    // o resto do arquivo. Linha realmente vazia continua parando o loop. (14.23)
+    if (!lancamento) break
+    const dateUsable = typeof dateRaw === 'number'
+      || dateRaw instanceof Date
+      || /^\d{2}\/\d{2}\/\d{4}$/.test(String(dateRaw ?? '').trim())
+    if (!dateUsable) continue
     if (lancamento.toLowerCase().includes('não há lançamentos')) break
 
     const amount = typeof valorRaw === 'number' ? valorRaw : parseFloat(String(valorRaw))

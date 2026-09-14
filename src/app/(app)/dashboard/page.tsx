@@ -52,10 +52,6 @@ export default function DashboardPage() {
   const [year, setYear] = useState(now.getFullYear())
 
   const { boards, loading: boardsLoading } = useTransactionBoards()
-  const investmentBoardIds = useMemo(
-    () => boards.filter(b => b.is_investment).map(b => b.id),
-    [boards],
-  )
   // Investimento nunca entra no fluxo mensal — patrimônio de carteira vem da posição importada.
   const unpinnedBoardIds = useMemo(
     () => boards.filter(b => !b.show_on_dashboard || b.is_investment).map(b => b.id),
@@ -68,12 +64,19 @@ export default function DashboardPage() {
     year,
     exclude_board_ids: unpinnedBoardIds,
   })
+  // Mesma exclusão do fluxo do mês. Antes o patrimônio tirava só as contas de
+  // investimento, então uma conta desafixada do dashboard ficava de fora do mês
+  // mas DENTRO do patrimônio — o usuário escondia a conta da loja e via o
+  // dinheiro dela somando no patrimônio pessoal mesmo assim. (14.14)
   const { transactions: allCashTransactions, loading: patrimonyLoading } = useTransactions({
-    exclude_board_ids: investmentBoardIds.length > 0 ? investmentBoardIds : undefined,
+    exclude_board_ids: unpinnedBoardIds.length > 0 ? unpinnedBoardIds : undefined,
   })
   const { transactions: allTransactions, loading: allTxLoading } = useTransactions()
   const patrimony = useMemo(
-    () => computePatrimonyOverview(boards, allCashTransactions),
+    () => computePatrimonyOverview(
+      boards.filter(b => b.show_on_dashboard || b.is_investment),
+      allCashTransactions,
+    ),
     [boards, allCashTransactions],
   )
   const { plan, loading: planLoading, savePlan } = useBudgetPlan(month, year)

@@ -23,7 +23,10 @@ export function sumInvestmentContributions(
   const seen = new Set<string>()
   let total = 0
   for (const t of matches) {
-    const key = `${t.date}|${Number(t.amount)}`
+    // A chave inclui a conta: dois aportes de R$ 500 no mesmo dia, em
+    // corretoras diferentes, tinham a mesma chave e um deles era descartado
+    // como se fosse a outra perna do mesmo movimento. (14.18)
+    const key = `${t.date}|${Number(t.amount)}|${t.board_id ?? 'sem-conta'}`
     if (seen.has(key)) continue
     seen.add(key)
     total += Number(t.amount)
