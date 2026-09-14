@@ -63,6 +63,12 @@ export interface Transaction {
   amount: number
   date: string
   type: TransactionType
+  // Preenchida quando a linha quita outra conta do próprio usuário (ex: o
+  // pagamento da fatura, lançado na conta corrente, quita o cartão).
+  counterpart_board_id?: string | null
+  // Só na perna GERADA pelo app: aponta para o pagamento que a originou.
+  // Impede a reimportação do mesmo extrato de creditar o destino duas vezes.
+  counterpart_of_id?: string | null
   category: string
   board_id?: string | null
   tags?: string[]
