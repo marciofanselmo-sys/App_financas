@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { logSafeError } from '@/lib/supabase-error'
+import { todayISO, currentYearMonth, monthsAgoISO } from '@/utils/local-date'
 import { Transaction, TransactionType } from '@/types'
 
 export interface RecurringItem {
@@ -56,10 +58,9 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
 
-    // Last 12 months of transactions
-    const since = new Date()
-    since.setMonth(since.getMonth() - 12)
-    const sinceStr = since.toISOString().split('T')[0]
+    // Últimos 12 meses. Data em fuso local: toISOString() converte para UTC e,
+    // à noite no Brasil, muda a janela em um dia (14.17).
+    const sinceStr = monthsAgoISO(12)
 
     let query = supabase
       .from('transactions')
@@ -74,13 +75,28 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
       query = query.or(`board_id.is.null,board_id.not.in.(${excludeKey})`)
     }
 
-    const { data } = await query
-
-    if (!data) { setLoading(false); return }
-    const txs = data as Transaction[]
+    // Busca paginada: o Supabase corta em 1000 linhas por consulta. Como a
+    // ordenação é por data decrescente, o corte silencioso derrubava justamente
+    // os meses mais ANTIGOS da janela de 12 meses — e é a presença em 2+ meses
+    // que define se algo é recorrente. Um gasto fixo antigo simplesmente sumia
+    // da tela (14.5).
+    const PAGE = 1000
+    const txs: Transaction[] = []
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await query.range(from, from + PAGE - 1)
+      if (error) {
+        logSafeError('useRecurring.fetch', error)
+        setLoading(false)
+        return
+      }
+      if (!data?.length) break
+      txs.push(...(data as Transaction[]))
+      if (data.length < PAGE) break
+    }
+    if (!txs.length) { setLoading(false); return }
 
     // ── Installments ──────────────────────────────────────────────
-    const todayStr = new Date().toISOString().split('T')[0]
+    const todayStr = todayISO()
     const instMap = new Map<string, { base: string; current: number; total: number; tx: Transaction }>()
 
     for (const t of txs) {
@@ -119,8 +135,10 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
       variants: Set<string>
       category: string
       type: TransactionType
-      amounts: number[]
-      months: Set<string>
+      // Total POR MÊS, não a lista solta de valores: duas cobranças da mesma
+      // assinatura no mesmo mês (importação duplicada, ou cobrança extra)
+      // somavam dois valores e dividiam por um mês só, dobrando a média (14.6).
+      monthTotals: Map<string, number>
       lastDate: string
       board_id: string | null
       group_label: string | null
@@ -142,8 +160,7 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
           variants: new Set(),
           category: t.category,
           type: t.type,
-          amounts: [],
-          months: new Set(),
+          monthTotals: new Map(),
           lastDate: t.date,
           board_id: t.board_id ?? null,
           group_label: t.group_label ?? null,
@@ -151,8 +168,7 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
         })
       }
       const g = recurMap.get(key)!
-      g.amounts.push(t.amount)
-      g.months.add(month)
+      g.monthTotals.set(month, (g.monthTotals.get(month) ?? 0) + Number(t.amount))
       g.variants.add(t.description)
       if (t.is_recurring) g.is_recurring = true
       if (t.date > g.lastDate) {
@@ -163,16 +179,19 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
 
     const recurringList: RecurringItem[] = []
     for (const g of recurMap.values()) {
-      if (g.months.size < 2 && !g.is_recurring) continue
-      const avgAmount = g.amounts.reduce((a, b) => a + b, 0) / g.months.size
+      if (g.monthTotals.size < 2 && !g.is_recurring) continue
+      // Média do que se gasta POR MÊS: soma cada mês primeiro, depois divide
+      // pelo número de meses.
+      const total = [...g.monthTotals.values()].reduce((a, b) => a + b, 0)
+      const avgAmount = total / g.monthTotals.size
       recurringList.push({
         description: g.original,
         descriptionVariants: Array.from(g.variants),
         category: g.category,
         type: g.type,
         avgAmount,
-        monthsCount: g.months.size,
-        months: Array.from(g.months),
+        monthsCount: g.monthTotals.size,
+        months: Array.from(g.monthTotals.keys()),
         lastDate: g.lastDate,
         board_id: g.board_id,
         group_label: g.group_label,
@@ -180,9 +199,9 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
       })
     }
 
-    const currentYearMonth = new Date().toISOString().substring(0, 7)
+    const thisYearMonth = currentYearMonth()
     const visibleInstallments = installmentList.filter(item =>
-      item.endYearMonth >= currentYearMonth
+      item.endYearMonth >= thisYearMonth
     )
 
     setInstallments(visibleInstallments.sort((a, b) => a.remaining - b.remaining))

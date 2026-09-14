@@ -1,22 +1,10 @@
 import { Transaction, TransactionBoard } from '@/types'
+import { todayISO } from '@/utils/local-date'
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 
 export { fmt as formatDashboardCurrency }
-
-/**
- * Data de hoje no fuso local, como YYYY-MM-DD.
- *
- * Deliberadamente sem `toISOString()`: ele converte para UTC, então depois das
- * ~21h no horário de Brasília já devolve o dia seguinte — e uma parcela de
- * amanhã passaria a contar no saldo de hoje.
- */
-export function todayISO(): string {
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
 
 /**
  * Só o que já aconteceu.
@@ -25,6 +13,8 @@ export function todayISO(): string {
  * compromisso, não dinheiro que já saiu — somá-las no saldo mostra a conta
  * mais pobre (ou mais rica) do que ela está hoje.
  */
+export { todayISO }
+
 export function upToToday<T extends { date: string }>(transactions: T[]): T[] {
   const today = todayISO()
   return transactions.filter(t => t.date <= today)

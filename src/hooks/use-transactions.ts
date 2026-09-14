@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Transaction, TransactionFilters } from '@/types'
 import { formatUserError } from '@/lib/supabase-error'
+import { toLocalISO } from '@/utils/local-date'
 
 export function useTransactions(filters?: TransactionFilters) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -23,7 +24,8 @@ export function useTransactions(filters?: TransactionFilters) {
 
       if (filters?.month && filters?.year) {
         const start = `${filters.year}-${String(filters.month).padStart(2, '0')}-01`
-        const end = new Date(filters.year, filters.month, 0).toISOString().split('T')[0]
+        // toLocalISO: em UTC o último dia do mês pode virar o penúltimo.
+        const end = toLocalISO(new Date(filters.year, filters.month, 0))
         query = query.gte('date', start).lte('date', end)
       } else if (filters?.year) {
         query = query

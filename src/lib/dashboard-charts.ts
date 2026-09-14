@@ -1,4 +1,5 @@
 import { Transaction } from '@/types'
+import { toLocalISO } from '@/utils/local-date'
 import { BudgetPlan } from '@/hooks/use-budget-plan'
 import { isSubKey, subName } from '@/lib/plan-keys'
 import { balanceFromTransactions, PatrimonyOverview } from '@/lib/dashboard-patrimony'
@@ -33,7 +34,9 @@ export function getMonthRange(endMonth: number, endYear: number, count: number):
 }
 
 function lastDayOfMonth(year: number, month: number): string {
-  return new Date(year, month, 0).toISOString().split('T')[0]
+  // toLocalISO, não toISOString: o segundo converte para UTC e, em fuso
+  // positivo, devolve o dia anterior — o último dia do mês ficaria de fora.
+  return toLocalISO(new Date(year, month, 0))
 }
 
 export interface MonthlyFlowPoint {

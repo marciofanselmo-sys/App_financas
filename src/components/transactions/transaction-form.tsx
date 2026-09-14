@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { todayISO } from '@/utils/local-date'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -79,7 +80,8 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
     if (open) {
       setDescription(initialData?.description ?? '')
       setAmount(initialData ? String(initialData.amount) : '')
-      setDate(initialData?.date ?? new Date().toISOString().split('T')[0])
+      // Fuso local: em UTC a transação lançada à noite nascia com a data de amanhã.
+      setDate(initialData?.date ?? todayISO())
       setType(initialData?.type ?? 'despesa')
       setCategory(initialData?.category ?? '')
       setTags(initialData?.tags ?? [])

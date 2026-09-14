@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { todayISO } from '@/utils/local-date'
 import { useRecurring, InstallmentItem } from '@/hooks/use-recurring'
 import { useCategories } from '@/hooks/use-categories'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
@@ -53,7 +54,9 @@ interface ManualForm {
   date: string
 }
 
-const TODAY = new Date().toISOString().split('T')[0]
+// Fuso local: em UTC, depois das 21h no Brasil, o lançamento nasceria com a
+// data de amanhã (14.17).
+const TODAY = todayISO()
 
 const EMPTY_FORM: ManualForm = {
   description: '',
