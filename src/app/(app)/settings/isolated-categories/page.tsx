@@ -67,6 +67,7 @@ export default function IsolatedCategoriesPage() {
   const [deleteError, setDeleteError] = useState('')
   const [mergeState, setMergeState] = useState<MergeState | null>(null)
   const [merging, setMerging] = useState(false)
+  const [mergeError, setMergeError] = useState('')
 
   const usageCount = useMemo(() => {
     const map: Record<string, number> = {}
@@ -140,12 +141,26 @@ export default function IsolatedCategoriesPage() {
   }
 
   async function confirmMerge() {
+    setMergeError('')
     if (!mergeState || !mergeState.toId) return
     const target = categories.find(c => c.id === mergeState.toId)
     if (!target) return
     setMerging(true)
-    await updateCategory(mergeState.from.id, { name: target.name })
-    await deleteCategory(mergeState.from.id)
+    // Se o rename falhar e o delete rodar assim mesmo, a categoria de origem
+    // é apagada sem as transações terem migrado para o destino — elas ficam
+    // órfãs. Antes nenhum dos dois passos checava erro. (14.33)
+    const { error: renameError } = await updateCategory(mergeState.from.id, { name: target.name })
+    if (renameError) {
+      setMergeError(renameError)
+      setMerging(false)
+      return
+    }
+    const { error: deleteError } = await deleteCategory(mergeState.from.id)
+    if (deleteError) {
+      setMergeError(deleteError)
+      setMerging(false)
+      return
+    }
     setMergeState(null)
     setMerging(false)
   }
@@ -400,6 +415,11 @@ export default function IsolatedCategoriesPage() {
                   </SelectContent>
                 </Select>
               </div>
+              {mergeError && (
+                <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
+                  {mergeError}
+                </div>
+              )}
               <div className="flex gap-2 pt-1">
                 <Button variant="outline" onClick={() => setMergeState(null)} className="flex-1">Cancelar</Button>
                 <Button onClick={confirmMerge} disabled={!mergeState.toId || merging} className="flex-1">

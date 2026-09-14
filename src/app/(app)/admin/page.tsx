@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { selectAllPages } from '@/lib/supabase/select-all'
+import { logSafeError } from '@/lib/supabase-error'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Users, Activity, BarChart2, Clock, RefreshCw, Shield, Eye } from 'lucide-react'
@@ -79,13 +81,17 @@ export default function AdminPage() {
       .lt('created_at', new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString())
 
     // Busca todos os views dos últimos 30 dias
-    const { data } = await supabase
+    // Paginado: com o painel cortado em 1000 linhas, "usuários online" e
+    // "páginas mais vistas" eram calculados sobre uma amostra parcial — e,
+    // pela ordem decrescente, sempre a mais recente. (14.26)
+    const { rows, error } = await selectAllPages<PageView>(() => supabase
       .from('admin_page_views')
       .select('*')
       .gte('created_at', new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString())
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: false }))
 
-    setViews((data ?? []) as PageView[])
+    if (error) logSafeError('adminPageViews.load', error)
+    setViews(rows)
     setLastRefresh(new Date())
     setLoading(false)
   }

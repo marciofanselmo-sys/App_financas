@@ -104,35 +104,57 @@ export function useCategories() {
       const oldName = oldCategory.name
       const newName = cat.name
 
+      // A categoria já foi renomeada acima. Se algum passo abaixo falhar, a
+      // base fica inconsistente — transações apontando para um nome que não
+      // existe mais, some dos relatórios e do planejamento sem aviso. Antes
+      // nenhum destes checava erro. (14.28)
+
       // 1. Transações: atualiza o campo category
-      await supabase
+      const { error: txError } = await supabase
         .from('transactions')
         .update({ category: newName })
         .eq('user_id', user.id)
         .eq('category', oldName)
+      if (txError) {
+        logSafeError('updateCategory.cascadeTransactions', txError)
+        await fetchCategories()
+        return { error: 'A categoria foi renomeada, mas as transações não puderam ser atualizadas. Tente de novo.' }
+      }
 
       // 2. Regras automáticas: atualiza o campo category
-      await supabase
+      const { error: rulesError } = await supabase
         .from('categorization_rules')
         .update({ category: newName })
         .eq('user_id', user.id)
         .eq('category', oldName)
+      if (rulesError) {
+        logSafeError('updateCategory.cascadeRules', rulesError)
+        return { error: 'A categoria foi renomeada, mas as regras automáticas continuam apontando para o nome antigo.' }
+      }
 
       // 3. Planejamento: renomeia a chave no JSON category_limits
-      const { data: plans } = await supabase
+      const { data: plans, error: plansError } = await supabase
         .from('budget_plans')
         .select('id, category_limits')
         .eq('user_id', user.id)
+      if (plansError) {
+        logSafeError('updateCategory.cascadePlansRead', plansError)
+        return { error: 'A categoria foi renomeada, mas os limites do Planejamento não puderam ser atualizados.' }
+      }
 
       for (const plan of plans ?? []) {
         const limits = plan.category_limits as Record<string, number>
         if (!(oldName in limits)) continue
         const updated = { ...limits, [newName]: limits[oldName] }
         delete updated[oldName]
-        await supabase
+        const { error: planError } = await supabase
           .from('budget_plans')
           .update({ category_limits: updated })
           .eq('id', plan.id)
+        if (planError) {
+          logSafeError('updateCategory.cascadePlanWrite', planError)
+          return { error: 'A categoria foi renomeada, mas os limites do Planejamento não puderam ser atualizados.' }
+        }
       }
     }
 

@@ -17,6 +17,7 @@ import { parseOFX } from '@/utils/parse-ofx'
 import { parseRICOXLSX } from '@/utils/parse-rico'
 import { parseRicoExtratoXLSX, isRicoExtratoRows } from '@/utils/parse-rico-extrato'
 import { extractPdfText } from '@/utils/extract-pdf-text'
+import { selectAllPages } from '@/lib/supabase/select-all'
 import { findCounterpartBoard, hasExistingLeg, buildCounterpartLeg, legTypeFor } from '@/lib/internal-counterpart'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { parseMercadoPagoPDF, isMercadoPagoPDF } from '@/utils/parse-mercadopago-pdf'
@@ -813,30 +814,6 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
     setPreview(enhanceWithUserRules(rows))
     setStep('preview')
   }
-
-/**
- * Busca TODAS as páginas de uma consulta.
- *
- * O Supabase corta em 1000 linhas por consulta, sem erro e sem aviso. Em
- * consultas de conferência isso é pior que um erro: a deduplicação concluía
- * "essa transação não existe" só porque a linha existente ficou fora do corte,
- * e importava tudo de novo. (14.9 / 14.10)
- */
-async function selectAllPages<T>(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  buildQuery: () => any,
-): Promise<{ rows: T[]; error: { message: string } | null }> {
-  const PAGE = 1000
-  const rows: T[] = []
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await buildQuery().range(from, from + PAGE - 1)
-    if (error) return { rows, error }
-    if (!data?.length) break
-    rows.push(...(data as T[]))
-    if (data.length < PAGE) break
-  }
-  return { rows, error: null }
-}
 
 function shiftDays(date: string, days: number): string {
   const d = new Date(`${date}T12:00:00`)

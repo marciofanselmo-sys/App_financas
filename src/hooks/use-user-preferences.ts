@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { logSafeError } from '@/lib/supabase-error'
 
 export interface UserPreferences {
   id: string
@@ -22,6 +23,7 @@ const DEFAULT_PREFERENCES: Pick<UserPreferences, 'investment_pct' | 'theme' | 'd
 export function useUserPreferences() {
   const [preferences, setPreferences] = useState<UserPreferences | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -40,7 +42,21 @@ export function useUserPreferences() {
       .maybeSingle()
 
     if (error) {
-      // Tabela ainda não migrada — fallback local até rodar SQL
+      // Só 42P01 ("relation does not exist") significa tabela não migrada.
+      //
+      // Antes, QUALQUER erro caía aqui: falha de rede ou policy de RLS negando
+      // leitura devolviam os padrões como se fossem as preferências do usuário.
+      // O efeito visível era o % de investimento voltar para 20% sozinho, e a
+      // próxima gravação salvar esse valor por cima do que o usuário escolheu.
+      // (14.29)
+      const notMigrated = error.code === '42P01'
+      if (!notMigrated) {
+        logSafeError('useUserPreferences.fetch', error)
+        setLoadError('Não foi possível carregar suas preferências.')
+        setLoading(false)
+        return
+      }
+
       setPreferences({
         id: '',
         user_id: user.id,
@@ -101,6 +117,7 @@ export function useUserPreferences() {
     preferences,
     defaultInvestmentPct: preferences?.investment_pct ?? DEFAULT_PREFERENCES.investment_pct,
     loading,
+    loadError,
     updatePreferences,
     refetch: load,
   }

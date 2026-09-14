@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { selectAllPages } from '@/lib/supabase/select-all'
+import { logSafeError } from '@/lib/supabase-error'
 import { Subcategory, TransactionType } from '@/types'
 import { decisionKey } from '@/lib/recurring-groups'
 
@@ -23,17 +25,23 @@ export function useSubcategories() {
     // Subcategorias pré-criadas ficam no user_metadata; as já atribuídas vêm das transações
     const rawMeta = (user.user_metadata?.subcategories as unknown[] | undefined) ?? []
 
-    const { data: txRows } = await supabase
+    // Paginado: o corte em 1000 linhas fazia subcategorias antigas perderem
+    // suas categorias derivadas na migração de dados legados. (14.27)
+    const { rows: txRows, error: txError } = await selectAllPages<{
+      group_label: string | null; type: string; category: string | null
+    }>(() => supabase
       .from('transactions')
       .select('group_label, type, category')
       .eq('user_id', user.id)
-      .not('group_label', 'is', null)
+      .not('group_label', 'is', null))
+
+    if (txError) logSafeError('useSubcategories.sync', txError)
 
     // Só usado pra migrar dados antigos que ainda não tinham `categories`
     // persistido (ver abaixo) — depois da migração, `categories` de cada
     // subcategoria é a fonte da verdade, não mais derivado das transações.
     const derivedCategoriesByLabel = new Map<string, Set<string>>()
-    for (const row of txRows ?? []) {
+    for (const row of txRows) {
       const label = row.group_label as string | null
       const category = row.category as string | null
       if (!label || !category) continue
@@ -44,7 +52,7 @@ export function useSubcategories() {
     // Vota o tipo mais comum entre as transações que já usam cada rótulo —
     // usado só pra migrar dados antigos (formato de string pura, sem tipo).
     const votes = new Map<string, Record<TransactionType, number>>()
-    for (const row of txRows ?? []) {
+    for (const row of txRows) {
       const label = row.group_label as string | null
       const type = row.type as TransactionType
       if (!label) continue

@@ -48,7 +48,13 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && pathname.startsWith('/admin')) {
-    const { data: isAdmin } = await supabase.rpc('is_app_admin')
+    const { data: isAdmin, error: adminError } = await supabase.rpc('is_app_admin')
+    // Falha da RPC (função ausente no banco, erro de rede) cai no mesmo caminho
+    // de "não é admin" — fail-closed está certo, mas sem log o dono do produto
+    // perde o acesso ao painel e não tem como descobrir por quê. (14.34)
+    if (adminError) {
+      console.error('[middleware] is_app_admin falhou:', adminError.message, '| code:', adminError.code)
+    }
     if (!isAdmin) {
       const url = request.nextUrl.clone()
       url.pathname = '/dashboard'
