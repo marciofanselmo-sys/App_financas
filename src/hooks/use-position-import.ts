@@ -5,7 +5,7 @@ import { TransactionBoard } from '@/types'
 import { validateImportFile } from '@/lib/import-limits'
 import { parseRICOXLSX, RICOData } from '@/utils/parse-rico'
 
-type UpdateBoardFn = (id: string, data: Partial<Omit<TransactionBoard, 'id' | 'user_id' | 'created_at'>>) => void | Promise<void>
+type UpdateBoardFn = (id: string, data: Partial<Omit<TransactionBoard, 'id' | 'user_id' | 'created_at'>>) => Promise<{ error: string | null }>
 
 // Fluxo de "importar posição da carteira" (PosicaoDetalhada.xlsx) — usado
 // tanto na lista de contas de investimento quanto na tela de detalhe da
@@ -49,7 +49,7 @@ export function usePositionImport(updateBoard: UpdateBoardFn) {
     }
   }
 
-  function confirm() {
+  async function confirm() {
     if (!importFor || !preview) return
     const prev = importFor.last_position_import
     const priorHistory = prev?.history ?? importFor.position_import_history ?? []
@@ -57,12 +57,24 @@ export function usePositionImport(updateBoard: UpdateBoardFn) {
       ? [...priorHistory, { patrimonio: prev.patrimonio, importedAt: prev.importedAt }]
       : [...priorHistory]
     const entry = { patrimonio: preview.patrimonio, importedAt: preview.importedAt }
-    updateBoard(importFor.id, {
+    setLoading(true)
+    const { error: saveError } = await updateBoard(importFor.id, {
       last_position_import: {
         ...preview,
         history: [...history, entry].slice(-48),
       },
     })
+    setLoading(false)
+
+    // Só fecha se o banco confirmou. Antes a gravação não era aguardada e o
+    // modal fechava de qualquer jeito: uma falha desaparecia da tela junto com
+    // ele, e o usuário ia embora achando que a posição tinha sido importada.
+    // (14.11)
+    if (saveError) {
+      setError('Não foi possível salvar a posição importada. Tente novamente.')
+      return
+    }
+
     setImportFor(null)
     setPreview(null)
   }

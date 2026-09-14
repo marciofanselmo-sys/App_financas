@@ -141,13 +141,17 @@ export function useTransactionBoards() {
     return null
   }
 
-  async function updateBoard(id: string, data: Partial<Omit<TransactionBoard, 'id' | 'user_id' | 'created_at'>>) {
+  async function updateBoard(
+    id: string,
+    data: Partial<Omit<TransactionBoard, 'id' | 'user_id' | 'created_at'>>,
+  ): Promise<{ error: string | null }> {
     const supabase = createClient()
     const { error } = await supabase.from('transaction_boards').update(data).eq('id', id)
-    if (!error) {
-      boardsCache = boardsCache.map(b => b.id === id ? { ...b, ...data } : b)
-      notify()
-    }
+    if (error) return { error: error.message }
+
+    boardsCache = boardsCache.map(b => b.id === id ? { ...b, ...data } : b)
+    notify()
+    return { error: null }
   }
 
   // Exclusão total: apaga todas as transações vinculadas à conta antes de

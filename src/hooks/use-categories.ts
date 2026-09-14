@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Category, DEFAULT_CATEGORIES } from '@/types'
 import { createClient } from '@/lib/supabase/client'
+import { logSafeError } from '@/lib/supabase-error'
 
 function uid() {
   return crypto.randomUUID()
@@ -17,25 +18,53 @@ export function useCategories() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
 
-    const { data } = await supabase
+    const selectCategories = () => supabase
       .from('categories')
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: true })
 
-    if (data && data.length > 0) {
-      setCategories(data as Category[])
-    } else {
-      // Primeira vez: semeia as categorias padrão
-      const defaults: Category[] = DEFAULT_CATEGORIES.map(c => ({
-        ...c,
-        id: uid(),
-        user_id: user.id,
-        created_at: new Date().toISOString(),
-      }))
-      await supabase.from('categories').insert(defaults)
-      setCategories(defaults)
+    const { data, error } = await selectCategories()
+
+    if (error) {
+      // Falha de LEITURA não pode cair no ramo de semear. Antes, qualquer erro
+      // (rede, RLS) deixava `data` nulo e o código concluía "usuário novo" —
+      // semeando as 9 categorias padrão por cima das que já existiam.
+      logSafeError('useCategories.fetch', error)
+      setLoading(false)
+      return
     }
+
+    if (data.length > 0) {
+      setCategories(data as Category[])
+      setLoading(false)
+      return
+    }
+
+    // Primeira vez: semeia as categorias padrão.
+    //
+    // upsert, não insert: abrir o app em duas abas no primeiro login fazia as
+    // duas lerem "vazio" antes de qualquer escrita terminar, e as duas
+    // inseriam — o usuário começava com 18 categorias, duas de cada. O
+    // ignoreDuplicates deixa a segunda aba não fazer nada, apoiado na
+    // constraint unique (user_id, name) de migration_categories.sql.
+    const defaults: Category[] = DEFAULT_CATEGORIES.map(c => ({
+      ...c,
+      id: uid(),
+      user_id: user.id,
+      created_at: new Date().toISOString(),
+    }))
+    const { error: seedError } = await supabase
+      .from('categories')
+      .upsert(defaults, { onConflict: 'user_id,name', ignoreDuplicates: true })
+
+    if (seedError) logSafeError('useCategories.seed', seedError)
+
+    // Relê sempre, em vez de confiar no que esta aba tentou inserir: se a
+    // outra aba ganhou a corrida, são as categorias DELA que estão no banco —
+    // e usar as locais deixaria a tela mostrando ids que não existem.
+    const { data: seeded } = await selectCategories()
+    setCategories((seeded ?? []) as Category[])
     setLoading(false)
   }
 

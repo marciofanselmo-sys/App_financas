@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { logSafeError } from '@/lib/supabase-error'
 
 export type RecurringDecision = 'confirmed' | 'ignored'
 
@@ -38,26 +39,41 @@ export function useRecurringDecisions() {
     load()
   }, [])
 
-  async function setDecision(descriptionKey: string, decision: RecurringDecision | null) {
+  async function setDecision(descriptionKey: string, decision: RecurringDecision | null): Promise<{ error: unknown }> {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) return { error: 'Não autenticado.' }
 
     if (decision === null) {
-      await supabase.from('recurring_decisions').delete().eq('user_id', user.id).eq('description_key', descriptionKey)
+      const { error } = await supabase
+        .from('recurring_decisions').delete()
+        .eq('user_id', user.id).eq('description_key', descriptionKey)
+      if (error) { logSafeError('useRecurringDecisions.delete', error); return { error } }
       setDecisions(prev => { const n = new Map(prev); n.delete(descriptionKey); return n })
-      return
+      return { error: null }
     }
 
-    const existing = decisions.get(descriptionKey)
-    if (existing) {
-      await supabase.from('recurring_decisions').update({ decision }).eq('user_id', user.id).eq('description_key', descriptionKey)
-    } else {
-      await supabase.from('recurring_decisions').insert({
-        id: uid(), user_id: user.id, description_key: descriptionKey, decision, created_at: new Date().toISOString()
-      })
+    // upsert, não "checar o Map e então insert ou update".
+    //
+    // O Map é o estado desta aba, não o do banco: confirmar dois recorrentes em
+    // sequência (ou a mesma decisão em duas abas) fazia as duas chamadas verem
+    // "não existe" antes de qualquer escrita terminar, e as duas inseriam.
+    // Apoiado na constraint unique (user_id, description_key) de
+    // migration_recurring_decisions.sql. (14.20)
+    const { error } = await supabase
+      .from('recurring_decisions')
+      .upsert(
+        { id: uid(), user_id: user.id, description_key: descriptionKey, decision, created_at: new Date().toISOString() },
+        { onConflict: 'user_id,description_key' },
+      )
+
+    if (error) {
+      logSafeError('useRecurringDecisions.upsert', error)
+      return { error }
     }
+
     setDecisions(prev => new Map(prev).set(descriptionKey, decision))
+    return { error: null }
   }
 
   return { decisions, loading, setDecision }
