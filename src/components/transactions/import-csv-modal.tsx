@@ -800,6 +800,30 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
     setStep('preview')
   }
 
+/**
+ * Busca TODAS as páginas de uma consulta.
+ *
+ * O Supabase corta em 1000 linhas por consulta, sem erro e sem aviso. Em
+ * consultas de conferência isso é pior que um erro: a deduplicação concluía
+ * "essa transação não existe" só porque a linha existente ficou fora do corte,
+ * e importava tudo de novo. (14.9 / 14.10)
+ */
+async function selectAllPages<T>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  buildQuery: () => any,
+): Promise<{ rows: T[]; error: { message: string } | null }> {
+  const PAGE = 1000
+  const rows: T[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await buildQuery().range(from, from + PAGE - 1)
+    if (error) return { rows, error }
+    if (!data?.length) break
+    rows.push(...(data as T[]))
+    if (data.length < PAGE) break
+  }
+  return { rows, error: null }
+}
+
 function shiftDays(date: string, days: number): string {
   const d = new Date(`${date}T12:00:00`)
   d.setDate(d.getDate() + days)
@@ -814,8 +838,10 @@ function shiftDays(date: string, days: number): string {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setImporting(false); return }
 
-    const { data: historyData } = await supabase
-      .from('transactions').select('description, category').eq('user_id', user.id).neq('category', 'Outros')
+    const { rows: historyData } = await selectAllPages<{ description: string; category: string }>(
+      () => supabase
+        .from('transactions').select('description, category').eq('user_id', user.id).neq('category', 'Outros'),
+    )
     // Categoria especial nunca entra na herança por histórico — descrições genéricas
     // (ex: "DEBITO DE CARTAO") podem repetir em transações de eventos completamente
     // diferentes, então herdar uma categoria especial por coincidência de texto é sempre errado.
@@ -823,7 +849,7 @@ function shiftDays(date: string, days: number): string {
       categories.filter(c => c.special_dates && c.special_dates.length > 0).map(c => c.name)
     )
     const historyMap = new Map<string, string>()
-    for (const h of historyData ?? []) {
+    for (const h of historyData) {
       if (specialCategoryNames.has(h.category)) continue
       historyMap.set(h.description.toLowerCase(), h.category)
     }
@@ -841,10 +867,12 @@ function shiftDays(date: string, days: number): string {
     // "Outros" nunca herda subcategoria: se o sistema nem reconheceu a categoria
     // (ficou em "Outros"), não tem confiança suficiente pra herdar a
     // subcategoria também — fica pro usuário decidir na revisão manual.
-    const { data: subcategoryHistoryData } = await supabase
-      .from('transactions').select('description, category, group_label').eq('user_id', user.id).not('group_label', 'is', null)
+    const { rows: subcategoryData } = await selectAllPages<{ description: string; category: string; group_label: string }>(
+      () => supabase
+        .from('transactions').select('description, category, group_label').eq('user_id', user.id).not('group_label', 'is', null),
+    )
     const subcategoryHistoryMap = new Map<string, string>()
-    for (const h of subcategoryHistoryData ?? []) {
+    for (const h of subcategoryData) {
       if (!h.group_label) continue
       subcategoryHistoryMap.set(`${h.description.toLowerCase()}|${h.category}`, h.group_label)
     }
@@ -928,9 +956,21 @@ function shiftDays(date: string, days: number): string {
       const batch = valid.slice(i, i + BATCH)
       const dates = [...new Set(batch.map(r => r.date))]
 
-      const { data: existing } = await supabase
-        .from('transactions').select('date, amount, description').eq('user_id', user.id).in('date', dates)
-      const existingSet = new Set((existing ?? []).map(e => `${e.date}|${e.amount}|${e.description}`))
+      const { rows: existing, error: dedupError } = await selectAllPages<{ date: string; amount: number; description: string }>(
+        () => supabase
+          .from('transactions').select('date, amount, description').eq('user_id', user.id).in('date', dates),
+      )
+      if (dedupError) {
+        // Sem a lista completa do que já existe não dá para saber o que é
+        // duplicata. Importar assim mesmo criaria lançamentos repetidos no
+        // banco — melhor parar e avisar do que sujar os dados do usuário.
+        errors += batch.length
+        if (!firstErrorMessage) {
+          firstErrorMessage = `Não foi possível verificar duplicatas: ${dedupError.message}. Nada foi importado neste lote.`
+        }
+        continue
+      }
+      const existingSet = new Set(existing.map(e => `${e.date}|${e.amount}|${e.description}`))
 
       const toInsert = batch.filter(r => !existingSet.has(`${r.date}|${r.amount}|${r.description}`))
       const dupBatch = batch.filter(r => existingSet.has(`${r.date}|${r.amount}|${r.description}`))

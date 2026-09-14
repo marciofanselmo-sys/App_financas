@@ -180,10 +180,22 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
     const recurringList: RecurringItem[] = []
     for (const g of recurMap.values()) {
       if (g.monthTotals.size < 2 && !g.is_recurring) continue
-      // Média do que se gasta POR MÊS: soma cada mês primeiro, depois divide
-      // pelo número de meses.
-      const total = [...g.monthTotals.values()].reduce((a, b) => a + b, 0)
-      const avgAmount = total / g.monthTotals.size
+      // MEDIANA dos totais mensais, não média.
+      //
+      // A média divide a soma de tudo pelo número de meses — e com um mês
+      // atípico ela desanda: a Netflix importada duas vezes em janeiro
+      // aparecia como R$ 74,53/mês em vez de R$ 55,90. Somar por mês antes de
+      // dividir (a correção que parecia óbvia) não muda nada: sum(todos)/meses
+      // já é sum(totais mensais)/meses, o mesmo número.
+      //
+      // A mediana ignora o mês fora da curva. E quando a cobrança dobrada é
+      // real e acontece todo mês, todos os meses ficam iguais e ela acerta
+      // igual — é só quando UM mês destoa que as duas divergem. (14.6)
+      const monthly = [...g.monthTotals.values()].sort((a, b) => a - b)
+      const mid = Math.floor(monthly.length / 2)
+      const avgAmount = monthly.length % 2 === 0
+        ? (monthly[mid - 1] + monthly[mid]) / 2
+        : monthly[mid]
       recurringList.push({
         description: g.original,
         descriptionVariants: Array.from(g.variants),
