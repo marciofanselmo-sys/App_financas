@@ -72,6 +72,15 @@ export default function DashboardPage() {
     exclude_board_ids: unpinnedBoardIds.length > 0 ? unpinnedBoardIds : undefined,
   })
   const { transactions: allTransactions, loading: allTxLoading } = useTransactions()
+  // Mesmas contas que alimentam allCashTransactions: fixadas no dashboard e
+  // que não são de investimento. O saldo inicial delas vale desde antes do
+  // primeiro lançamento, então entra em todos os pontos da curva.
+  const cashOpeningBalance = useMemo(
+    () => boards
+      .filter(b => b.show_on_dashboard && !b.is_investment)
+      .reduce((sum, b) => sum + Number(b.opening_balance ?? 0), 0),
+    [boards],
+  )
   const patrimony = useMemo(
     () => computePatrimonyOverview(
       boards.filter(b => b.show_on_dashboard || b.is_investment),
@@ -111,8 +120,8 @@ export default function DashboardPage() {
     [allCashTransactions, chartMonths],
   )
   const cashBalanceTrend = useMemo(
-    () => aggregateCashBalanceTrend(allCashTransactions, chartMonths),
-    [allCashTransactions, chartMonths],
+    () => aggregateCashBalanceTrend(allCashTransactions, chartMonths, cashOpeningBalance),
+    [allCashTransactions, chartMonths, cashOpeningBalance],
   )
   const patrimonyChartData = useMemo(
     () => buildPatrimonyChartData(patrimony),

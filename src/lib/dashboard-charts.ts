@@ -72,14 +72,25 @@ export interface CashBalancePoint {
   saldo: number
 }
 
-/** Saldo acumulado em contas ao fim de cada mês (transferências ignoradas). */
+/**
+ * Saldo acumulado em contas ao fim de cada mês.
+ *
+ * `openingBalance` é a soma do saldo inicial das contas consideradas — o que
+ * existia antes do primeiro lançamento importado. Ele vale desde o começo da
+ * série, então entra em TODOS os pontos.
+ *
+ * Sem isso, quem usa o saldo inicial (porque importou só uma fatia do
+ * histórico) via o card da conta com o valor certo e o gráfico inteiro
+ * deslocado pelo mesmo montante — o número de hoje batia, a curva não.
+ */
 export function aggregateCashBalanceTrend(
   transactions: Transaction[],
   range: MonthBucket[],
+  openingBalance = 0,
 ): CashBalancePoint[] {
   return range.map(({ month, year, label, key }) => {
     const endDate = lastDayOfMonth(year, month)
-    const saldo = balanceFromTransactions(transactions.filter(t => t.date <= endDate))
+    const saldo = openingBalance + balanceFromTransactions(transactions.filter(t => t.date <= endDate))
     return { label, key, saldo }
   })
 }
