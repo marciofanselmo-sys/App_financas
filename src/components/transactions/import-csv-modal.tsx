@@ -22,6 +22,10 @@ import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { parseMercadoPagoPDF, isMercadoPagoPDF } from '@/utils/parse-mercadopago-pdf'
 import { parseInterInvoicePDF, isInterInvoicePDF } from '@/utils/parse-inter-pdf'
 import { parseItauExtratoPDF, isItauExtratoPDF } from '@/utils/parse-itau-extrato-pdf'
+import {
+  isInterExtratoCSV, parseInterExtratoCSV,
+  isInterExtratoPDF, parseInterExtratoPDF,
+} from '@/utils/parse-inter-extrato'
 import { stripEmbeddedDate } from '@/utils/strip-embedded-date'
 import { parseAmountBR } from '@/utils/parse-amount'
 import { addMonths } from '@/utils/add-months'
@@ -101,7 +105,7 @@ interface ImportCSVModalProps {
 }
 
 type Step = 'upload' | 'map' | 'preview' | 'installments' | 'review' | 'done'
-type FileType = 'ofx' | 'csv' | 'c6-credit' | 'c6-checking' | 'nubank' | 'nubank-checking' | 'rico-xlsx' | 'rico-extrato-xlsx' | 'mercadopago-pdf' | 'inter-pdf' | 'itau-extrato-pdf' | null
+type FileType = 'ofx' | 'csv' | 'c6-credit' | 'c6-checking' | 'nubank' | 'nubank-checking' | 'rico-xlsx' | 'rico-extrato-xlsx' | 'mercadopago-pdf' | 'inter-pdf' | 'inter-extrato' | 'itau-extrato-pdf' | null
 
 // ─── GENERIC CSV HELPERS ─────────────────────────────────────────────────────
 
@@ -213,8 +217,11 @@ async function computeMissingInstallments(
 
 // ─── BANK PARSERS ────────────────────────────────────────────────────────────
 
-function detectBankFormat(content: string): 'c6-credit' | 'c6-checking' | 'nubank' | 'nubank-checking' | null {
+function detectBankFormat(content: string): 'c6-credit' | 'c6-checking' | 'nubank' | 'nubank-checking' | 'inter-extrato' | null {
   const firstLine = content.split('\n')[0].trim()
+  // Extrato de CONTA CORRENTE do Inter — diferente da fatura do cartão, que
+  // vem em PDF e tem parser próprio.
+  if (isInterExtratoCSV(content)) return 'inter-extrato'
   if (firstLine.startsWith('EXTRATO DE CONTA CORRENTE C6 BANK')) return 'c6-checking'
   if (content.includes('Data de Compra') && content.includes('Parcela') && content.includes('Valor (em R$)')) return 'c6-credit'
   // Nubank (cartão de crédito): cabeçalho fixo "date,title,amount"
@@ -552,6 +559,12 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
         if (!rows.length) { setFileError('Nenhuma transação encontrada no extrato Nubank.'); return }
         setPreview(enhanceWithUserRules(rows)); setFileType('nubank'); setStep('preview'); return
       }
+      if (bankFormat === 'inter-extrato') {
+        const { rows, skipped } = parseInterExtratoCSV(content)
+        if (!rows.length) { setFileError('Nenhuma transação encontrada no extrato do Inter.'); return }
+        if (skipped > 0) setFileError(`Atenção: ${skipped} linha(s) do arquivo não foram reconhecidas e ficaram de fora.`)
+        setPreview(enhanceWithUserRules(rows)); setFileType('inter-extrato'); setStep('preview'); return
+      }
       if (bankFormat === 'nubank-checking') {
         const rows = parseNubankCheckingCSV(content)
         if (!rows.length) { setFileError('Nenhuma transação encontrada no extrato Nubank.'); return }
@@ -597,6 +610,15 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
         const buffer = ev.target?.result as ArrayBuffer
         const text = await extractPdfText(buffer)
 
+        if (isInterExtratoPDF(text)) {
+          const { rows, skipped } = parseInterExtratoPDF(text)
+          if (!rows.length) { setFileError('Nenhuma transação encontrada nesse extrato do Inter.'); return }
+          if (skipped > 0) setFileError(`Atenção: ${skipped} linha(s) do extrato não foram reconhecidas e ficaram de fora.`)
+          setPreview(enhanceWithUserRules(rows))
+          setFileType('inter-extrato')
+          setStep('preview')
+          return
+        }
         if (isInterInvoicePDF(text)) {
           const rows = parseInterInvoicePDF(text)
           if (!rows.length) {
@@ -641,7 +663,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
           return
         }
 
-        setFileError('Não reconhecemos o formato desse PDF. Hoje suportamos fatura do Inter, Extrato de Conta do Mercado Pago e Extrato de Conta do Itaú.')
+        setFileError('Não reconhecemos o formato desse PDF. Hoje suportamos fatura e extrato de conta do Inter, Extrato de Conta do Mercado Pago e Extrato de Conta do Itaú.')
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         if (msg === 'empty-pdf') {
