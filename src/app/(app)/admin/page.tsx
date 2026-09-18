@@ -5,13 +5,23 @@ import { selectAllPages } from '@/lib/supabase/select-all'
 import { logSafeError } from '@/lib/supabase-error'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Users, Activity, BarChart2, Clock, RefreshCw, Shield, Eye } from 'lucide-react'
+import { Users, Activity, BarChart2, Clock, RefreshCw, Shield, Eye, AlertTriangle } from 'lucide-react'
 import { SuggestionsPanel } from '@/components/admin/suggestions-panel'
 import { format, subDays, startOfDay } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
 const ACTIVE_MINUTES = 15
 const RETENTION_DAYS = 30
+
+interface AppError {
+  id: string
+  user_id: string | null
+  created_at: string
+  context: string
+  message: string | null
+  code: string | null
+  route: string | null
+}
 
 interface PageView {
   id: string
@@ -50,6 +60,8 @@ export default function AdminPage() {
   const router = useRouter()
   const [authorized, setAuthorized] = useState<boolean | null>(null)
   const [views, setViews]           = useState<PageView[]>([])
+  const [errors, setErrors]         = useState<AppError[]>([])
+  const [errorsUnavailable, setErrorsUnavailable] = useState(false)
   const [loading, setLoading]       = useState(true)
   const [lastRefresh, setLastRefresh] = useState(new Date())
 
@@ -92,6 +104,20 @@ export default function AdminPage() {
 
     if (error) logSafeError('adminPageViews.load', error)
     setViews(rows)
+
+    // Erros do app — mesma retenção de 30 dias dos page views.
+    const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString()
+    await supabase.from('app_errors').delete().lt('created_at', cutoff)
+    const { rows: errRows, error: errLoad } = await selectAllPages<AppError>(() => supabase
+      .from('app_errors')
+      .select('id, user_id, created_at, context, message, code, route')
+      .gte('created_at', cutoff)
+      .order('created_at', { ascending: false }))
+    // Não passa por logSafeError: se a própria tabela de erros falhar (ex:
+    // migração ainda não rodada), registrar ali de novo não adiantaria nada.
+    if (errLoad) console.error('[admin] app_errors indisponível:', errLoad.message)
+    setErrorsUnavailable(!!errLoad)
+    setErrors(errRows)
     setLastRefresh(new Date())
     setLoading(false)
   }
@@ -102,6 +128,29 @@ export default function AdminPage() {
   useEffect(() => {
     if (authorized === false) router.replace('/dashboard')
   }, [authorized, router])
+
+  // Erros agrupados por onde + mensagem. O mesmo erro 40 vezes com 3 usuários
+  // vira UMA linha dizendo isso — 40 linhas iguais esconderiam o que importa,
+  // que é quantas pessoas foram afetadas.
+  const errorGroups = useMemo(() => {
+    const groups = new Map<string, {
+      context: string; message: string; count: number
+      users: Set<string>; routes: Set<string>; last: string
+    }>()
+    for (const e of errors) {
+      const key = `${e.context}|${e.message ?? ''}`
+      const g = groups.get(key) ?? {
+        context: e.context, message: e.message ?? '', count: 0,
+        users: new Set(), routes: new Set(), last: e.created_at,
+      }
+      g.count++
+      if (e.user_id) g.users.add(e.user_id)
+      if (e.route) g.routes.add(e.route)
+      if (e.created_at > g.last) g.last = e.created_at
+      groups.set(key, g)
+    }
+    return [...groups.values()].sort((a, b) => b.last.localeCompare(a.last))
+  }, [errors])
 
   // Métricas derivadas
   const now = useMemo(() => new Date(), [lastRefresh]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -243,6 +292,54 @@ export default function AdminPage() {
           <p className="text-3xl font-bold text-slate-800 dark:text-slate-100">{fmt(views.length)}</p>
           <p className="text-xs text-slate-400 mt-0.5">30 dias</p>
         </div>
+      </div>
+
+      {/* Erros vistos pelos usuários — no topo porque é o mais acionável. */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-slate-100 dark:border-slate-700">
+          <AlertTriangle className={`h-4 w-4 ${errorGroups.length ? 'text-red-500' : 'text-slate-400'}`} />
+          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Erros dos usuários — 30 dias</h2>
+          {errorGroups.length > 0 && (
+            <span className="ml-auto text-xs text-slate-400">
+              {errors.length} ocorrência{errors.length !== 1 ? 's' : ''} · {errorGroups.length} tipo{errorGroups.length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+        {errorsUnavailable ? (
+          // Sem isto, a tabela ausente apareceria como "nenhum erro" — uma
+          // tranquilidade falsa, que é exatamente o que este painel existe
+          // para eliminar.
+          <div className="flex items-center justify-center py-8 px-5">
+            <p className="text-sm text-amber-700 dark:text-amber-400 text-center">
+              Registro de erros indisponível. Rode <code className="font-mono">migration_app_errors.sql</code> no Supabase.
+            </p>
+          </div>
+        ) : errorGroups.length === 0 ? (
+          <div className="flex items-center justify-center py-8">
+            <p className="text-sm text-slate-400">Nenhum erro registrado nos últimos 30 dias.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100 dark:divide-slate-700">
+            {errorGroups.map(g => (
+              <div key={`${g.context}|${g.message}`} className="px-5 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-mono text-slate-500 dark:text-slate-400">{g.context}</p>
+                    <p className="text-sm text-slate-800 dark:text-slate-100 break-words">{g.message || '(sem mensagem)'}</p>
+                    {g.routes.size > 0 && (
+                      <p className="text-xs text-slate-400 mt-0.5">em {[...g.routes].join(', ')}</p>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-semibold text-red-600 dark:text-red-400">{g.count}×</p>
+                    <p className="text-xs text-slate-400">{g.users.size} usuário{g.users.size !== 1 ? 's' : ''}</p>
+                    <p className="text-xs text-slate-400">{new Date(g.last).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

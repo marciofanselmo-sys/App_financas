@@ -1,6 +1,7 @@
 'use client'
 
 import { Sidebar } from '@/components/layout/sidebar'
+import { ErrorListener } from '@/components/error-listener'
 import { MobileNav } from '@/components/layout/mobile-nav'
 import { usePageTracker } from '@/hooks/use-page-tracker'
 
@@ -8,6 +9,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
   usePageTracker()
   return (
     <div className="flex min-h-screen bg-background">
+      <ErrorListener />
       <div className="hidden md:block sticky top-0 h-screen shrink-0 print:hidden">
         <Sidebar />
       </div>

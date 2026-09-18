@@ -17,6 +17,7 @@ import { parseOFX } from '@/utils/parse-ofx'
 import { parseRicoExtratoXLSX, isRicoExtratoRows } from '@/utils/parse-rico-extrato'
 import { extractPdfText } from '@/utils/extract-pdf-text'
 import { selectAllPages } from '@/lib/supabase/select-all'
+import { reportError } from '@/lib/error-reporter'
 import { findCounterpartBoard, hasExistingLeg, buildCounterpartLeg, legTypeFor } from '@/lib/internal-counterpart'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { parseMercadoPagoPDF, isMercadoPagoPDF, countMercadoPagoCandidates } from '@/utils/parse-mercadopago-pdf'
@@ -684,6 +685,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
           // acionável e ficar tentando outro PDF sem saber por quê.
           const name = err instanceof Error ? err.name : 'Erro'
           console.error('[handlePDF] falha ao processar PDF:', err)
+          reportError('import.pdf', err)
           setFileError(`Não foi possível ler o PDF. Detalhe técnico: ${name} — ${msg || 'sem mensagem'}`)
         }
       } finally {
@@ -1017,6 +1019,7 @@ function shiftDays(date: string, days: number): string {
       const { error } = await supabase.from('transactions').insert(payload)
       if (error) {
         console.error('[handleImport] insert error — message:', error.message, '| code:', error.code, '| details:', error.details, '| hint:', error.hint)
+        reportError('import.insert', error)
         errors += toInsert.length
         if (!firstErrorMessage) {
           firstErrorMessage = error.code === '23514'
