@@ -422,6 +422,11 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   // pagamento quita outra conta dele (ex: a fatura do cartão).
   const { boards } = useTransactionBoards()
   const [preview, setPreview] = useState<PreviewRow[]>([])
+  // Aviso NÃO-bloqueante, exibido na etapa de prévia. Separado de fileError
+  // porque fileError só é desenhado na etapa de upload: gravar o aviso lá e
+  // pular para a prévia fazia ele sumir antes de aparecer — o usuário nunca
+  // sabia que linhas tinham ficado de fora.
+  const [importWarning, setImportWarning] = useState('')
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<{ success: number; errors: number; duplicates: number; fixed: number; errorMessage?: string } | null>(null)
   const [fileError, setFileError] = useState('')
@@ -475,7 +480,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   }, [rules, categories])
 
   function reset() {
-    setStep('upload'); setFileType(null); setHeaders([]); setRawRows([]); setMapping({}); setPreview([])
+    setStep('upload'); setFileType(null); setHeaders([]); setRawRows([]); setMapping({}); setPreview([]); setImportWarning('')
     setImporting(false); setImportResult(null); setFileError('')
     setReviewItems([]); setReviewCategories({})
     setDuplicateItems([]); setShowDuplicates(false)
@@ -562,7 +567,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
       if (bankFormat === 'inter-extrato') {
         const { rows, skipped } = parseInterExtratoCSV(content)
         if (!rows.length) { setFileError('Nenhuma transação encontrada no extrato do Inter.'); return }
-        if (skipped > 0) setFileError(`Atenção: ${skipped} linha(s) do arquivo não foram reconhecidas e ficaram de fora.`)
+        setImportWarning(skipped > 0 ? `${skipped} linha(s) do arquivo não foram reconhecidas e ficaram de fora. Confira se o total bate com o extrato do banco.` : '')
         setPreview(enhanceWithUserRules(rows)); setFileType('inter-extrato'); setStep('preview'); return
       }
       if (bankFormat === 'nubank-checking') {
@@ -613,7 +618,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
         if (isInterExtratoPDF(text)) {
           const { rows, skipped } = parseInterExtratoPDF(text)
           if (!rows.length) { setFileError('Nenhuma transação encontrada nesse extrato do Inter.'); return }
-          if (skipped > 0) setFileError(`Atenção: ${skipped} linha(s) do extrato não foram reconhecidas e ficaram de fora.`)
+          setImportWarning(skipped > 0 ? `${skipped} linha(s) do extrato não foram reconhecidas e ficaram de fora. Confira se o total bate com o extrato do banco.` : '')
           setPreview(enhanceWithUserRules(rows))
           setFileType('inter-extrato')
           setStep('preview')
@@ -1259,6 +1264,12 @@ function shiftDays(date: string, days: number): string {
           {/* STEP 3: PREVIEW */}
           {step === 'preview' && (
             <div className="space-y-4 pt-2">
+              {importWarning && (
+                <div className="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg border border-amber-200 dark:border-amber-800">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span><strong>Atenção:</strong> {importWarning}</span>
+                </div>
+              )}
               <div className="flex items-center gap-3 flex-wrap">
                 <Badge className="bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-50">
                   ✓ {validCount} prontas para importar
