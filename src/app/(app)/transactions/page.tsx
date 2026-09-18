@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Plus, Pencil, Trash2, Wallet, Pin, PinOff, ArrowRight, ChevronRight, AlertTriangle } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { createClient } from '@/lib/supabase/client'
-import { balanceFromTransactions, formatDashboardCurrency, upToToday } from '@/lib/dashboard-patrimony'
+import { balanceFromTransactions, formatDashboardCurrency, upToToday, looksLikeMissingCardData } from '@/lib/dashboard-patrimony'
 
 // `monthTxs` é o recorte do mês (usado só na contagem de lançamentos) e
 // `allTxs` é o histórico completo — de onde sai o saldo. São dois conjuntos
@@ -271,6 +271,12 @@ export default function TransactionsPage() {
                       }`}>
                         {formatDashboardCurrency(stats.balance)}
                       </p>
+                      {looksLikeMissingCardData(board, stats.balance) && (
+                        <p className="flex items-start gap-1 text-xs text-amber-700 dark:text-amber-400 mt-1 max-w-xs">
+                          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" />
+                          Saldo positivo num cartão costuma indicar compras faltando — confira se alguma fatura ficou sem importar.
+                        </p>
+                      )}
                       <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
                         {stats.count} lançamento{stats.count !== 1 ? 's' : ''} este mês
                       </p>

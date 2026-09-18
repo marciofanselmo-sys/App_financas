@@ -40,6 +40,24 @@ export function accountBalance(transactions: Transaction[], openingBalance = 0):
   return Number(openingBalance) + balanceFromTransactions(upToToday(transactions))
 }
 
+/**
+ * Cartão de crédito com saldo positivo — quase sempre é dado faltando.
+ *
+ * Positivo num cartão significaria que o banco deve ao usuário, o que só
+ * acontece de verdade com estorno ou pagamento a maior, e por pouco tempo. Na
+ * prática o sintoma aparece quando há pagamentos sem as compras que eles
+ * quitaram: fatura importada pela metade, lançamentos apagados numa edição,
+ * histórico de compras começando depois do de pagamentos. Um cartão ficou
+ * semanas em +R$ 11.984 por isso, e só foi percebido por conciliação manual.
+ *
+ * O único sinal persistido de "é cartão" é o ícone escolhido na criação —
+ * por isso isto é um AVISO, nunca um bloqueio: o usuário pode ter trocado o
+ * ícone, e um falso positivo não pode impedir nada.
+ */
+export function looksLikeMissingCardData(board: { icon?: string }, balance: number): boolean {
+  return board.icon === 'credit-card' && balance > 0.005
+}
+
 export interface CashBoardBreakdown {
   boardId: string
   name: string

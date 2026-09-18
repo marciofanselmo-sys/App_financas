@@ -1,8 +1,8 @@
 import { useRouter } from 'next/navigation'
-import { balanceFromTransactions, upToToday } from '@/lib/dashboard-patrimony'
+import { balanceFromTransactions, upToToday, looksLikeMissingCardData } from '@/lib/dashboard-patrimony'
 import { TransactionBoard, Transaction } from '@/types'
 import { BoardIcon } from '@/components/transactions/board-icon'
-import { ArrowRight, TrendingUp, TrendingDown } from 'lucide-react'
+import { ArrowRight, TrendingUp, TrendingDown, AlertTriangle} from 'lucide-react'
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
@@ -20,6 +20,7 @@ export function BoardSummaryCard({ board, transactions }: BoardSummaryCardProps)
   // Saldo = saldo inicial da conta + entradas − saídas.
   // Saldo conta só o que já aconteceu — parcela futura não entra.
   const balance = Number(board.opening_balance ?? 0) + balanceFromTransactions(upToToday(transactions))
+  const suspicious = looksLikeMissingCardData(board, balance)
   const positive = balance >= 0
 
   return (
@@ -42,6 +43,12 @@ export function BoardSummaryCard({ board, transactions }: BoardSummaryCardProps)
         <p className={`text-xl font-bold mb-3 ${positive ? 'text-slate-800 dark:text-slate-100' : 'text-red-500'}`}>
           {formatCurrency(balance)}
         </p>
+        {suspicious && (
+          <p className="flex items-start gap-1 text-[11px] leading-snug text-amber-700 dark:text-amber-400 -mt-2 mb-3">
+            <AlertTriangle className="h-3 w-3 shrink-0 mt-px" />
+            Positivo num cartão costuma indicar compras faltando.
+          </p>
+        )}
 
         <div className="grid grid-cols-2 gap-2">
           <div className="flex items-center gap-1.5">
