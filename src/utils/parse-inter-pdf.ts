@@ -113,3 +113,20 @@ export function parseInterInvoicePDF(fullText: string): InterInvoiceRow[] {
 
   return rows
 }
+
+/**
+ * Quantos trechos do texto têm cara de lançamento, lidos ou não.
+ *
+ * Comparado com o número de linhas que o parser devolveu, dá quantas ficaram
+ * de fora — que a importação avisa em vez de descartar em silêncio. O padrão
+ * é deliberadamente mais frouxo que o do parser: ele reconhece o lançamento
+ * sem exigir o resto do layout, então uma linha que o parser não consegue
+ * ler ainda é contada. Validado contra arquivo real: bate com a leitura
+ * completa, sem alarme falso.
+ */
+export function countInterInvoiceCandidates(fullText: string): number {
+  // Cada lançamento da fatura abre com "DD de mmm. AAAA". O resto da fatura
+  // usa DD/MM/AAAA (vencimento, data de corte), que não casa aqui. Linhas de
+  // subtotal ("Total CARTÃO") não têm data e também não contam.
+  return (fullText.match(/\d{2}\s+de\s+[a-zçÇ]{3,4}\.?\s+\d{4}/gi) ?? []).length
+}

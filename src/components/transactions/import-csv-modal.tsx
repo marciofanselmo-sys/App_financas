@@ -19,9 +19,9 @@ import { extractPdfText } from '@/utils/extract-pdf-text'
 import { selectAllPages } from '@/lib/supabase/select-all'
 import { findCounterpartBoard, hasExistingLeg, buildCounterpartLeg, legTypeFor } from '@/lib/internal-counterpart'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
-import { parseMercadoPagoPDF, isMercadoPagoPDF } from '@/utils/parse-mercadopago-pdf'
-import { parseInterInvoicePDF, isInterInvoicePDF } from '@/utils/parse-inter-pdf'
-import { parseItauExtratoPDF, isItauExtratoPDF } from '@/utils/parse-itau-extrato-pdf'
+import { parseMercadoPagoPDF, isMercadoPagoPDF, countMercadoPagoCandidates } from '@/utils/parse-mercadopago-pdf'
+import { parseInterInvoicePDF, isInterInvoicePDF, countInterInvoiceCandidates } from '@/utils/parse-inter-pdf'
+import { parseItauExtratoPDF, isItauExtratoPDF, countItauCandidates } from '@/utils/parse-itau-extrato-pdf'
 import {
   isInterExtratoCSV, parseInterExtratoCSV,
   isInterExtratoPDF, parseInterExtratoPDF,
@@ -567,7 +567,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
       if (bankFormat === 'inter-extrato') {
         const { rows, skipped } = parseInterExtratoCSV(content)
         if (!rows.length) { setFileError('Nenhuma transação encontrada no extrato do Inter.'); return }
-        setImportWarning(skipped > 0 ? `${skipped} linha(s) do arquivo não foram reconhecidas e ficaram de fora. Confira se o total bate com o extrato do banco.` : '')
+        setImportWarning(skippedWarning(rows.length + skipped, rows.length))
         setPreview(enhanceWithUserRules(rows)); setFileType('inter-extrato'); setStep('preview'); return
       }
       if (bankFormat === 'nubank-checking') {
@@ -618,7 +618,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
         if (isInterExtratoPDF(text)) {
           const { rows, skipped } = parseInterExtratoPDF(text)
           if (!rows.length) { setFileError('Nenhuma transação encontrada nesse extrato do Inter.'); return }
-          setImportWarning(skipped > 0 ? `${skipped} linha(s) do extrato não foram reconhecidas e ficaram de fora. Confira se o total bate com o extrato do banco.` : '')
+          setImportWarning(skippedWarning(rows.length + skipped, rows.length))
           setPreview(enhanceWithUserRules(rows))
           setFileType('inter-extrato')
           setStep('preview')
@@ -630,6 +630,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
             setFileError('Nenhuma transação encontrada na fatura Inter.')
             return
           }
+          setImportWarning(skippedWarning(countInterInvoiceCandidates(text), rows.length))
           setPreview(enhanceWithUserRules(rows))
           setFileType('inter-pdf')
           setStep('preview')
@@ -647,6 +648,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
             installment_current: null,
             installment_total: null,
           }))))
+          setImportWarning(skippedWarning(countMercadoPagoCandidates(text), rows.length))
           setFileType('mercadopago-pdf')
           setStep('preview')
           return
@@ -663,6 +665,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
             installment_current: null,
             installment_total: null,
           }))))
+          setImportWarning(skippedWarning(countItauCandidates(text), rows.length))
           setFileType('itau-extrato-pdf')
           setStep('preview')
           return
@@ -821,6 +824,14 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
     setPreview(enhanceWithUserRules(rows))
     setStep('preview')
   }
+
+/** Texto do aviso de linhas não reconhecidas, igual para todo formato. */
+function skippedWarning(candidates: number, read: number): string {
+  const skipped = Math.max(0, candidates - read)
+  return skipped > 0
+    ? `${skipped} linha(s) do arquivo não foram reconhecidas e ficaram de fora. Confira se o total bate com o extrato do banco.`
+    : ''
+}
 
 function shiftDays(date: string, days: number): string {
   const d = new Date(`${date}T12:00:00`)

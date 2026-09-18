@@ -71,3 +71,25 @@ export function parseMercadoPagoPDF(fullText: string): MercadoPagoRow[] | null {
 
   return rows.length ? rows : null
 }
+
+/**
+ * Quantos trechos do texto têm cara de lançamento, lidos ou não.
+ *
+ * Comparado com o número de linhas que o parser devolveu, dá quantas ficaram
+ * de fora — que a importação avisa em vez de descartar em silêncio. O padrão
+ * é deliberadamente mais frouxo que o do parser: ele reconhece o lançamento
+ * sem exigir o resto do layout, então uma linha que o parser não consegue
+ * ler ainda é contada. Validado contra arquivo real: bate com a leitura
+ * completa, sem alarme falso.
+ */
+export function countMercadoPagoCandidates(fullText: string): number {
+  // Dois valores em reais SEGUIDOS — o do lançamento e o saldo depois dele.
+  // Toda linha de movimento tem esse par; o cabeçalho ("Entradas: R$ X
+  // Saidas: R$ Y") não, porque lá os valores vêm separados por rótulo.
+  //
+  // Não usar o ID de operação aqui, embora seja o que o parser usa: o contador
+  // precisa ser INDEPENDENTE do parser. Se o formato do ID mudar, o parser
+  // perde a linha — e um contador baseado no mesmo ID perderia junto, sem
+  // avisar nada. Com o par de valores, a linha continua contada e o aviso sai.
+  return (stripBoilerplate(fullText).match(/R\$\s*[-\d.,]+\s+R\$\s*[-\d.,]+/g) ?? []).length
+}

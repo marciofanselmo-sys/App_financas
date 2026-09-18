@@ -55,3 +55,23 @@ export function parseItauExtratoPDF(fullText: string): ItauExtratoRow[] | null {
 
   return rows.length ? rows : null
 }
+
+/**
+ * Quantos trechos do texto têm cara de lançamento, lidos ou não.
+ *
+ * Comparado com o número de linhas que o parser devolveu, dá quantas ficaram
+ * de fora — que a importação avisa em vez de descartar em silêncio. O padrão
+ * é deliberadamente mais frouxo que o do parser: ele reconhece o lançamento
+ * sem exigir o resto do layout, então uma linha que o parser não consegue
+ * ler ainda é contada. Validado contra arquivo real: bate com a leitura
+ * completa, sem alarme falso.
+ */
+export function countItauCandidates(fullText: string): number {
+  // Mesmo recorte do parser: da coluna "saldo (R$)" até o rodapé "Aviso!".
+  // A data completa (DD/MM/AAAA) abre cada lançamento; as datas que aparecem
+  // DENTRO da descrição ("PIX TRANSF MARCIO 01/09") vêm sem ano e não contam.
+  const start = fullText.indexOf('saldo (R$)')
+  const end = fullText.indexOf('Aviso!')
+  const table = fullText.slice(start === -1 ? 0 : start, end === -1 ? undefined : end)
+  return (table.match(/\d{2}\/\d{2}\/\d{4}/g) ?? []).length
+}
