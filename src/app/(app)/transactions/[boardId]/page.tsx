@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback} from 'react'
 import { decisionKey } from '@/lib/recurring-groups'
 import { logSafeError } from '@/lib/supabase-error'
-import { balanceFromTransactions } from '@/lib/dashboard-patrimony'
+import { balanceFromTransactions, accountBalance } from '@/lib/dashboard-patrimony'
 import { useParams, useRouter } from 'next/navigation'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useTransactions } from '@/hooks/use-transactions'
@@ -133,6 +133,18 @@ export default function BoardDetailPage() {
       balance: balanceFromTransactions(transactions),
     }
   }, [transactions])
+
+  // Saldo da conta antes e depois de tirar estas transações dela — usa o
+  // histórico INTEIRO (allBoardTxs), não as linhas do mês na tela. É o mesmo
+  // número do card em Contas e Cartões, para o usuário reconhecer o valor.
+  const balanceImpactOf = useCallback((ids: string[]) => {
+    if (!board) return null
+    const removed = new Set(ids)
+    return {
+      before: accountBalance(allBoardTxs, board.opening_balance),
+      after: accountBalance(allBoardTxs.filter(t => !removed.has(t.id)), board.opening_balance),
+    }
+  }, [allBoardTxs, board])
 
   const allTags = useMemo(() => {
     const set = new Set<string>()
@@ -523,6 +535,7 @@ export default function BoardDetailPage() {
           onBulkCategoryChange={handleBulkCategoryChange}
           onBulkMove={handleBulkMove}
           onBulkDelete={handleBulkDelete}
+          balanceImpactOf={balanceImpactOf}
         />
       )}
 

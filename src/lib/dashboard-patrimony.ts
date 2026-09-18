@@ -28,6 +28,18 @@ export function balanceFromTransactions(transactions: Transaction[]): number {
   )
 }
 
+/**
+ * Saldo de UMA conta, pelo mesmo critério do card em Contas e Cartões:
+ * saldo inicial + entradas − saídas, até hoje.
+ *
+ * Existe para o app conseguir mostrar o efeito de uma ação ANTES de ela
+ * acontecer — excluir ou mover em massa mudava o saldo em milhares de reais
+ * sem nenhum sinal na tela, e só se descobria semanas depois.
+ */
+export function accountBalance(transactions: Transaction[], openingBalance = 0): number {
+  return Number(openingBalance) + balanceFromTransactions(upToToday(transactions))
+}
+
 export interface CashBoardBreakdown {
   boardId: string
   name: string

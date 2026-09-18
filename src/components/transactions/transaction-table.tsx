@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo} from 'react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -19,6 +19,31 @@ function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
 }
 
+/**
+ * O efeito da ação no saldo da conta, antes de confirmar.
+ *
+ * Ação em massa é onde o dado some sem o usuário perceber: excluir ou mover
+ * 200 transações muda o saldo em milhares de reais, e o diálogo dizia só a
+ * quantidade. Mostrando o antes e o depois, um salto grande fica óbvio na
+ * hora — em vez de aparecer semanas depois como um saldo que não bate.
+ */
+function BalanceImpact({ impact }: { impact: { before: number; after: number } | null }) {
+  if (!impact) return null
+  const delta = impact.after - impact.before
+  if (Math.abs(delta) < 0.005) return null
+  return (
+    <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 text-sm">
+      <p className="text-xs text-amber-700 dark:text-amber-400 mb-1">Saldo desta conta</p>
+      <p className="font-semibold text-slate-800 dark:text-slate-100 tabular-nums">
+        {formatCurrency(impact.before)} <span className="text-slate-400">→</span> {formatCurrency(impact.after)}
+      </p>
+      <p className={`text-xs tabular-nums mt-0.5 ${delta < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-600 dark:text-slate-300'}`}>
+        {delta > 0 ? '+' : '−'}{formatCurrency(Math.abs(delta))}
+      </p>
+    </div>
+  )
+}
+
 interface TransactionTableProps {
   transactions: Transaction[]
   onEdit: (tx: Transaction) => void
@@ -31,11 +56,17 @@ interface TransactionTableProps {
   onBulkCategoryChange?: (ids: string[], category: string) => Promise<void>
   onBulkMove?: (ids: string[], boardId: string) => Promise<void>
   onBulkDelete?: (ids: string[]) => Promise<void>
+  /**
+   * Saldo da conta antes e depois de tirar estas transações dela. A tabela só
+   * conhece as linhas visíveis (filtradas por mês), então o cálculo vem de
+   * quem tem o histórico inteiro — a página.
+   */
+  balanceImpactOf?: (ids: string[]) => { before: number; after: number } | null
 }
 
 export function TransactionTable({
   transactions, onEdit, onDelete, onMove, onToggleRecurring, boards, currentBoardId,
-  categories, onBulkCategoryChange, onBulkMove, onBulkDelete,
+  categories, onBulkCategoryChange, onBulkMove, onBulkDelete, balanceImpactOf,
 }: TransactionTableProps) {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -52,6 +83,14 @@ export function TransactionTable({
   const [bulkMoving, setBulkMoving] = useState(false)
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  // Só calcula com um diálogo de massa aberto: o cálculo percorre o histórico
+  // inteiro da conta, e não há por que rodar a cada seleção de checkbox.
+  const bulkImpact = useMemo(
+    () => (bulkDeleteOpen || bulkMoveOpen) && balanceImpactOf
+      ? balanceImpactOf(Array.from(selected))
+      : null,
+    [bulkDeleteOpen, bulkMoveOpen, balanceImpactOf, selected],
+  )
 
   const otherBoards = (boards ?? []).filter(b => b.id !== currentBoardId)
   const selectionEnabled = !!onBulkCategoryChange
@@ -434,6 +473,7 @@ export function TransactionTable({
               </SelectContent>
             </Select>
           </div>
+          <BalanceImpact impact={bulkImpact} />
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setBulkMoveOpen(false)} disabled={bulkMoving}>Cancelar</Button>
             <Button onClick={applyBulkMove} disabled={!bulkMoveBoardId || bulkMoving}>
@@ -451,6 +491,7 @@ export function TransactionTable({
               Essa ação não pode ser desfeita. <strong>{selected.size} transaç{selected.size !== 1 ? 'ões' : 'ão'}</strong> selecionada{selected.size !== 1 ? 's' : ''} será{selected.size !== 1 ? 'ão' : ''} removida{selected.size !== 1 ? 's' : ''} permanentemente.
             </DialogDescription>
           </DialogHeader>
+          <BalanceImpact impact={bulkImpact} />
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setBulkDeleteOpen(false)} disabled={bulkDeleting}>Cancelar</Button>
             <Button variant="destructive" onClick={applyBulkDelete} disabled={bulkDeleting}>
