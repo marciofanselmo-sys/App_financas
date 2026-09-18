@@ -81,52 +81,66 @@ export function parseInterExtratoCSV(content: string): InterExtratoResult {
 // ── PDF ──────────────────────────────────────────────────────────────────────
 // A data é um CABEÇALHO de seção, não uma coluna:
 //   11 de Janeiro de 2026 Saldo do dia: R$ 0,65
-//   Pagamento efetuado: "Pagamento fatura cartao Inter"   -R$ 199,35   -R$ 199,35
-//   Pix recebido: "Cp :31872495-MARCIO FAGUNDES ANSELMO"   R$ 200,00    R$ 0,65
+//   Pagamento efetuado: "Pagamento fatura cartao Inter"  -R$ 199,35  -R$ 199,35
+//   Pix recebido: "Cp :31872495-MARCIO FAGUNDES ANSELMO"  R$ 200,00  R$ 0,65
 //
-// Cada linha traz DOIS valores: o do lançamento e o saldo após ele. Só o
+// IMPORTANTE: o texto chega SEM quebras de linha. extractPdfText junta todos os
+// fragmentos do pdf.js com espaço (`parts.join(' ')`), então o PDF inteiro é
+// uma linha só. A primeira versão deste parser dividia por "\n", passou nos
+// testes feitos com pdftotext (que preserva o layout) e no app devolvia ZERO
+// lançamentos. Por isso a leitura é uma varredura sequencial: cada cabeçalho
+// de data muda a data corrente, e cada lançamento usa a última data vista.
+//
+// Cada lançamento traz DOIS valores: o do lançamento e o saldo após ele. Só o
 // primeiro interessa — pegar o último daria o saldo acumulado como se fosse
 // o valor da transação.
 
+const DATE_HEADER = /(\d{1,2})\s+de\s+([A-Za-zÀ-ú]+)\s+de\s+(\d{4})\s+Saldo do dia/y
+const ENTRY = /([A-Za-zÀ-ú][A-Za-zÀ-ú ]*?):\s*"([^"]*)"\s+(-?)R\$\s*([\d.,]+)\s+-?R\$\s*[\d.,]+/y
+// Qualquer coisa com cara de lançamento (descrição entre aspas seguida de
+// valor). Serve para contar o que o parser NÃO conseguiu ler.
+const ENTRY_SHAPED = /:\s*"[^"]*"\s+-?R\$\s*[\d.,]+/g
+
 export function isInterExtratoPDF(text: string): boolean {
   const t = normalize(text)
-  return t.includes('banco inter') && /\d{2}\s+de\s+[a-z]+\s+de\s+\d{4}\s+saldo do dia/.test(t)
+  return t.includes('banco inter') && /\d{1,2}\s+de\s+[a-z]+\s+de\s+\d{4}\s+saldo do dia/.test(t)
 }
 
 export function parseInterExtratoPDF(text: string): InterExtratoResult {
   const rows: InterExtratoRow[] = []
-  let skipped = 0
   let currentDate: string | null = null
 
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim()
-    if (!line) continue
-
-    const header = line.match(/^(\d{1,2})\s+de\s+([A-Za-zçÇ]+)\s+de\s+(\d{4})/)
-    if (header) {
-      const mes = MESES[normalize(header[2])]
-      currentDate = mes ? `${header[3]}-${mes}-${header[1].padStart(2, '0')}` : null
+  // Varre o texto posição a posição: em cada ponto tenta um cabeçalho de data
+  // ou um lançamento (regex com flag `y`, ancorada na posição atual). Nenhum
+  // dos dois casando, avança um caractere.
+  for (let i = 0; i < text.length; ) {
+    DATE_HEADER.lastIndex = i
+    const h = DATE_HEADER.exec(text)
+    if (h) {
+      const mes = MESES[normalize(h[2])]
+      currentDate = mes ? `${h[3]}-${mes}-${h[1].padStart(2, '0')}` : null
+      i = DATE_HEADER.lastIndex
       continue
     }
 
-    // "Histórico: "Descrição"  -R$ valor  -R$ saldo"
-    const entry = line.match(/^(.+?):\s*"(.*?)"\s+(-?)R\$\s*([\d.,]+)/)
-    if (!entry) {
-      // Conta como descartada só a linha com cara de lançamento: histórico,
-      // dois-pontos e valor. O bloco de cabeçalho ("R$ 0,00  R$ 0,00  R$ 0,00")
-      // tem valor mas não tem histórico, e contá-lo daria alarme falso.
-      if (/^[A-Za-zÀ-ú][^:]*:/.test(line) && /R\$\s*[\d.,]+/.test(line)) skipped++
+    ENTRY.lastIndex = i
+    const e = ENTRY.exec(text)
+    if (e) {
+      i = ENTRY.lastIndex
+      if (!currentDate) continue
+      const valor = parseAmountBR(e[4]) * (e[3] === '-' ? -1 : 1)
+      if (isNaN(valor) || valor === 0) continue
+      rows.push(buildRow(e[1].trim(), e[2].trim(), valor, currentDate))
       continue
     }
-    if (!currentDate) { skipped++; continue }
 
-    const valor = parseAmountBR(entry[4]) * (entry[3] === '-' ? -1 : 1)
-    if (isNaN(valor) || valor === 0) { skipped++; continue }
-
-    rows.push(buildRow(entry[1].trim(), entry[2].trim(), valor, currentDate))
+    i++
   }
 
-  return { rows, skipped }
+  // Tudo que tem cara de lançamento e não virou linha — inclusive os que
+  // casaram mas ficaram sem data (`orphans`), que já estão dentro dessa conta.
+  const candidates = (text.match(ENTRY_SHAPED) ?? []).length
+  return { rows, skipped: Math.max(0, candidates - rows.length) }
 }
 
 // ── comum ────────────────────────────────────────────────────────────────────
