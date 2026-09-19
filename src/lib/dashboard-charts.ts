@@ -1,4 +1,5 @@
-import { Transaction } from '@/types'
+import { Transaction, Category } from '@/types'
+import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 import { toLocalISO } from '@/utils/local-date'
 import { BudgetPlan } from '@/hooks/use-budget-plan'
 import { isSubKey, subName } from '@/lib/plan-keys'
@@ -147,12 +148,16 @@ export function buildPatrimonyChartData(overview: PatrimonyOverview): PatrimonyC
   return { assets, debts, net }
 }
 
-export function buildExpenseChartData(transactions: Transaction[]): ChartSegment[] {
+// Soma pela categoria-mãe quando a lista de categorias é passada: sem isso o
+// gráfico vira dezenas de fatias de subcategoria.
+export function buildExpenseChartData(transactions: Transaction[], categories: Category[] = []): ChartSegment[] {
+  const mothers = motherNameByCategory(categories)
   const map: Record<string, number> = {}
   transactions
     .filter(t => t.type === 'despesa')
     .forEach(t => {
-      map[t.category] = (map[t.category] || 0) + Number(t.amount)
+      const name = motherOf(t.category, mothers)
+      map[name] = (map[name] || 0) + Number(t.amount)
     })
 
   return Object.entries(map)

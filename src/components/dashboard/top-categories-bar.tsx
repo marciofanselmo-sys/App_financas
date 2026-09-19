@@ -1,17 +1,23 @@
 import Link from 'next/link'
-import { Transaction } from '@/types'
+import { Transaction, Category } from '@/types'
+import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 
 interface TopCategoriesBarProps {
   transactions: Transaction[]
+  categories?: Category[]
 }
 
-export function TopCategoriesBar({ transactions }: TopCategoriesBarProps) {
+export function TopCategoriesBar({ transactions, categories }: TopCategoriesBarProps) {
+  // Soma pela categoria-mãe: "Alimentação" em vez de Mercado, Padaria e
+  // Restaurante disputando lugar no Top 5.
+  const mothers = motherNameByCategory(categories ?? [])
   const catMap: Record<string, number> = {}
   transactions.filter(t => t.type === 'despesa').forEach(t => {
-    catMap[t.category] = (catMap[t.category] || 0) + Number(t.amount)
+    const name = motherOf(t.category, mothers)
+    catMap[name] = (catMap[name] || 0) + Number(t.amount)
   })
 
   const data = Object.entries(catMap)

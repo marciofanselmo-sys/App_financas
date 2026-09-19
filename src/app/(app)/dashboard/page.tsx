@@ -9,6 +9,7 @@ import { useRecurringDecisions } from '@/hooks/use-recurring-decisions'
 import { SummaryCards } from '@/components/dashboard/summary-cards'
 import { DiagnosticCard } from '@/components/dashboard/diagnostic-card'
 import { TopCategoriesBar } from '@/components/dashboard/top-categories-bar'
+import { useCategories } from '@/hooks/use-categories'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
 import { BoardSummaryCard } from '@/components/dashboard/board-summary-card'
 import { MacroOverview } from '@/components/dashboard/macro-overview'
@@ -93,6 +94,7 @@ export default function DashboardPage() {
   const [savingInvestTarget, setSavingInvestTarget] = useState(false)
   const { targetsByKey, loading: targetsRangeLoading } = useBudgetPlansRange(month, year, 6)
   const { goals, loading: goalsLoading } = useGoals()
+  const { categories } = useCategories()
 
   const chartMonths = useMemo(() => getMonthRange(month, year, 6), [month, year])
 
@@ -128,8 +130,8 @@ export default function DashboardPage() {
     [patrimony],
   )
   const expenseChartData = useMemo(
-    () => buildExpenseChartData(transactions),
-    [transactions],
+    () => buildExpenseChartData(transactions, categories),
+    [transactions, categories],
   )
   const plannedVsActual = useMemo(
     () => buildPlannedVsActual(plan, transactions),
@@ -288,7 +290,7 @@ export default function DashboardPage() {
         {loading ? (
           <div className="h-56 nobli-card animate-pulse" />
         ) : (
-          <TopCategoriesBar transactions={transactions} />
+          <TopCategoriesBar transactions={transactions} categories={categories} />
         )}
 
         {/* Parcelas Ativas */}

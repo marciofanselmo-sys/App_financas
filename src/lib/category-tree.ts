@@ -37,3 +37,23 @@ export function categoryFullName(cat: Category, all: Category[]): string {
   const parent = cat.parent_id ? all.find(c => c.id === cat.parent_id) : null
   return parent ? `${parent.name} › ${cat.name}` : cat.name
 }
+
+/**
+ * Nome da categoria-mãe de cada categoria (a própria, quando ela já é mãe).
+ * Chave em minúsculas — os lançamentos guardam o NOME da categoria, e é por
+ * ele que os gráficos somam.
+ */
+export function motherNameByCategory(categories: Category[]): Map<string, string> {
+  const byId = new Map(categories.map(c => [c.id, c]))
+  const map = new Map<string, string>()
+  for (const c of categories) {
+    const parent = c.parent_id ? byId.get(c.parent_id) : null
+    map.set(c.name.trim().toLowerCase(), parent?.name ?? c.name)
+  }
+  return map
+}
+
+/** Categoria-mãe de um nome de categoria; o próprio nome se não achar. */
+export function motherOf(categoryName: string, map: Map<string, string>): string {
+  return map.get(categoryName.trim().toLowerCase()) ?? categoryName
+}

@@ -16,6 +16,7 @@ import { Transaction } from '@/types'
 import { useRules } from '@/hooks/use-rules'
 import { categoriesForDate } from '@/lib/special-category-filter'
 import { CategoryOptions } from '@/components/categories/category-options'
+import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 import { installmentLabel } from '@/utils/format-installment'
 import { aggregateDailyFlow } from '@/lib/analytics-charts'
 import { DailyFlowChart } from '@/components/analytics/daily-flow-chart'
@@ -44,7 +45,9 @@ export default function AnalyticsPage() {
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
   const [boardId, setBoardId] = useState<string>('all')
-  const [selectedCategory, setSelectedCategory] = useState<{ cat: string; type: 'despesa' | 'receita' } | null>(null)
+  const [selectedCategory, setSelectedCategory] = useState<{ cat: string; type: 'despesa' | 'receita'; names: string[] } | null>(null)
+  // Categoria-mãe aberta na lista, mostrando as subcategorias dentro dela.
+  const [expandedCat, setExpandedCat] = useState<string | null>(null)
 
   const { boards } = useTransactionBoards()
   const { categories } = useCategories()
@@ -69,36 +72,50 @@ export default function AnalyticsPage() {
   const { totalIncome, totalExpenses, balance, expenseByCategory, incomeByCategory } = useMemo(() => {
     let totalIncome = 0
     let totalExpenses = 0
-    const expenseMap: Record<string, { total: number; count: number }> = {}
-    const incomeMap: Record<string, { total: number; count: number }> = {}
+    // Soma pela categoria-mãe e guarda o detalhe por subcategoria dentro dela.
+    const mothers = motherNameByCategory(categories)
+    type Bucket = { total: number; count: number; subs: Record<string, { total: number; count: number }> }
+    const expenseMap: Record<string, Bucket> = {}
+    const incomeMap: Record<string, Bucket> = {}
 
     for (const t of transactions) {
       const amt = Number(t.amount)
-      if (t.type === 'receita') {
-        totalIncome += amt
-        incomeMap[t.category] = incomeMap[t.category] ?? { total: 0, count: 0 }
-        incomeMap[t.category].total += amt
-        incomeMap[t.category].count += 1
-      } else {
-        totalExpenses += amt
-        expenseMap[t.category] = expenseMap[t.category] ?? { total: 0, count: 0 }
-        expenseMap[t.category].total += amt
-        expenseMap[t.category].count += 1
+      const mother = motherOf(t.category, mothers)
+      const target = t.type === 'receita' ? incomeMap : expenseMap
+      if (t.type === 'receita') totalIncome += amt
+      else totalExpenses += amt
+
+      const bucket = target[mother] ?? (target[mother] = { total: 0, count: 0, subs: {} })
+      bucket.total += amt
+      bucket.count += 1
+      if (t.category !== mother) {
+        const sub = bucket.subs[t.category] ?? (bucket.subs[t.category] = { total: 0, count: 0 })
+        sub.total += amt
+        sub.count += 1
       }
     }
 
-    const expenseByCategory = Object.entries(expenseMap)
-      .map(([cat, d]) => ({ cat, total: d.total, count: d.count, pct: totalExpenses > 0 ? (d.total / totalExpenses) * 100 : 0 }))
-      .sort((a, b) => b.total - a.total)
+    const toList = (map: Record<string, Bucket>, total: number) =>
+      Object.entries(map)
+        .map(([cat, d]) => ({
+          cat,
+          total: d.total,
+          count: d.count,
+          pct: total > 0 ? (d.total / total) * 100 : 0,
+          subs: Object.entries(d.subs)
+            .map(([name, sd]) => ({ name, total: sd.total, count: sd.count }))
+            .sort((a, b) => b.total - a.total),
+        }))
+        .sort((a, b) => b.total - a.total)
 
-    const incomeByCategory = Object.entries(incomeMap)
-      .map(([cat, d]) => ({ cat, total: d.total, count: d.count, pct: totalIncome > 0 ? (d.total / totalIncome) * 100 : 0 }))
-      .sort((a, b) => b.total - a.total)
-
-      .sort((a, b) => b.total - a.total)
-
-    return { totalIncome, totalExpenses, balance: totalIncome - totalExpenses, expenseByCategory, incomeByCategory }
-  }, [transactions])
+    return {
+      totalIncome,
+      totalExpenses,
+      balance: totalIncome - totalExpenses,
+      expenseByCategory: toList(expenseMap, totalExpenses),
+      incomeByCategory: toList(incomeMap, totalIncome),
+    }
+  }, [transactions, categories])
 
   const maxExpense = expenseByCategory[0]?.total ?? 1
 
@@ -125,8 +142,9 @@ export default function AnalyticsPage() {
 
   const categoryTxs: Transaction[] = useMemo(() => {
     if (!selectedCategory) return []
+    const names = new Set(selectedCategory.names)
     return transactions.filter(
-      t => t.category === selectedCategory.cat && t.type === selectedCategory.type
+      t => names.has(t.category) && t.type === selectedCategory.type
     ).sort((a, b) => b.date.localeCompare(a.date))
   }, [selectedCategory, transactions])
 
@@ -278,37 +296,73 @@ export default function AnalyticsPage() {
               <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
                 {/* Bar chart section */}
                 <div className="p-5 space-y-3">
-                  {expenseByCategory.map(({ cat, total, count, pct }) => (
-                    <button
-                      key={cat}
-                      className="w-full text-left group"
-                      onClick={() => setSelectedCategory({ cat, type: 'despesa' })}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
-                            style={{ backgroundColor: colorFor(cat) }}
-                          />
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:underline">{cat}</span>
-                          <span className="text-xs text-slate-400">({count} {count === 1 ? 'lançamento' : 'lançamentos'})</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs text-slate-400 w-10 text-right">{pct.toFixed(0)}%</span>
-                          <span className="text-sm font-semibold text-red-500 w-28 text-right">{fmt(total)}</span>
-                        </div>
+                  {expenseByCategory.map(({ cat, total, count, pct, subs }) => {
+                    const open = expandedCat === `despesa:${cat}`
+                    const allNames = [cat, ...subs.map(sub => sub.name)]
+                    return (
+                      <div key={cat}>
+                        <button
+                          className="w-full text-left group"
+                          onClick={() => subs.length > 0
+                            ? setExpandedCat(open ? null : `despesa:${cat}`)
+                            : setSelectedCategory({ cat, type: 'despesa', names: allNames })}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                                style={{ backgroundColor: colorFor(cat) }}
+                              />
+                              <span className="text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:underline">{cat}</span>
+                              <span className="text-xs text-slate-400">({count} {count === 1 ? 'lançamento' : 'lançamentos'})</span>
+                              {subs.length > 0 && (
+                                <span className="text-[10px] text-slate-400">
+                                  {open ? '▾' : '▸'} {subs.length} subcategoria{subs.length === 1 ? '' : 's'}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs text-slate-400 w-10 text-right">{pct.toFixed(0)}%</span>
+                              <span className="text-sm font-semibold text-red-500 w-28 text-right">{fmt(total)}</span>
+                            </div>
+                          </div>
+                          <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{
+                                width: `${(total / maxExpense) * 100}%`,
+                                backgroundColor: colorFor(cat),
+                              }}
+                            />
+                          </div>
+                        </button>
+
+                        {open && (
+                          <div className="mt-2 ml-4 pl-3 border-l-2 border-slate-100 dark:border-slate-700 space-y-1.5">
+                            <button
+                              className="w-full flex items-center justify-between gap-3 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                              onClick={() => setSelectedCategory({ cat, type: 'despesa', names: allNames })}
+                            >
+                              Ver todos os lançamentos de {cat}
+                            </button>
+                            {subs.map(sub => (
+                              <button
+                                key={sub.name}
+                                className="w-full flex items-center justify-between gap-3 text-xs group"
+                                onClick={() => setSelectedCategory({ cat: sub.name, type: 'despesa', names: [sub.name] })}
+                              >
+                                <span className="truncate text-slate-600 dark:text-slate-300 group-hover:underline">
+                                  {sub.name}
+                                  <span className="text-slate-400 ml-1.5">({sub.count})</span>
+                                </span>
+                                <span className="tabular-nums text-slate-600 dark:text-slate-300 shrink-0">{fmt(sub.total)}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all duration-500"
-                          style={{
-                            width: `${(total / maxExpense) * 100}%`,
-                            backgroundColor: colorFor(cat),
-                          }}
-                        />
-                      </div>
-                    </button>
-                  ))}
+                    )
+                  })}
                 </div>
 
                 {/* Totals footer */}
@@ -335,13 +389,13 @@ export default function AnalyticsPage() {
 
               <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
                 <div className="p-5 space-y-3">
-                  {incomeByCategory.map(({ cat, total, count, pct }) => {
+                  {incomeByCategory.map(({ cat, total, count, pct, subs }) => {
                     const maxIncome = incomeByCategory[0]?.total ?? 1
                     return (
                       <button
                         key={cat}
                         className="w-full text-left group"
-                        onClick={() => setSelectedCategory({ cat, type: 'receita' })}
+                        onClick={() => setSelectedCategory({ cat, type: 'receita', names: [cat, ...subs.map(sub => sub.name)] })}
                       >
                         <div className="flex items-center justify-between mb-1">
                           <div className="flex items-center gap-2">
