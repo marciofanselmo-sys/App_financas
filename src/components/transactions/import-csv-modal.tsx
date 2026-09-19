@@ -33,6 +33,7 @@ import { parseAmountBR } from '@/utils/parse-amount'
 import { addMonths } from '@/utils/add-months'
 import { installmentLabel } from '@/utils/format-installment'
 import { categoriesForDate } from '@/lib/special-category-filter'
+import { CategoryOptions } from '@/components/categories/category-options'
 
 // ─── CSV TEMPLATE ────────────────────────────────────────────────────────────
 
@@ -1551,39 +1552,21 @@ function shiftDays(date: string, days: number): string {
                         </div>
                       </div>
                       {(() => {
-                        // Normais e isoladas em seletores separados, mesmo padrão do
-                        // resto do app — escolher em um desmarca o outro.
                         const usable = categoriesForDate(categories, item.date).filter(c => c.type === item.type || c.type === 'ambos')
-                        const normalOpts = usable.filter(c => !c.special_dates || c.special_dates.length === 0)
-                        const specialOpts = usable.filter(c => (c.special_dates?.length ?? 0) > 0)
                         const current = reviewCategories[item.id] ?? 'Outros'
-                        const isSpecial = specialOpts.some(c => c.name === current)
                         return (
                           <div className="flex items-center gap-1.5 shrink-0">
                             <Select
-                              value={isSpecial ? '' : current}
+                              value={current}
                               onValueChange={v => { if (v) setReviewCategories(prev => ({ ...prev, [item.id]: v })) }}
                             >
-                              <SelectTrigger className="h-8 text-xs w-32">
+                              <SelectTrigger className="h-8 text-xs w-40">
                                 <SelectValue placeholder="Categoria" />
                               </SelectTrigger>
                               <SelectContent>
-                                {normalOpts.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                                <CategoryOptions list={usable} all={categories} />
                               </SelectContent>
                             </Select>
-                            {specialOpts.length > 0 && (
-                              <Select
-                                value={isSpecial ? current : ''}
-                                onValueChange={v => { if (v) setReviewCategories(prev => ({ ...prev, [item.id]: v })) }}
-                              >
-                                <SelectTrigger className="h-8 text-xs w-28">
-                                  <SelectValue placeholder="Isolada" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {specialOpts.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
-                                </SelectContent>
-                              </Select>
-                            )}
                           </div>
                         )
                       })()}

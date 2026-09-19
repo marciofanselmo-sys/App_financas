@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useRules, CategorizationRule, applyRuleToExisting } from '@/hooks/use-rules'
 import { useCategories } from '@/hooks/use-categories'
+import { CategoryOptions } from '@/components/categories/category-options'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { CategoryType } from '@/types'
 import { Button } from '@/components/ui/button'
@@ -254,8 +255,6 @@ export default function RulesPage() {
     [categories, form.type],
   )
   const normalCategoryOptions = typeFilteredCategories.filter(c => !c.special_dates || c.special_dates.length === 0)
-  const specialCategoryOptions = typeFilteredCategories.filter(c => (c.special_dates?.length ?? 0) > 0)
-  const selectedIsSpecial = specialCategoryOptions.some(c => c.name === form.category)
 
   // Se o Tipo mudar e a categoria escolhida não fizer mais sentido pra ele, limpa.
   useEffect(() => {
@@ -529,34 +528,14 @@ export default function RulesPage() {
 
               <div className="space-y-1.5">
                 <Label className="text-xs">Definir categoria</Label>
-                <div className={specialCategoryOptions.length > 0 ? 'grid grid-cols-2 gap-2' : ''}>
-                  <Select value={selectedIsSpecial ? '' : form.category} onValueChange={v => { if (v) setForm(f => ({ ...f, category: v })) }}>
-                    <SelectTrigger id="rule-category" className="w-full">
-                      <SelectValue placeholder="Selecione a categoria..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {normalCategoryOptions.length === 0 ? (
-                        <SelectItem value="__empty__" disabled>Nenhuma categoria disponível</SelectItem>
-                      ) : (
-                        normalCategoryOptions.map(c => (
-                          <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {specialCategoryOptions.length > 0 && (
-                    <Select value={selectedIsSpecial ? form.category : ''} onValueChange={v => { if (v) setForm(f => ({ ...f, category: v })) }}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Categoria isolada..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {specialCategoryOptions.map(c => (
-                          <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
+                <Select value={form.category} onValueChange={v => { if (v) setForm(f => ({ ...f, category: v })) }}>
+                  <SelectTrigger id="rule-category" className="w-full">
+                    <SelectValue placeholder="Selecione a categoria..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <CategoryOptions list={normalCategoryOptions} all={categories} />
+                  </SelectContent>
+                </Select>
               </div>
 
               {boards.length > 0 && (

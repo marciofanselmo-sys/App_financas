@@ -10,10 +10,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Transaction, TransactionType} from '@/types'
 import { useCategories } from '@/hooks/use-categories'
 import { categoriesForDate, isCategoryUsableForDate } from '@/lib/special-category-filter'
+import { categoryOptions } from '@/lib/category-tree'
+import { useEvents } from '@/hooks/use-events'
 import { addMonths } from '@/utils/add-months'
 import { X } from 'lucide-react'
 import { parseTransactionInput } from '@/lib/schemas/transaction'
 import { formatUserError } from '@/lib/supabase-error'
+
+const NO_EVENT = '__sem_evento__'
 
 type TransactionData = Omit<Transaction, 'id' | 'user_id' | 'created_at'>
 interface SubmitOptions {
@@ -33,12 +37,14 @@ interface TransactionFormProps {
 
 export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initialData, boardId }: TransactionFormProps) {
   const { categories } = useCategories()
+  const { events } = useEvents()
 
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState('')
   const [type, setType] = useState<TransactionType>('despesa')
   const [category, setCategory] = useState('')
+  const [eventId, setEventId] = useState<string>('')
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -59,9 +65,12 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
   const usableCategories = currentCategoryObj && !usableCategoriesBase.some(c => c.name === category)
     ? [...usableCategoriesBase, currentCategoryObj]
     : usableCategoriesBase
-  const filteredCategories = usableCategories.filter(c => !c.special_dates || c.special_dates.length === 0)
-  const specialCategories = usableCategories.filter(c => (c.special_dates?.length ?? 0) > 0)
-  const selectedIsSpecial = specialCategories.some(c => c.name === category)
+  // Mãe seguida das subcategorias, num seletor só (antes eram dois: normais e
+  // isoladas — as isoladas viraram eventos, que agora têm campo próprio).
+  const categoryChoices = categoryOptions(usableCategories, categories)
+  // Evento encerrado some da lista, mas continua aparecendo se for o que já
+  // está salvo nesta transação — senão editar limparia a marcação sem querer.
+  const eventChoices = events.filter(e => !e.closed || e.id === eventId)
   const isNewTransaction = !initialData
   const canInstallment = isNewTransaction && type === 'despesa' && !!onSubmitBatch
   // Só faz sentido oferecer a opção quando editar de fato muda categoria OU
@@ -84,6 +93,7 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
       setDate(initialData?.date ?? todayISO())
       setType(initialData?.type ?? 'despesa')
       setCategory(initialData?.category ?? '')
+      setEventId(initialData?.event_id ?? '')
       setTags(initialData?.tags ?? [])
       setTagInput('')
       setError('')
@@ -151,6 +161,7 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
       category: parsed.data.category,
       tags: parsed.data.tags,
       board_id: parsed.data.board_id ?? null,
+      event_id: eventId || null,
     }
 
     setLoading(true)
@@ -297,44 +308,29 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
                 + Gerenciar categorias
               </a>
             </div>
-            <div className={specialCategories.length > 0 ? 'grid grid-cols-2 gap-3' : ''}>
-              <Select value={selectedIsSpecial ? '' : category} onValueChange={v => { if (v) setCategory(v) }}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Selecione uma categoria..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {filteredCategories.length === 0 ? (
-                    <SelectItem value="__empty__" disabled>Nenhuma categoria disponível</SelectItem>
-                  ) : (
-                    filteredCategories.map(cat => (
-                      <SelectItem key={cat.id} value={cat.name}>
-                        <div className="flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                          {cat.name}
-                        </div>
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-              {specialCategories.length > 0 && (
-                <Select value={selectedIsSpecial ? category : ''} onValueChange={v => { if (v) setCategory(v) }}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Categoria isolada..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {specialCategories.map(cat => (
-                      <SelectItem key={cat.id} value={cat.name}>
-                        <div className="flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                          {cat.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
+            <Select value={category} onValueChange={v => { if (v) setCategory(v) }}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecione uma categoria..." />
+              </SelectTrigger>
+              <SelectContent>
+                {categoryChoices.length === 0 ? (
+                  <SelectItem value="__empty__" disabled>Nenhuma categoria disponível</SelectItem>
+                ) : (
+                  categoryChoices.map(({ cat, parentName }) => (
+                    <SelectItem key={cat.id} value={cat.name}>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={parentName ? 'h-2 w-2 rounded-full shrink-0 ml-3' : 'h-2.5 w-2.5 rounded-full shrink-0'}
+                          style={{ backgroundColor: cat.color }}
+                        />
+                        {parentName && <span className="text-slate-400 dark:text-slate-500 text-xs">{parentName} ›</span>}
+                        {cat.name}
+                      </div>
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
             {hasChangeToSync && (
               <label className="flex items-start gap-2 pt-1 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
                 <input
@@ -348,6 +344,34 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
                 </span>
               </label>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Evento (opcional)</Label>
+              <a href="/settings/categories" className="text-xs text-blue-600 hover:underline">
+                + Gerenciar eventos
+              </a>
+            </div>
+            <Select value={eventId || NO_EVENT} onValueChange={v => { if (v) setEventId(v === NO_EVENT ? '' : v) }}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Nenhum" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_EVENT}>Nenhum</SelectItem>
+                {eventChoices.map(ev => (
+                  <SelectItem key={ev.id} value={ev.id}>
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ev.color }} />
+                      {ev.name}{ev.closed ? ' (encerrado)' : ''}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              Uma viagem, uma reforma... O lançamento continua na categoria normal e soma também no evento.
+            </p>
           </div>
 
           {/* Tags / Etiquetas */}

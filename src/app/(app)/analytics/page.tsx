@@ -11,10 +11,11 @@ import Link from 'next/link'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Transaction } from '@/types'
 import { useRules } from '@/hooks/use-rules'
 import { categoriesForDate } from '@/lib/special-category-filter'
+import { CategoryOptions } from '@/components/categories/category-options'
 import { installmentLabel } from '@/utils/format-installment'
 import { aggregateDailyFlow } from '@/lib/analytics-charts'
 import { DailyFlowChart } from '@/components/analytics/daily-flow-chart'
@@ -429,14 +430,11 @@ export default function AnalyticsPage() {
                         resto do app — escolher em um desmarca o outro. */}
                     {(() => {
                       const usable = categoriesForDate(categories, tx.date).filter(c => c.type === tx.type || c.type === 'ambos')
-                      const normalOpts = usable.filter(c => !c.special_dates || c.special_dates.length === 0)
-                      const specialOpts = usable.filter(c => (c.special_dates?.length ?? 0) > 0)
-                      const isSpecial = specialOpts.some(c => c.name === tx.category)
                       return (
                         <div className="shrink-0 flex items-center gap-1.5">
                           {savingTxId === tx.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
                           <Select
-                            value={isSpecial ? '' : tx.category}
+                            value={tx.category}
                             onValueChange={v => v && v !== tx.category && handleRecategorize(tx.id, v)}
                             disabled={savingTxId === tx.id}
                           >
@@ -444,27 +442,9 @@ export default function AnalyticsPage() {
                               <SelectValue placeholder="Categoria" />
                             </SelectTrigger>
                             <SelectContent>
-                              {normalOpts.map(c => (
-                                <SelectItem key={c.id} value={c.name} className="text-xs">{c.name}</SelectItem>
-                              ))}
+                              <CategoryOptions list={usable} all={categories} className="text-xs" />
                             </SelectContent>
                           </Select>
-                          {specialOpts.length > 0 && (
-                            <Select
-                              value={isSpecial ? tx.category : ''}
-                              onValueChange={v => v && v !== tx.category && handleRecategorize(tx.id, v)}
-                              disabled={savingTxId === tx.id}
-                            >
-                              <SelectTrigger className="h-7 text-xs px-2 w-auto min-w-[100px] border-dashed">
-                                <SelectValue placeholder="Isolada" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {specialOpts.map(c => (
-                                  <SelectItem key={c.id} value={c.name} className="text-xs">{c.name}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          )}
                         </div>
                       )
                     })()}

@@ -237,6 +237,17 @@ export default function BoardDetailPage() {
     refetch()
   }
 
+  // Marca (ou tira) o evento das linhas selecionadas — a categoria não muda.
+  async function handleBulkEventChange(ids: string[], eventId: string | null) {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { error } = await supabase.from('transactions')
+      .update({ event_id: eventId }).eq('user_id', user.id).in('id', ids)
+    if (error) logSafeError('bulkEventChange', error)
+    refetch()
+  }
+
   async function handleBulkMove(ids: string[], newBoardId: string) {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -533,6 +544,7 @@ export default function BoardDetailPage() {
           currentBoardId={boardId}
           categories={categories}
           onBulkCategoryChange={handleBulkCategoryChange}
+          onBulkEventChange={handleBulkEventChange}
           onBulkMove={handleBulkMove}
           onBulkDelete={handleBulkDelete}
           balanceImpactOf={balanceImpactOf}

@@ -8,11 +8,13 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { MoreVertical, Pencil, Trash2, ArrowRightLeft, RefreshCw, Tag, X as XIcon } from 'lucide-react'
+import { MoreVertical, Pencil, Trash2, ArrowRightLeft, RefreshCw, Tag, Sparkles, X as XIcon } from 'lucide-react'
 import { Transaction, TransactionBoard, Category } from '@/types'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { categoriesForTransactions } from '@/lib/special-category-filter'
+import { categoryOptions } from '@/lib/category-tree'
+import { useEvents } from '@/hooks/use-events'
 import { installmentLabel } from '@/utils/format-installment'
 
 function formatCurrency(value: number) {
@@ -44,6 +46,8 @@ function BalanceImpact({ impact }: { impact: { before: number; after: number } |
   )
 }
 
+const NO_EVENT = '__sem_evento__'
+
 interface TransactionTableProps {
   transactions: Transaction[]
   onEdit: (tx: Transaction) => void
@@ -54,6 +58,8 @@ interface TransactionTableProps {
   currentBoardId?: string
   categories?: Category[]
   onBulkCategoryChange?: (ids: string[], category: string) => Promise<void>
+  /** Marcar/desmarcar um evento nas linhas selecionadas (eventId null = tirar). */
+  onBulkEventChange?: (ids: string[], eventId: string | null) => Promise<void>
   onBulkMove?: (ids: string[], boardId: string) => Promise<void>
   onBulkDelete?: (ids: string[]) => Promise<void>
   /**
@@ -66,8 +72,9 @@ interface TransactionTableProps {
 
 export function TransactionTable({
   transactions, onEdit, onDelete, onMove, onToggleRecurring, boards, currentBoardId,
-  categories, onBulkCategoryChange, onBulkMove, onBulkDelete, balanceImpactOf,
+  categories, onBulkCategoryChange, onBulkEventChange, onBulkMove, onBulkDelete, balanceImpactOf,
 }: TransactionTableProps) {
+  const { events } = useEvents()
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
@@ -76,6 +83,8 @@ export function TransactionTable({
   const [moving, setMoving] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkCategory, setBulkCategory] = useState('')
+  const [bulkEvent, setBulkEvent] = useState('')
+  const [applyingEvent, setApplyingEvent] = useState(false)
   const [applyingBulk, setApplyingBulk] = useState(false)
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
   const [bulkMoveOpen, setBulkMoveOpen] = useState(false)
@@ -99,10 +108,12 @@ export function TransactionTable({
   // Normais e especiais em seletores separados, gravando no mesmo estado
   // (bulkCategory) — escolher em um desmarca o outro, igual ao formulário de
   // transação. A especial só é opção se valer pra TODAS as selecionadas.
-  const bulkCategoryOptions = categoriesForTransactions(categories ?? [], selectedTransactions)
-  const bulkNormalOptions = bulkCategoryOptions.filter(c => !c.special_dates || c.special_dates.length === 0)
-  const bulkSpecialOptions = bulkCategoryOptions.filter(c => (c.special_dates?.length ?? 0) > 0)
-  const bulkIsSpecial = bulkSpecialOptions.some(c => c.name === bulkCategory)
+  const bulkCategoryOptions = categoryOptions(
+    categoriesForTransactions(categories ?? [], selectedTransactions),
+    categories ?? [],
+  )
+  const eventById = useMemo(() => new Map(events.map(e => [e.id, e])), [events])
+  const openEvents = events.filter(e => !e.closed)
 
   // Nunca deixa a seleção "grudada" entre filtros diferentes (mês, busca, conta) —
   // sem isso, uma seleção antiga podia ser aplicada por engano numa lista diferente
@@ -187,34 +198,20 @@ export function TransactionTable({
           <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
             {selected.size} selecionada{selected.size !== 1 ? 's' : ''}
           </span>
-          <Select value={bulkIsSpecial ? '' : bulkCategory} onValueChange={v => { if (v) setBulkCategory(v) }}>
-            <SelectTrigger className="w-48 h-9 bg-white dark:bg-slate-800">
+          <Select value={bulkCategory} onValueChange={v => { if (v) setBulkCategory(v) }}>
+            <SelectTrigger className="w-52 h-9 bg-white dark:bg-slate-800">
               <SelectValue placeholder="Mudar categoria para..." />
             </SelectTrigger>
             <SelectContent>
-              {bulkNormalOptions.map(c => (
-                <SelectItem key={c.id} value={c.name}>
-                  <span className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
-                    {c.name}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={bulkIsSpecial ? bulkCategory : ''} onValueChange={v => { if (v) setBulkCategory(v) }}>
-            <SelectTrigger className="w-48 h-9 bg-white dark:bg-slate-800">
-              <SelectValue placeholder="Categoria isolada..." />
-            </SelectTrigger>
-            <SelectContent>
-              {bulkSpecialOptions.length === 0 ? (
-                <SelectItem value="__empty__" disabled>Nenhuma isolada válida pra seleção</SelectItem>
+              {bulkCategoryOptions.length === 0 ? (
+                <SelectItem value="__empty__" disabled>Nenhuma categoria válida para a seleção</SelectItem>
               ) : (
-                bulkSpecialOptions.map(c => (
-                  <SelectItem key={c.id} value={c.name}>
+                bulkCategoryOptions.map(({ cat, parentName }) => (
+                  <SelectItem key={cat.id} value={cat.name}>
                     <span className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
-                      {c.name}
+                      <span className={parentName ? 'h-2 w-2 rounded-full shrink-0 ml-3' : 'h-2 w-2 rounded-full shrink-0'} style={{ backgroundColor: cat.color }} />
+                      {parentName && <span className="text-slate-400 dark:text-slate-500 text-xs">{parentName} ›</span>}
+                      {cat.name}
                     </span>
                   </SelectItem>
                 ))
@@ -225,6 +222,43 @@ export function TransactionTable({
             <Tag className="h-3.5 w-3.5" />
             Aplicar
           </Button>
+
+          {onBulkEventChange && (
+            <div className="flex items-center gap-2">
+              <Select value={bulkEvent} onValueChange={v => { if (v) setBulkEvent(v) }}>
+                <SelectTrigger className="w-44 h-9 bg-white dark:bg-slate-800">
+                  <SelectValue placeholder="Marcar evento..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_EVENT}>Tirar o evento</SelectItem>
+                  {openEvents.length === 0 ? (
+                    <SelectItem value="__empty_ev__" disabled>Nenhum evento em aberto</SelectItem>
+                  ) : openEvents.map(ev => (
+                    <SelectItem key={ev.id} value={ev.id}>
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: ev.color }} />
+                        {ev.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm" variant="outline" className="gap-1.5 bg-white dark:bg-slate-800"
+                disabled={!bulkEvent || applyingEvent}
+                onClick={async () => {
+                  setApplyingEvent(true)
+                  await onBulkEventChange(Array.from(selected), bulkEvent === NO_EVENT ? null : bulkEvent)
+                  setApplyingEvent(false)
+                  setBulkEvent('')
+                  setSelected(new Set())
+                }}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                {applyingEvent ? 'Aplicando...' : 'Aplicar evento'}
+              </Button>
+            </div>
+          )}
 
           {onBulkMove && otherBoards.length > 0 && (
             <Button
@@ -298,9 +332,20 @@ export function TransactionTable({
                 )}
                 <TableCell className="font-medium text-slate-700 dark:text-slate-200 text-sm truncate overflow-hidden">{tx.description}</TableCell>
                 <TableCell className="hidden sm:table-cell">
-                  <Badge variant="secondary" className="text-xs font-normal">
-                    {tx.category}
-                  </Badge>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <Badge variant="secondary" className="text-xs font-normal">
+                      {tx.category}
+                    </Badge>
+                    {tx.event_id && eventById.has(tx.event_id) && (
+                      <span
+                        title={`Evento: ${eventById.get(tx.event_id)!.name}`}
+                        className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-300"
+                      >
+                        <Sparkles className="h-2.5 w-2.5" />
+                        {eventById.get(tx.event_id)!.name}
+                      </span>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell className="text-slate-500 dark:text-slate-400 text-sm hidden md:table-cell">
                   {format(new Date(tx.date + 'T00:00:00'), "dd 'de' MMM, yyyy", { locale: ptBR })}
