@@ -63,6 +63,7 @@ export interface CashBoardBreakdown {
   name: string
   color: string
   balance: number
+  isCreditCard: boolean
 }
 
 export interface InvestmentBreakdown {
@@ -93,6 +94,7 @@ export function computePatrimonyOverview(
     boardId: board.id,
     name: board.name,
     color: board.color,
+    isCreditCard: board.icon === 'credit-card',
     // Saldo inicial + o que os lançamentos movimentaram. Sem a primeira
     // parcela, uma conta cujo histórico começa no meio nasce com o saldo
     // errado e nunca se corrige — não há lançamento que represente o que

@@ -10,8 +10,9 @@ interface PatrimonyCompositionChartProps {
 }
 
 /**
- * Composição do patrimônio: o gráfico mostra o que o usuário TEM; o que ele
- * DEVE aparece à parte, em vermelho, e o líquido fecha com o card de cima.
+ * Composição do patrimônio: contas correntes e investimentos (cartões de
+ * crédito ficam fora). Conta corrente negativa (cheque especial) aparece à
+ * parte, em vermelho.
  *
  * Dívida não entra na rosca de propósito — ela não desenha valor negativo, e
  * a versão antiga contornava isso com Math.abs(), mostrando o cartão devendo
@@ -29,7 +30,7 @@ export function PatrimonyCompositionChart({ data, loading }: PatrimonyCompositio
   return (
     <ChartCard
       title="Composição do patrimônio"
-      subtitle="O que você tem · dívidas à parte"
+      subtitle="Contas correntes + investimentos"
       href="/investments"
       linkLabel="Investimentos →"
     >
@@ -88,7 +89,7 @@ export function PatrimonyCompositionChart({ data, loading }: PatrimonyCompositio
           )}
 
           <div className="mt-2 mx-2 pt-2 border-t border-slate-100 dark:border-white/[0.06] flex items-center justify-between text-xs">
-            <span className="text-slate-500 dark:text-slate-400">Patrimônio líquido</span>
+            <span className="text-slate-500 dark:text-slate-400">Total</span>
             <span className={`font-bold tabular-nums ${net >= 0 ? 'text-[#0B2D6B] dark:text-slate-100' : 'text-red-500'}`}>
               {net < 0 ? '−' : ''}{formatChartCurrency(Math.abs(net))}
             </span>

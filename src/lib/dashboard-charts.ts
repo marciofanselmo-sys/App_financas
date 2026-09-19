@@ -132,7 +132,11 @@ export function buildPatrimonyChartData(overview: PatrimonyOverview): PatrimonyC
     else if (value < -0.005) debts.push({ name, value: -value, color })
   }
 
-  for (const b of overview.cashBreakdown) place(b.name, b.balance, b.color)
+  // Cartão de crédito fica fora: o gráfico mostra onde o dinheiro está
+  // (contas correntes e investimentos), não o que ainda vai ser pago.
+  for (const b of overview.cashBreakdown) {
+    if (!b.isCreditCard) place(b.name, b.balance, b.color)
+  }
   place('Sem conta', overview.unassignedCash, '#94a3b8')
   for (const inv of overview.investments) place(inv.name, inv.patrimonio, '#2563EB')
 
