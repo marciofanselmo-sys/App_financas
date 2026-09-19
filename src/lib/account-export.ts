@@ -13,6 +13,7 @@ const USER_TABLES = [
   'user_preferences',
   'user_suggestions',
   'csv_mappings',
+  'events',
 ] as const
 
 export async function exportUserData(userId: string) {

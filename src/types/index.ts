@@ -35,6 +35,23 @@ export interface Category {
   // dos meses/anos desta lista (ex: "Viagem" em fevereiro/2026 e março/2026).
   // Lista vazia = categoria normal, sempre disponível.
   special_dates?: SpecialCategoryDate[]
+  // Vazio = categoria principal (Moradia); preenchido = subcategoria (Aluguel).
+  parent_id?: string | null
+  // Etiqueta 50/30/20 — sugestão, ajustável em Planejamento.
+  bucket?: CategoryBucket | null
+}
+
+export type CategoryBucket = 'essencial' | 'estilo' | 'futuro'
+
+// Substitui a "categoria isolada": o lançamento fica na categoria normal e
+// também no evento, para somar quanto se gastou nele (ex.: "Viagem Rio").
+export interface AppEvent {
+  id: string
+  user_id: string
+  name: string
+  color: string
+  closed: boolean
+  created_at: string
 }
 
 export interface TransactionBoard {
@@ -76,6 +93,7 @@ export interface Transaction {
   installment_total?: number | null
   group_label?: string | null
   is_recurring?: boolean
+  event_id?: string | null
   created_at: string
 }
 

@@ -1,6 +1,8 @@
 /** Tabelas com user_id — ordem: filhos antes de pais quando houver FK entre elas */
 export const USER_DATA_TABLES = [
   'transactions',
+  // Depois de transactions (transactions.event_id aponta para cá).
+  'events',
   'categorization_rules',
   'recurring_decisions',
   'recurring_groups',
