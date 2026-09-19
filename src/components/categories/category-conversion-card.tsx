@@ -97,6 +97,9 @@ export function CategoryConversionCard({ categories, groups, loading, onDone }: 
               <li key={p.name} className="rounded-xl border border-slate-200 dark:border-white/[0.08] p-3">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-slate-800 dark:text-slate-100">{p.name}</span>
+                  <span className="text-xs text-slate-400 dark:text-slate-500">
+                    {p.children.length} subcategoria{p.children.length !== 1 ? 's' : ''}
+                  </span>
                   {!p.existing && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">nova</span>
                   )}
@@ -107,15 +110,14 @@ export function CategoryConversionCard({ categories, groups, loading, onDone }: 
                   )}
                 </div>
                 {p.children.length > 0 ? (
-                  <p className="mt-1.5 text-sm text-slate-600 dark:text-slate-300">
-                    {p.children.map((ch, i) => (
-                      <span key={ch.name}>
-                        {i > 0 && ', '}
+                  <ul className="mt-2 ml-1 pl-3 border-l-2 border-slate-100 dark:border-white/[0.08] grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
+                    {p.children.map(ch => (
+                      <li key={ch.name} className="text-sm text-slate-600 dark:text-slate-300 truncate">
                         {ch.name}
                         {!ch.existing && <span className="text-blue-600 dark:text-blue-400"> (nova)</span>}
-                      </span>
+                      </li>
                     ))}
-                  </p>
+                  </ul>
                 ) : (
                   <p className="mt-1.5 text-xs text-slate-400 dark:text-slate-500">Sem subcategorias</p>
                 )}
