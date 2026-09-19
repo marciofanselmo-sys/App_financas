@@ -114,6 +114,11 @@ export function TransactionTable({
   )
   const eventById = useMemo(() => new Map(events.map(e => [e.id, e])), [events])
   const openEvents = events.filter(e => !e.closed)
+  // items: sem ele o gatilho mostra o id do evento em vez do nome.
+  const bulkEventItems = [
+    { value: NO_EVENT, label: 'Tirar o evento' },
+    ...openEvents.map(e => ({ value: e.id, label: e.name })),
+  ]
 
   // Nunca deixa a seleção "grudada" entre filtros diferentes (mês, busca, conta) —
   // sem isso, uma seleção antiga podia ser aplicada por engano numa lista diferente
@@ -225,7 +230,7 @@ export function TransactionTable({
 
           {onBulkEventChange && (
             <div className="flex items-center gap-2">
-              <Select value={bulkEvent} onValueChange={v => { if (v) setBulkEvent(v) }}>
+              <Select value={bulkEvent} onValueChange={v => { if (v) setBulkEvent(v) }} items={bulkEventItems}>
                 <SelectTrigger className="w-44 h-9 bg-white dark:bg-slate-800">
                   <SelectValue placeholder="Marcar evento..." />
                 </SelectTrigger>

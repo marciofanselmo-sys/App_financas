@@ -71,6 +71,10 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
   // Evento encerrado some da lista, mas continua aparecendo se for o que já
   // está salvo nesta transação — senão editar limparia a marcação sem querer.
   const eventChoices = events.filter(e => !e.closed || e.id === eventId)
+  const eventItems = [
+    { value: NO_EVENT, label: 'Nenhum' },
+    ...eventChoices.map(e => ({ value: e.id, label: e.closed ? `${e.name} (encerrado)` : e.name })),
+  ]
   const isNewTransaction = !initialData
   const canInstallment = isNewTransaction && type === 'despesa' && !!onSubmitBatch
   // Só faz sentido oferecer a opção quando editar de fato muda categoria OU
@@ -353,7 +357,12 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
                 + Gerenciar eventos
               </a>
             </div>
-            <Select value={eventId || NO_EVENT} onValueChange={v => { if (v) setEventId(v === NO_EVENT ? '' : v) }}>
+            {/* items: sem ele o gatilho mostra o id cru do evento, não o nome. */}
+            <Select
+              value={eventId || NO_EVENT}
+              onValueChange={v => { if (v) setEventId(v === NO_EVENT ? '' : v) }}
+              items={eventItems}
+            >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Nenhum" />
               </SelectTrigger>

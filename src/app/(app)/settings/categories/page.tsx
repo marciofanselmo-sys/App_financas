@@ -292,6 +292,12 @@ export default function CategoriesPage() {
         c.parent_id !== mergeState.from.id &&
         (c.type === mergeState.from.type || c.type === 'ambos' || mergeState.from.type === 'ambos'))
     : []
+  const parentItems = [
+    { value: NO_PARENT, label: 'Nenhuma (categoria principal)' },
+    ...parents.filter(p => !editing || p.id !== editing.id)
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+      .map(p => ({ value: p.id, label: p.name })),
+  ]
   const parentOptions = parents
     .filter(p => !editing || p.id !== editing.id)
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
@@ -598,6 +604,7 @@ export default function CategoriesPage() {
             <div className="space-y-2">
               <Label>Dentro de</Label>
               <Select
+                items={parentItems}
                 value={form.parentId ?? NO_PARENT}
                 onValueChange={v => {
                   if (!v) return
@@ -731,7 +738,16 @@ export default function CategoriesPage() {
               </p>
               <div className="space-y-2">
                 <Label>Categoria destino</Label>
-                <Select value={mergeState.toId} onValueChange={v => v && setMergeState(s => s ? { ...s, toId: v } : null)}>
+                <Select
+                  value={mergeState.toId}
+                  onValueChange={v => v && setMergeState(s => s ? { ...s, toId: v } : null)}
+                  items={mergeTargets.map(c => ({
+                    value: c.id,
+                    label: c.parent_id
+                      ? `${categories.find(p => p.id === c.parent_id)?.name ?? ''} › ${c.name}`
+                      : c.name,
+                  }))}
+                >
                   <SelectTrigger className="w-full"><SelectValue placeholder="Selecione..." /></SelectTrigger>
                   <SelectContent>
                     {mergeTargets.length === 0 ? (
