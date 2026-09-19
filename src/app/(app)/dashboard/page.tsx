@@ -37,7 +37,7 @@ import { useBudgetPlansRange } from '@/hooks/use-budget-plans-range'
 import { useGoals } from '@/hooks/use-goals'
 import { sumInvestmentContributions, aggregateContributionsByMonth } from '@/lib/investment-contributions'
 import { InvestTargetChart } from '@/components/dashboard/invest-target-chart'
-import { LayoutGrid, AlertCircle, CreditCard, RefreshCw, Upload, CheckCircle, Tag } from 'lucide-react'
+import { LayoutGrid, AlertCircle, CreditCard, RefreshCw, CheckCircle, Tag } from 'lucide-react'
 import Link from 'next/link'
 import { OnboardingModal } from '@/components/onboarding-modal'
 import { NextActionCard } from '@/components/dashboard/next-action-card'
@@ -210,16 +210,7 @@ export default function DashboardPage() {
         title="Dashboard"
         subtitle="Patrimônio acumulado + fluxo do mês"
         actions={
-          <>
-            <Link
-              href="/import"
-              className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold bg-white dark:bg-white/[0.04] text-[#2563EB] dark:text-blue-300 hover:bg-[#E8F2FF] dark:hover:bg-blue-500/15 transition-colors border border-[#DDE7F3] dark:border-white/[0.08] shadow-[var(--nobli-shadow-s)]"
-            >
-              <Upload className="h-4 w-4" />
-              Importar Extrato
-            </Link>
-            <PeriodFilter month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
-          </>
+          <PeriodFilter month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
         }
       />
 

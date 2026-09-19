@@ -682,7 +682,7 @@ export default function FixosPage() {
           title="Nenhuma cobrança fixa detectada"
           description="O app detecta automaticamente receitas e despesas que se repetem em 2 ou mais meses consecutivos."
           primaryLabel="Importar extrato"
-          primaryHref="/import"
+          primaryHref="/transactions"
           secondaryLabel="Como funciona"
           secondaryHref="/help"
         />

@@ -129,7 +129,7 @@ const SECTIONS: Section[] = [
       {
         title: 'Importar extrato bancário (OFX / CSV)',
         body: [
-          'Dentro da conta, clique em "Importar dados para este quadro":',
+          'Em Contas e Cartões, abra a conta e clique em "Importar extrato":',
           '• OFX / QFX: formato padrão de bancos brasileiros. Exporte direto do internet banking.',
           '• CSV: planilha exportada pelo banco. O app detecta automaticamente as colunas.',
           '> Bancos com suporte confirmado: Inter, Nubank, Itaú, Bradesco, Banco do Brasil, Santander, Caixa, XP.',

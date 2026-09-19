@@ -547,7 +547,7 @@ function InstallmentsReport({ boardId, excludeBoardIds }: { boardId: string; exc
           title="Nenhum parcelamento ativo"
           description="Importe um extrato para que o app detecte parcelamentos automaticamente."
           primaryLabel="Importar extrato"
-          primaryHref="/import"
+          primaryHref="/transactions"
         />
       ) : (
         <div className={table}>
@@ -739,7 +739,7 @@ function FixedChargesReport({ boardId, excludeBoardIds }: { boardId: string; exc
           title="Nenhuma cobrança fixa detectada"
           description="O app detecta automaticamente despesas que aparecem em 2+ meses. Importe seus extratos para começar."
           primaryLabel="Importar extrato"
-          primaryHref="/import"
+          primaryHref="/transactions"
         />
       )}
     </div>
