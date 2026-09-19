@@ -12,9 +12,10 @@ import { logSafeError } from '@/lib/supabase-error'
  * Depois:
  *   - cada grupo vira uma categoria principal, e as categorias dele viram
  *     subcategorias (parent_id);
- *   - categoria sem grupo vira subcategoria de "Outros";
+ *   - categoria sem grupo vira subcategoria de "Outros" (despesa) ou de
+ *     "Renda" (receita);
  *   - categoria isolada vira evento: os lançamentos dela ficam marcados com o
- *     evento e vão para Lazer › Viagens (receitas vão para Outros).
+ *     evento e vão para Outros, para o usuário reclassificar com calma.
  *
  * planCategoryConversion só calcula — é o que a prévia mostra. A gravação é
  * applyCategoryConversion, idempotente: se cair no meio, rodar de novo termina
@@ -22,8 +23,7 @@ import { logSafeError } from '@/lib/supabase-error'
  */
 
 export const OUTROS = 'Outros'
-const LAZER = 'Lazer'
-const VIAGENS = 'Viagens'
+const RENDA = 'Renda'
 
 export interface PlannedParent {
   name: string
@@ -118,32 +118,27 @@ export function planCategoryConversion(
     }
   }
 
-  // 2. Categorias isoladas → eventos. O destino (Lazer › Viagens) precisa
-  //    existir antes da regra do "Outros", senão o Lazer sem grupo iria parar
-  //    dentro de Outros e o Viagens ficaria no terceiro nível.
+  // 2. Categorias isoladas → eventos. Os lançamentos vão para "Outros"
+  //    (escolha do usuário): nem todo evento é viagem — "Manutenção Moto",
+  //    "Capacitação" — então o destino neutro é o lugar de "falta classificar".
   const events: PlannedEvent[] = specials.map(c => ({ name: c.name, color: c.color, fromCategory: c }))
-  if (events.length > 0) {
-    const viagens = byName.get(norm(VIAGENS)) ?? null
-    if (!viagens || (!viagens.parent_id && !assigned.has(norm(VIAGENS)) && !parents.has(norm(VIAGENS)))) {
-      const lazerKey = norm(LAZER)
-      const lazer = byName.get(lazerKey)
-      // Lazer já é filho de alguém? Viagens vai para a mesma mãe.
-      const lazerMother = lazer?.parent_id
-        ? normal.find(m => m.id === lazer.parent_id)
-        : [...parents.values()].find(p => p.children.some(ch => norm(ch.name) === lazerKey))
-      const target = lazerMother ? ensureParent(lazerMother.name, lazerMother.type) : ensureParent(LAZER, 'despesa')
-      addChild(target, VIAGENS, viagens)
-    }
-  }
 
-  // 3. O resto (sem grupo, sem mãe) vai para "Outros".
+  // 3. O resto (sem grupo, sem mãe): receitas vão para "Renda" (a mesma mãe
+  //    da árvore padrão), despesas para "Outros" — sem misturar os dois tipos
+  //    debaixo da mesma categoria.
   const leftovers = normal.filter(c =>
     !c.parent_id && !assigned.has(norm(c.name)) && !parents.has(norm(c.name)) && norm(c.name) !== norm(OUTROS),
   )
-  if (leftovers.length > 0 || byName.has(norm(OUTROS))) {
+  const leftoverIncome = leftovers.filter(c => c.type === 'receita' && norm(c.name) !== norm(RENDA))
+  const leftoverExpense = leftovers.filter(c => c.type !== 'receita' && norm(c.name) !== norm(RENDA))
+  if (leftoverIncome.length > 0) {
+    const renda = ensureParent(RENDA, 'receita')
+    for (const c of leftoverIncome) addChild(renda, c.name, c)
+  }
+  if (leftoverExpense.length > 0 || events.length > 0 || byName.has(norm(OUTROS))) {
     const outros = ensureParent(OUTROS, 'ambos')
     outros.bucket = outros.existing?.bucket ?? null
-    for (const c of leftovers) addChild(outros, c.name, c)
+    for (const c of leftoverExpense) addChild(outros, c.name, c)
   }
 
   const ordered = [...parents.values()]
@@ -171,23 +166,38 @@ export async function applyCategoryConversion(
   userId: string,
   plan: CategoryConversionPlan,
 ): Promise<{ error: string | null }> {
+  // O detalhe técnico vai junto na tela: é só a mensagem do Postgres (nunca
+  // valores), e sem ela um erro do banco de produção vira adivinhação.
   const fail = (where: string, error: unknown, message: string) => {
     logSafeError(`categoryConversion.${where}`, error)
-    return { error: message }
+    const detail = (error as { message?: string } | null)?.message
+    return { error: detail ? `${message} (${detail})` : message }
+  }
+
+  // Sem upsert/onConflict: em produção a tabela categories não tem a
+  // constraint unique(user_id, name) que migration_categories.sql promete
+  // (foi criada por outro caminho — o id também é text, não uuid), e o
+  // ON CONFLICT falha sem ela. Idempotência por releitura: só insere nome
+  // que ainda não existe.
+  const readCategories = async () => {
+    const { data, error } = await supabase
+      .from('categories').select('id, name').eq('user_id', userId)
+    if (error || !data) return null
+    return new Map(data.map(c => [norm(c.name as string), c.id as string]))
   }
   const now = () => new Date().toISOString()
 
-  // 1. Mães que ainda não existem. upsert por nome: se uma tentativa anterior
-  //    já criou, não duplica — e o id certo vem da releitura abaixo.
+  // 1. Mães que ainda não existem (uma tentativa anterior pode já ter criado).
+  const before = await readCategories()
+  if (!before) return fail('read', null, 'Não foi possível ler as categorias.')
   const colorFor = (i: number) => CATEGORY_COLORS[i % CATEGORY_COLORS.length]
-  const newParents = plan.parents.filter(p => !p.existing)
+  const newParents = plan.parents.filter(p => !before.has(norm(p.name)))
   if (newParents.length > 0) {
-    const { error } = await supabase.from('categories').upsert(
+    const { error } = await supabase.from('categories').insert(
       newParents.map((p, i) => ({
         id: newId(), user_id: userId, name: p.name, type: p.type,
         color: colorFor(i), bucket: p.bucket, created_at: now(),
       })),
-      { onConflict: 'user_id,name', ignoreDuplicates: true },
     )
     if (error) return fail('createParents', error, 'Não foi possível criar as categorias principais.')
   }
@@ -200,10 +210,8 @@ export async function applyCategoryConversion(
     }
   }
 
-  const { data: fresh, error: readError } = await supabase
-    .from('categories').select('id, name, parent_id').eq('user_id', userId)
-  if (readError || !fresh) return fail('reread', readError, 'Não foi possível reler as categorias.')
-  const idByName = new Map(fresh.map(c => [norm(c.name as string), c.id as string]))
+  const idByName = await readCategories()
+  if (!idByName) return fail('reread', null, 'Não foi possível reler as categorias.')
 
   // 2. Subcategorias: cria as que faltam (ex.: Viagens) e liga à mãe.
   for (const p of plan.parents) {
@@ -212,12 +220,11 @@ export async function applyCategoryConversion(
 
     const missing = p.children.filter(ch => !idByName.has(norm(ch.name)))
     if (missing.length > 0) {
-      const { error } = await supabase.from('categories').upsert(
+      const { error } = await supabase.from('categories').insert(
         missing.map(ch => ({
           id: newId(), user_id: userId, name: ch.name, type: p.type === 'receita' ? 'receita' : 'despesa',
           color: CATEGORY_COLORS[0], parent_id: parentId, created_at: now(),
         })),
-        { onConflict: 'user_id,name', ignoreDuplicates: true },
       )
       if (error) return fail('createChildren', error, `Não foi possível criar subcategorias em "${p.name}".`)
     }
@@ -242,16 +249,13 @@ export async function applyCategoryConversion(
     if (evError || !event) return fail('createEvent', evError, `Não foi possível criar o evento "${ev.name}".`)
 
     const from = ev.fromCategory.name
-    const moves: [string, string][] = [['despesa', VIAGENS], ['receita', OUTROS]]
-    for (const [type, target] of moves) {
-      const { error } = await supabase.from('transactions')
-        .update({ category: target, event_id: event.id })
-        .eq('user_id', userId).eq('category', from).eq('type', type)
-      if (error) return fail('moveTransactions', error, `Não foi possível mover os lançamentos de "${from}".`)
-    }
+    const { error: txError } = await supabase.from('transactions')
+      .update({ category: OUTROS, event_id: event.id })
+      .eq('user_id', userId).eq('category', from)
+    if (txError) return fail('moveTransactions', txError, `Não foi possível mover os lançamentos de "${from}".`)
 
     const { error: rulesError } = await supabase.from('categorization_rules')
-      .update({ category: VIAGENS }).eq('user_id', userId).eq('category', from)
+      .update({ category: OUTROS }).eq('user_id', userId).eq('category', from)
     if (rulesError) return fail('moveRules', rulesError, `Não foi possível atualizar as regras de "${from}".`)
 
     // Só apaga depois que nada mais aponta para ela.

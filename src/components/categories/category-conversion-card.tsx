@@ -133,7 +133,7 @@ export function CategoryConversionCard({ categories, groups, loading, onDone }: 
               </p>
               <p className="text-xs text-violet-600/80 dark:text-violet-300/80">
                 Os lançamentos continuam marcados com o evento (para você ver quanto gastou nele) e
-                passam para <strong>Lazer › Viagens</strong>. Depois é só reclassificar o que quiser.
+                passam para <strong>Outros</strong>, para você reclassificar com calma.
               </p>
             </div>
           )}

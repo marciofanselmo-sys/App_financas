@@ -49,10 +49,14 @@ export function useCategories() {
     // inseriam — o usuário começava com 18 categorias, duas de cada. O
     // ignoreDuplicates deixa a segunda aba não fazer nada, apoiado na
     // constraint unique (user_id, name) de migration_categories.sql.
+    // insert, não upsert: em produção a tabela não tem a constraint
+    // unique(user_id, name) que o ON CONFLICT exige — o upsert falhava e a
+    // conta nova ficava sem nenhuma categoria. Perde a proteção contra duas
+    // abas abertas no primeiro login (raro); a releitura abaixo continua.
     const defaults = buildDefaultCategoryRows(user.id, [])
     const { error: seedError } = await supabase
       .from('categories')
-      .upsert(defaults, { onConflict: 'user_id,name', ignoreDuplicates: true })
+      .insert(defaults)
 
     if (seedError) logSafeError('useCategories.seed', seedError)
     // Já nasce no modelo Categoria > Subcategoria: não oferece conversão.
