@@ -11,7 +11,7 @@ import { BoardIcon } from '@/components/transactions/board-icon'
 import {
   LayoutDashboard, ArrowLeftRight, LogOut, Settings,
   Tag, ChevronDown, Target, RefreshCw, BarChart2, CalendarCheck,
-  Zap, CreditCard, FileText, HelpCircle, ChevronRight, Layers, Shield,
+  Zap, CreditCard, FileText, HelpCircle, ChevronRight, Shield,
   PiggyBank, MessageSquarePlus, ArrowUpRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -50,9 +50,6 @@ const NAV_GROUPS = [
 
 const SETTINGS_ITEMS = [
   { href: '/settings/categories',          label: 'Categorias',          icon: Tag      },
-  // Renomeado: no modelo novo, "subcategoria" é o segundo nível de Categorias.
-  // Esta tela é o agrupador antigo, usado só por Recorrências até a etapa 4.
-  { href: '/settings/subcategories',       label: 'Grupos de recorrência', icon: Layers },
   { href: '/settings/rules',               label: 'Regras auto.',        icon: Zap      },
 ]
 

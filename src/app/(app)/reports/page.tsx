@@ -5,7 +5,6 @@ import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useRecurring } from '@/hooks/use-recurring'
 import { useRecurringDecisions } from '@/hooks/use-recurring-decisions'
-import { useSubcategories } from '@/hooks/use-subcategories'
 import { useBudgetPlan } from '@/hooks/use-budget-plan'
 import { useCategories } from '@/hooks/use-categories'
 import { buildDisplayItems } from '@/lib/recurring-groups'
@@ -113,15 +112,15 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
   // conta na categoria dela em byCategory; isso é só informativo, não soma
   // no total de despesas, mesmo princípio usado em /planning.
   const bySubcategory = useMemo(() => {
+    const subNames = new Set(categories.filter(c => c.parent_id).map(c => c.name))
     const map: Record<string, number> = {}
-    transactions.filter(t => t.type === 'despesa' && t.group_label).forEach(t => {
-      const label = t.group_label as string
-      map[label] = (map[label] ?? 0) + Number(t.amount)
+    transactions.filter(t => t.type === 'despesa' && subNames.has(t.category)).forEach(t => {
+      map[t.category] = (map[t.category] ?? 0) + Number(t.amount)
     })
     return Object.entries(map)
       .sort((a, b) => b[1] - a[1])
       .map(([name, amount]) => ({ name, amount, pct: expenses > 0 ? amount / expenses : 0 }))
-  }, [transactions, expenses])
+  }, [transactions, expenses, categories])
 
   const categoryLimits = plan?.category_limits ?? {}
   const hasPlanned = Object.keys(categoryLimits).some(k => (categoryLimits[k] ?? 0) > 0)
@@ -312,6 +311,7 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
   }
 
   const { transactions, loading } = useTransactions({ year, ...txFilters })
+  const { categories } = useCategories()
   const { transactions: prevTransactions, loading: prevLoading } = useTransactions({
     year: year - 1,
     ...txFilters,
@@ -348,13 +348,13 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
   // Recorte transversal por subcategoria — mesmo princípio do relatório
   // Mensal: não soma no total, uma transação já conta na categoria dela.
   const bySubcategory = useMemo(() => {
+    const subNames = new Set(categories.filter(c => c.parent_id).map(c => c.name))
     const map: Record<string, number> = {}
-    transactions.filter(t => t.type === 'despesa' && t.group_label).forEach(t => {
-      const label = t.group_label as string
-      map[label] = (map[label] ?? 0) + Number(t.amount)
+    transactions.filter(t => t.type === 'despesa' && subNames.has(t.category)).forEach(t => {
+      map[t.category] = (map[t.category] ?? 0) + Number(t.amount)
     })
     return Object.entries(map).sort((a, b) => b[1] - a[1])
-  }, [transactions])
+  }, [transactions, categories])
 
   const totalIncome   = monthly.reduce((s, m) => s + m.income, 0)
   const totalExpenses = monthly.reduce((s, m) => s + m.expenses, 0)
@@ -599,7 +599,6 @@ function FixedChargesReport({ boardId, excludeBoardIds }: { boardId: string; exc
     boardId !== 'all' ? boardId : undefined,
   )
   const { decisions, loading: decisionsLoading } = useRecurringDecisions()
-  const { categoriesByLabel, loading: subLoading } = useSubcategories()
   const { categories } = useCategories()
   const subcategoryNames = useSubcategoryNames()
 
@@ -619,25 +618,22 @@ function FixedChargesReport({ boardId, excludeBoardIds }: { boardId: string; exc
   const totalMonthly = confirmed.reduce((s, i) => s + i.avgAmount, 0)
   const fmtDate      = (d: string) => { const [y, m, day] = d.split('-'); return `${day}/${m}/${y}` }
 
-  // Card de grupo mostra as categorias reais atreladas à subcategoria em vez
-  // de item.category (que seria só a categoria do primeiro membro do grupo).
+  // Um item agrupado hoje é uma subcategoria (Aluguel, Internet): mostra o
+  // caminho completo dela, "Moradia › Aluguel".
   function categoryCell(item: ReturnType<typeof buildDisplayItems>[number]) {
-    if (!item.isGroup) return item.category
-    const cats = item.subcategory ? categoriesByLabel[item.subcategory] ?? [] : []
-    if (cats.length === 0) return '—'
+    const name = item.isGroup ? (item.subcategory ?? item.category) : item.category
+    if (!name) return '—'
+    const cat = categories.find(c => c.name === name)
+    const mother = cat?.parent_id ? categories.find(m => m.id === cat.parent_id) : null
     return (
-      <div className="flex flex-wrap gap-1">
-        {cats.map(catName => (
-          <span key={catName} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700/50 text-[11px]">
-            <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: categoryColor(catName) }} />
-            {catName}
-          </span>
-        ))}
-      </div>
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700/50 text-[11px]">
+        <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: categoryColor(name) }} />
+        {mother ? `${mother.name} › ${name}` : name}
+      </span>
     )
   }
 
-  if (loading || decisionsLoading || subLoading) return <div className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</div>
+  if (loading || decisionsLoading) return <div className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</div>
 
   return (
     <div className="space-y-6">

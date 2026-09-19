@@ -4,7 +4,6 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRecurring } from '@/hooks/use-recurring'
 import { useRecurringDecisions } from '@/hooks/use-recurring-decisions'
-import { useSubcategories } from '@/hooks/use-subcategories'
 import { useCategories } from '@/hooks/use-categories'
 import { createClient } from '@/lib/supabase/client'
 import { DisplayItem, buildDisplayItems } from '@/lib/recurring-groups'
@@ -12,7 +11,7 @@ import { useSubcategoryNames } from '@/hooks/use-subcategory-names'
 import { TransactionType } from '@/types'
 import {
   RefreshCw, CheckCircle, EyeOff, Eye, AlertCircle, Clock,
-  Layers, Plus, Tag, ChevronDown, X, CreditCard, ArrowRight,
+  Layers, Tag, ChevronDown, CreditCard, ArrowRight,
   TrendingDown, TrendingUp, } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/components/ui/button'
@@ -27,114 +26,19 @@ function formatDate(d: string): string {
   return `${day}/${m}/${y}`
 }
 
-// ── Dropdown de subcategoria ──────────────────────────────────────────────────
-function SubcategoryDropdown({
-  value, subcategories, onSelect, saving,
-}: {
-  value: string | null
-  subcategories: string[]
-  onSelect: (v: string | null) => void
-  saving: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  // Fecha ao clicar fora
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    if (open) document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
-
-  return (
-    <div ref={ref} className="relative inline-block">
-      <button
-        type="button"
-        disabled={saving}
-        onClick={() => setOpen(v => !v)}
-        className={cn(
-          'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-colors',
-          saving
-            ? 'opacity-50 cursor-wait'
-            : value
-              ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-700 hover:border-violet-400'
-              : 'text-slate-400 border-dashed border-slate-300 dark:border-slate-600 hover:text-violet-500 hover:border-violet-300 dark:hover:border-violet-600'
-        )}
-      >
-        {saving
-          ? <RefreshCw className="h-2.5 w-2.5 animate-spin" />
-          : value
-            ? <><Tag className="h-2.5 w-2.5" />{value}<ChevronDown className="h-2.5 w-2.5" /></>
-            : <><Plus className="h-2.5 w-2.5" />subcat.</>
-        }
-      </button>
-
-      {open && (
-        <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg min-w-44 py-1">
-          {subcategories.length === 0 ? (
-            <div className="px-3 py-2 space-y-1">
-              <p className="text-xs text-slate-400">Nenhuma subcategoria desse tipo ainda.</p>
-              <Link
-                href="/settings/subcategories"
-                className="text-xs text-violet-600 hover:underline"
-                onClick={() => setOpen(false)}
-              >
-                Criar subcategorias →
-              </Link>
-            </div>
-          ) : (
-            subcategories.map(s => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => { onSelect(s); setOpen(false) }}
-                className={cn(
-                  'w-full text-left px-3 py-1.5 text-sm hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors flex items-center gap-2',
-                  value === s
-                    ? 'text-violet-700 dark:text-violet-300 font-medium'
-                    : 'text-slate-700 dark:text-slate-200'
-                )}
-              >
-                {value === s && <span className="h-1.5 w-1.5 rounded-full bg-violet-500 shrink-0" />}
-                {s}
-              </button>
-            ))
-          )}
-          {value && (
-            <>
-              <div className="h-px bg-slate-100 dark:bg-slate-700 my-1" />
-              <button
-                type="button"
-                onClick={() => { onSelect(null); setOpen(false) }}
-                className="w-full text-left px-3 py-1.5 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-1.5"
-              >
-                <X className="h-3 w-3" /> Remover subcategoria
-              </button>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── Card de item ──────────────────────────────────────────────────────────────
 function ItemCard({
-  item, decision, subcategories, groupCategories, categoryColor, onConfirm, onIgnore, onUndo, onSelectSubcategory,
+  item, decision, categoryPath, categoryColor, onConfirm, onIgnore, onUndo,
 }: {
   item: DisplayItem
   decision: 'confirmed' | 'ignored' | null
-  subcategories: string[]
-  groupCategories: string[]
+  /** "Moradia › Aluguel" — o caminho da categoria do item. */
+  categoryPath: (name: string) => string
   categoryColor: (name: string) => string
   onConfirm: () => void
   onIgnore: () => void
   onUndo: () => void
-  onSelectSubcategory: (label: string | null) => Promise<void>
 }) {
-  const [saving, setSaving] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const isPending = decision === null
   const borderCls = item.isGroup
@@ -142,12 +46,6 @@ function ItemCard({
     : isPending
       ? 'border-amber-200 dark:border-amber-800/40'
       : 'border-emerald-200 dark:border-emerald-800/40'
-
-  async function handleSelect(label: string | null) {
-    setSaving(true)
-    await onSelectSubcategory(label)
-    setSaving(false)
-  }
 
   return (
     <div
@@ -178,25 +76,14 @@ function ItemCard({
           <div className="min-w-0 flex-1">
             <p className="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">{item.name}</p>
 
-            {/* Categoria + Subcategoria — num grupo, a categoria única não faz
-                sentido aqui (o grupo pode ter várias, exibidas embaixo) */}
+            {/* Caminho da categoria. O agrupamento agora vem da própria
+                subcategoria: para mudar, é só trocar a categoria do
+                lançamento em Contas e Cartões. */}
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-              {!item.isGroup && (
-                <>
-                  <span className="text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-full">
-                    {item.category}
-                  </span>
-                  <span className="text-slate-300 dark:text-slate-600 text-xs select-none">›</span>
-                </>
-              )}
-              <div onClick={e => e.stopPropagation()}>
-                <SubcategoryDropdown
-                  value={item.subcategory}
-                  subcategories={subcategories}
-                  onSelect={handleSelect}
-                  saving={saving}
-                />
-              </div>
+              <span className="inline-flex items-center gap-1 text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-full">
+                <Tag className="h-2.5 w-2.5" />
+                {categoryPath(item.isGroup ? (item.subcategory ?? item.category) : item.category)}
+              </span>
               {item.isGroup && (
                 <span className="flex items-center gap-0.5 text-xs text-slate-400">
                   · {item.descriptions.length} descrições
@@ -253,19 +140,13 @@ function ItemCard({
             </Button>
           </>
         ) : item.isGroup ? (
-          groupCategories.length > 0 ? (
-            groupCategories.map(catName => (
-              <span
-                key={catName}
-                className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300"
-              >
-                <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: categoryColor(catName) }} />
-                {catName}
-              </span>
-            ))
-          ) : (
-            <span className="text-xs text-slate-400">Nenhuma categoria vinculada a este grupo</span>
-          )
+          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300">
+            <span
+              className="h-1.5 w-1.5 rounded-full shrink-0"
+              style={{ backgroundColor: categoryColor(item.subcategory ?? item.category) }}
+            />
+            {categoryPath(item.subcategory ?? item.category)}
+          </span>
         ) : (
           <Button size="sm" variant="ghost"
             className="h-8 text-xs gap-1.5 text-slate-400 hover:text-slate-600"
@@ -303,11 +184,18 @@ export default function FixosPage() {
   const { recurring, installments, loading, refetch: refetchRecurring } = useRecurring()
   const subcategoryNames = useSubcategoryNames()
   const { decisions, loading: decisionsLoading, setDecision }     = useRecurringDecisions()
-  const { subcategories, categoriesByLabel, loading: subLoading, assignSubcategory, refetch: refetchSubs } = useSubcategories()
   const { categories } = useCategories()
 
   function categoryColor(name: string): string {
     return categories.find(c => c.name === name)?.color ?? '#94a3b8'
+  }
+
+  // "Moradia › Aluguel": o caminho da categoria, para o card mostrar de onde
+  // o item veio sem precisar do agrupador antigo.
+  function categoryPath(name: string): string {
+    const cat = categories.find(c => c.name === name)
+    const mother = cat?.parent_id ? categories.find(m => m.id === cat.parent_id) : null
+    return mother ? `${mother.name} › ${cat!.name}` : name
   }
 
   const [installmentsExpanded, setInstallmentsExpanded] = useState(false)
@@ -323,12 +211,9 @@ export default function FixosPage() {
     })
   }
 
-  // Overrides otimistas: atualiza o UI antes do banco confirmar
-  const [overrides, setOverrides] = useState<Map<string, string | null>>(new Map())
-
   const displayItems = useMemo(
-    () => buildDisplayItems(recurring, overrides, subcategoryNames),
-    [recurring, overrides, subcategoryNames],
+    () => buildDisplayItems(recurring, new Map(), subcategoryNames),
+    [recurring, subcategoryNames],
   )
 
   const pendingItems   = displayItems.filter(i => !decisions.has(i.key))
@@ -370,17 +255,6 @@ export default function FixosPage() {
           .update({ is_recurring: true })
           .eq('user_id', user.id)
           .in('description', confirmedDescriptions)
-      }
-
-      // Propaga a subcategoria já atribuída para transações novas com a mesma
-      // descrição que ainda não têm group_label (nunca sobrescreve um já definido).
-      for (const item of displayItems) {
-        if (!item.subcategory) continue
-        await supabase.from('transactions')
-          .update({ group_label: item.subcategory })
-          .eq('user_id', user.id)
-          .in('description', item.descriptions)
-          .is('group_label', null)
       }
 
       if (confirmedDescriptions.length > 0) refetchRecurring()
@@ -431,29 +305,7 @@ export default function FixosPage() {
     }
   }
 
-  async function handleSelectSubcategory(item: DisplayItem, label: string | null) {
-    // Atualiza o UI imediatamente (otimista)
-    setOverrides(prev => {
-      const next = new Map(prev)
-      item.descriptions.forEach(d => next.set(d, label))
-      return next
-    })
-
-    const ok = await assignSubcategory(item.descriptions, label)
-    if (ok) {
-      refetchRecurring()
-      refetchSubs()
-    } else {
-      // Reverte se falhou
-      setOverrides(prev => {
-        const next = new Map(prev)
-        item.descriptions.forEach(d => next.delete(d))
-        return next
-      })
-    }
-  }
-
-  const isLoading = loading || decisionsLoading || subLoading
+  const isLoading = loading || decisionsLoading
 
   if (isLoading) {
     return (
@@ -471,15 +323,11 @@ export default function FixosPage() {
         key={item.key}
         item={item}
         decision={decision}
-        // Só oferece subcategorias do mesmo tipo do item — uma despesa nunca
-        // pode ganhar uma subcategoria criada como receita, por exemplo.
-        subcategories={subcategories.filter(s => s.type === item.type).map(s => s.name)}
-        groupCategories={item.subcategory ? categoriesByLabel[item.subcategory] ?? [] : []}
+        categoryPath={categoryPath}
         categoryColor={categoryColor}
         onConfirm={() => handleConfirm(item)}
         onIgnore={() => handleIgnore(item)}
         onUndo={() => handleUndo(item)}
-        onSelectSubcategory={label => handleSelectSubcategory(item, label)}
       />
     ))
 

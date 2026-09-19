@@ -897,35 +897,12 @@ function shiftDays(date: string, days: number): string {
       historyMap.set(h.description.toLowerCase(), h.category)
     }
 
-    // Subcategoria (group_label) por histórico — mesma ideia da categoria acima,
-    // mas pra recorrência: antes, atribuir uma subcategoria em /fixos só valia
-    // pras transações que já existiam; uma importação nova com a mesma descrição
-    // vinha sem subcategoria nenhuma até o usuário visitar /fixos de novo (a
-    // sincronização de lá só roda no client, ao abrir a página). Herdando aqui,
-    // a transação nova já chega com a subcategoria certa, sem esse passo extra.
-    //
-    // Chave é descrição + categoria (não só descrição) — uma descrição genérica
-    // pode se repetir em compras diferentes; exigir a categoria igual também é
-    // uma segunda confirmação de que é "a mesma coisa de sempre". E categoria
-    // "Outros" nunca herda subcategoria: se o sistema nem reconheceu a categoria
-    // (ficou em "Outros"), não tem confiança suficiente pra herdar a
-    // subcategoria também — fica pro usuário decidir na revisão manual.
-    const { rows: subcategoryData } = await selectAllPages<{ description: string; category: string; group_label: string }>(
-      () => supabase
-        .from('transactions').select('description, category, group_label').eq('user_id', user.id).not('group_label', 'is', null),
-    )
-    const subcategoryHistoryMap = new Map<string, string>()
-    for (const h of subcategoryData) {
-      if (!h.group_label) continue
-      subcategoryHistoryMap.set(`${h.description.toLowerCase()}|${h.category}`, h.group_label)
-    }
-
+    // O agrupador antigo (group_label) saiu: a categoria já é o segundo nível
+    // (Alimentação › Mercado), e a herança por histórico acima já traz a
+    // categoria certa — não há mais uma etiqueta separada para herdar.
     let valid = preview.filter(r => r.valid).map(r => {
       const resolvedCategory = r.category === 'Outros' ? (historyMap.get(r.description.toLowerCase()) ?? r.category) : r.category
-      const resolvedSubcategory = resolvedCategory === 'Outros'
-        ? r.subcategory
-        : (r.subcategory ?? subcategoryHistoryMap.get(`${r.description.toLowerCase()}|${resolvedCategory}`))
-      return { ...r, category: resolvedCategory, subcategory: resolvedSubcategory }
+      return { ...r, category: resolvedCategory }
     })
 
     // Corrige parcelas "fantasma": se já existe uma transação no mesmo "slot"
@@ -1043,7 +1020,6 @@ function shiftDays(date: string, days: number): string {
         category: row.category,
         board_id: row.board_id ?? boardId ?? null,
         tags: [],
-        group_label: row.subcategory ?? null,
         installment_current: row.installment_current ?? null,
         installment_total: row.installment_total ?? null,
       }))

@@ -136,8 +136,8 @@ export default function DashboardPage() {
     [transactions, categories],
   )
   const plannedVsActual = useMemo(
-    () => buildPlannedVsActual(plan, transactions),
-    [plan, transactions],
+    () => buildPlannedVsActual(plan, transactions, categories),
+    [plan, transactions, categories],
   )
 
   const pinnedBoards = boards.filter(b => b.show_on_dashboard && !b.is_investment)

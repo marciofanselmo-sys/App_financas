@@ -209,22 +209,23 @@ export interface PlannedVsActualRow {
 export function buildPlannedVsActual(
   plan: BudgetPlan | null,
   transactions: Transaction[],
+  categories: Category[] = [],
 ): PlannedVsActualRow[] {
   if (!plan?.category_limits) return []
 
+  const mothers = motherNameByCategory(categories)
+
+  // Pelo nome exato da categoria (é o que o limite "sub:" acompanha).
   const actualByCategory: Record<string, number> = {}
+  // Pela categoria-mãe: o limite da mãe cobre o que foi gasto nas filhas.
+  const actualByMother: Record<string, number> = {}
   transactions
     .filter(t => t.type === 'despesa')
     .forEach(t => {
-      actualByCategory[t.category] = (actualByCategory[t.category] || 0) + Number(t.amount)
-    })
-
-  const actualByGroupLabel: Record<string, number> = {}
-  transactions
-    .filter(t => t.type === 'despesa' && t.group_label)
-    .forEach(t => {
-      const label = t.group_label as string
-      actualByGroupLabel[label] = (actualByGroupLabel[label] || 0) + Number(t.amount)
+      const amount = Number(t.amount)
+      actualByCategory[t.category] = (actualByCategory[t.category] || 0) + amount
+      const mother = motherOf(t.category, mothers)
+      actualByMother[mother] = (actualByMother[mother] || 0) + amount
     })
 
   const rows: PlannedVsActualRow[] = []
@@ -233,8 +234,8 @@ export function buildPlannedVsActual(
     if (planned <= 0) continue
     const label = isSubKey(key) ? subName(key) : key
     const actual = isSubKey(key)
-      ? (actualByGroupLabel[subName(key)] ?? 0)
-      : (actualByCategory[key] ?? 0)
+      ? (actualByCategory[subName(key)] ?? 0)
+      : (actualByMother[key] ?? actualByCategory[key] ?? 0)
     rows.push({ label, planned, actual })
   }
 

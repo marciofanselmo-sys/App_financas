@@ -33,6 +33,7 @@ const nextConfig: NextConfig = {
       // (dois níveis + eventos). Link antigo cai nela.
       { source: '/categories', destination: '/settings/categories', permanent: false },
       { source: '/settings/isolated-categories', destination: '/settings/categories', permanent: false },
+      { source: '/settings/subcategories', destination: '/settings/categories', permanent: false },
     ]
   },
   async headers() {
