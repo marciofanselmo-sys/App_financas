@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { buildDisplayItems } from '@/lib/recurring-groups'
+import { useSubcategoryNames } from '@/hooks/use-subcategory-names'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useRecurring } from '@/hooks/use-recurring'
@@ -95,6 +96,7 @@ export default function DashboardPage() {
   const { targetsByKey, loading: targetsRangeLoading } = useBudgetPlansRange(month, year, 6)
   const { goals, loading: goalsLoading } = useGoals()
   const { categories } = useCategories()
+  const subcategoryNames = useSubcategoryNames()
 
   const chartMonths = useMemo(() => getMonthRange(month, year, 6), [month, year])
 
@@ -165,8 +167,8 @@ export default function DashboardPage() {
   //   - montava a chave sem decisionKey(), então o que o usuário confirmava em
   //     /fixos não era reconhecido aqui.
   const groupedRecurring = useMemo(
-    () => buildDisplayItems(despesaRecurring, new Map()),
-    [despesaRecurring],
+    () => buildDisplayItems(despesaRecurring, new Map(), subcategoryNames),
+    [despesaRecurring, subcategoryNames],
   )
   const confirmedRecurring = useMemo(
     () => groupedRecurring.filter(i => decisions.get(i.key) === 'confirmed'),

@@ -24,9 +24,16 @@ export function decisionKey(type: TransactionType, rawKey: string): string {
   return type === 'despesa' ? rawKey : `${type}:${rawKey}`
 }
 
+/**
+ * `subcategoryNames`: nomes das categorias de segundo nível (Aluguel, Mercado...).
+ * Quando o lançamento está numa delas, ela mesma agrupa as cobranças — é o que
+ * o agrupador antigo (group_label) fazia à mão. Categoria principal (Moradia,
+ * Outros) não agrupa: juntaria coisas que não têm relação.
+ */
 export function buildDisplayItems(
   recurring: RecurringItem[],
   overrides: Map<string, string | null>,
+  subcategoryNames: Set<string> = new Set(),
 ): DisplayItem[] {
   // Aplica overrides locais antes de agrupar
   const withOverrides = recurring.map(r => ({
@@ -38,7 +45,11 @@ export function buildDisplayItems(
   const singles: typeof withOverrides = []
 
   for (const r of withOverrides) {
-    const label = r.group_label?.trim() || null
+    // A subcategoria vem primeiro: depois da conversão, group_label guarda o
+    // grupo antigo, que virou categoria PRINCIPAL — agrupar por ele juntaria
+    // Aluguel, Luz e Internet num card só.
+    const subLabel = subcategoryNames.has(r.category) ? r.category : null
+    const label = subLabel ?? (r.group_label?.trim() || null)
     if (label) {
       // Agrupa por tipo + subcategoria — uma despesa e uma receita não podem
       // cair no mesmo grupo só por coincidirem de subcategoria.
@@ -54,7 +65,8 @@ export function buildDisplayItems(
   const items: DisplayItem[] = []
 
   for (const members of grouped.values()) {
-    const label = members[0].group_label!.trim()
+    const first = members[0]
+    const label = (subcategoryNames.has(first.category) ? first.category : first.group_label!).trim()
     const type = members[0].type
     // Meses distintos do grupo como um todo (não a soma dos meses de cada
     // descrição) — duas descrições que caem no mesmo mês não podem contar

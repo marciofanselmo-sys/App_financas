@@ -8,6 +8,7 @@ import { useSubcategories } from '@/hooks/use-subcategories'
 import { useCategories } from '@/hooks/use-categories'
 import { createClient } from '@/lib/supabase/client'
 import { DisplayItem, buildDisplayItems } from '@/lib/recurring-groups'
+import { useSubcategoryNames } from '@/hooks/use-subcategory-names'
 import { TransactionType } from '@/types'
 import {
   RefreshCw, CheckCircle, EyeOff, Eye, AlertCircle, Clock,
@@ -300,6 +301,7 @@ const TYPE_SECTIONS: {
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function FixosPage() {
   const { recurring, installments, loading, refetch: refetchRecurring } = useRecurring()
+  const subcategoryNames = useSubcategoryNames()
   const { decisions, loading: decisionsLoading, setDecision }     = useRecurringDecisions()
   const { subcategories, categoriesByLabel, loading: subLoading, assignSubcategory, refetch: refetchSubs } = useSubcategories()
   const { categories } = useCategories()
@@ -325,8 +327,8 @@ export default function FixosPage() {
   const [overrides, setOverrides] = useState<Map<string, string | null>>(new Map())
 
   const displayItems = useMemo(
-    () => buildDisplayItems(recurring, overrides),
-    [recurring, overrides],
+    () => buildDisplayItems(recurring, overrides, subcategoryNames),
+    [recurring, overrides, subcategoryNames],
   )
 
   const pendingItems   = displayItems.filter(i => !decisions.has(i.key))

@@ -1,4 +1,4 @@
-import { Transaction } from '@/types'
+import { Transaction, Category, AppEvent } from '@/types'
 import { installmentLabel } from './format-installment'
 
 const SEP = ';'
@@ -18,8 +18,27 @@ function formatAmount(amount: number): string {
 /**
  * Baixa as transações filtradas (as da tela) como CSV compatível com Excel BR.
  */
-export function exportToCSV(transactions: Transaction[], filename = 'transacoes') {
+export function exportToCSV(
+  transactions: Transaction[],
+  filename = 'transacoes',
+  // Sem estes, as colunas Categoria/Subcategoria/Evento saem em branco no que
+  // depende deles — a transação guarda só o nome da categoria e o id do evento.
+  categories: Category[] = [],
+  events: AppEvent[] = [],
+) {
   if (transactions.length === 0) return
+
+  const catByName = new Map(categories.map(c => [c.name.trim().toLowerCase(), c]))
+  const catById = new Map(categories.map(c => [c.id, c]))
+  const eventById = new Map(events.map(e => [e.id, e]))
+
+  // Categoria = a mãe; Subcategoria = o segundo nível, quando houver.
+  function categoryCells(t: Transaction): [string, string] {
+    const cat = catByName.get(t.category.trim().toLowerCase())
+    if (!cat) return [t.category, '']
+    const mother = cat.parent_id ? catById.get(cat.parent_id) : null
+    return mother ? [mother.name, cat.name] : [cat.name, '']
+  }
 
   const headers = [
     'Descrição',
@@ -29,6 +48,7 @@ export function exportToCSV(transactions: Transaction[], filename = 'transacoes'
     'Tipo',
     'Categoria',
     'Subcategoria',
+    'Evento',
   ]
 
   const typeLabel = (t: Transaction) => (t.type === 'receita' ? 'Receita' : 'Despesa')
@@ -37,15 +57,19 @@ export function exportToCSV(transactions: Transaction[], filename = 'transacoes'
     a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
   )
 
-  const rows = sorted.map((t) => [
-    escapeCell(t.description),
-    escapeCell(formatAmount(t.amount)),
-    escapeCell(t.date),
-    escapeCell(installmentLabel(t)),
-    escapeCell(typeLabel(t)),
-    escapeCell(t.category),
-    escapeCell(t.group_label ?? ''),
-  ])
+  const rows = sorted.map((t) => {
+    const [categoria, subcategoria] = categoryCells(t)
+    return [
+      escapeCell(t.description),
+      escapeCell(formatAmount(t.amount)),
+      escapeCell(t.date),
+      escapeCell(installmentLabel(t)),
+      escapeCell(typeLabel(t)),
+      escapeCell(categoria),
+      escapeCell(subcategoria),
+      escapeCell(t.event_id ? eventById.get(t.event_id)?.name ?? '' : ''),
+    ]
+  })
 
   const csv = [headers.join(SEP), ...rows.map((r) => r.join(SEP))].join('\n')
 

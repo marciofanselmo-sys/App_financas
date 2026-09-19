@@ -9,6 +9,7 @@ import { useSubcategories } from '@/hooks/use-subcategories'
 import { useBudgetPlan } from '@/hooks/use-budget-plan'
 import { useCategories } from '@/hooks/use-categories'
 import { buildDisplayItems } from '@/lib/recurring-groups'
+import { useSubcategoryNames } from '@/hooks/use-subcategory-names'
 import { subKey } from '@/lib/plan-keys'
 import { calcHealthScore, scoreConfig } from '@/components/dashboard/summary-cards'
 import {
@@ -600,6 +601,7 @@ function FixedChargesReport({ boardId, excludeBoardIds }: { boardId: string; exc
   const { decisions, loading: decisionsLoading } = useRecurringDecisions()
   const { categoriesByLabel, loading: subLoading } = useSubcategories()
   const { categories } = useCategories()
+  const subcategoryNames = useSubcategoryNames()
 
   function categoryColor(name: string): string {
     return categories.find(c => c.name === name)?.color ?? '#94a3b8'
@@ -611,7 +613,7 @@ function FixedChargesReport({ boardId, excludeBoardIds }: { boardId: string; exc
   // relatório tinha uma cópia própria e desatualizada dessa lógica, com a
   // mesma diluição de média de grupo já corrigida em /fixos em 2026-07-09.
   const despesaRecurring = useMemo(() => recurring.filter(r => r.type === 'despesa'), [recurring])
-  const allItems   = useMemo(() => buildDisplayItems(despesaRecurring, new Map()), [despesaRecurring])
+  const allItems   = useMemo(() => buildDisplayItems(despesaRecurring, new Map(), subcategoryNames), [despesaRecurring, subcategoryNames])
   const confirmed  = allItems.filter(i => decisions.get(i.key) === 'confirmed')
   const pending    = allItems.filter(i => !decisions.has(i.key))
   const totalMonthly = confirmed.reduce((s, i) => s + i.avgAmount, 0)

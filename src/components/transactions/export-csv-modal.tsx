@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { createClient } from '@/lib/supabase/client'
 import { exportToCSV } from '@/utils/export-csv'
+import { useEvents } from '@/hooks/use-events'
 import { Category, Transaction, TransactionType } from '@/types'
 
 const MONTHS = [
@@ -130,6 +131,7 @@ export function ExportCSVModal({
   initialSearch,
   categories,
 }: ExportCSVModalProps) {
+  const { events } = useEvents()
   const [period, setPeriod] = useState<'month' | 'year' | 'all'>('month')
   const [month, setMonth] = useState(initialMonth)
   const [year, setYear] = useState(initialYear)
@@ -200,7 +202,7 @@ export function ExportCSVModal({
         setError('Nenhuma transação encontrada com esses filtros.')
         return
       }
-      exportToCSV(txs, buildFilename(boardName, period, month, year))
+      exportToCSV(txs, buildFilename(boardName, period, month, year), categories, events)
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao exportar.')

@@ -5,7 +5,7 @@ import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { sumInvestmentContributions } from '@/lib/investment-contributions'
 import { useCategories } from '@/hooks/use-categories'
-import { useSubcategories } from '@/hooks/use-subcategories'
+import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 import { useBudgetPlan } from '@/hooks/use-budget-plan'
 import { useRecurringMonthlyTotal } from '@/hooks/use-recurring-monthly-total'
 import { categoriesForDate } from '@/lib/special-category-filter'
@@ -141,7 +141,23 @@ export default function PlanningPage() {
     exclude_board_ids: excludedBoardIds.length > 0 ? excludedBoardIds : undefined,
   })
   const { categories } = useCategories()
-  const { subcategories } = useSubcategories()
+  // Subcategorias agora são as categorias de segundo nível (Aluguel, Mercado),
+  // não mais os grupos antigos guardados no perfil.
+  const subcategories = useMemo(
+    () => categories.filter(c => c.parent_id && (c.type === 'despesa' || c.type === 'ambos')),
+    [categories],
+  )
+  const motherNames = useMemo(() => motherNameByCategory(categories), [categories])
+  const childrenByMother = useMemo(() => {
+    const map = new Map<string, string[]>()
+    for (const c of categories) {
+      if (!c.parent_id) continue
+      const mother = categories.find(m => m.id === c.parent_id)
+      if (!mother) continue
+      map.set(mother.name, [...(map.get(mother.name) ?? []), c.name])
+    }
+    return map
+  }, [categories])
   const { plan, loading, savePlan } = useBudgetPlan(month, year)
   const { total: recurringMonthlyTotal, loading: recurringLoading } = useRecurringMonthlyTotal()
 
@@ -175,7 +191,9 @@ export default function PlanningPage() {
   // Categoria especial só entra na lista se for válida no mês/ano do plano
   // sendo editado — mesmo filtro usado no resto do app pra seleção de categoria.
   const planDateStr = `${year}-${String(month).padStart(2, '0')}-01`
-  const expenseCategories = categoriesForDate(categories, planDateStr).filter(c => c.type === 'despesa' || c.type === 'ambos')
+  // Só categorias principais: a lista de subcategorias é a de baixo.
+  const expenseCategories = categoriesForDate(categories, planDateStr)
+    .filter(c => (c.type === 'despesa' || c.type === 'ambos') && !c.parent_id)
 
   // Categorias e subcategorias já no plano (aparecem no form) — subcategorias
   // ficam misturadas no mesmo mapa com a chave "sub:Nome".
@@ -188,10 +206,12 @@ export default function PlanningPage() {
   // (group_label) que a categoria conta sozinha (category), então oferecer
   // as duas ao mesmo tempo duplicaria o "Realizado" na tabela Planejado ×
   // Realizado pra um único gasto real.
+  // Mãe com alguma subcategoria já no plano não pode entrar também: as duas
+  // contariam o mesmo gasto e o "Realizado" dobraria.
   const categoriesCoveredByActiveSubcategories = new Set(
-    subcategories
-      .filter(s => activeSubcategoryNames.includes(s.name))
-      .flatMap(s => s.categories ?? [])
+    [...childrenByMother.entries()]
+      .filter(([, kids]) => kids.some(k => activeSubcategoryNames.includes(k)))
+      .map(([mother]) => mother)
   )
 
   // Categorias disponíveis para adicionar — normais e isoladas em seletores
@@ -203,7 +223,11 @@ export default function PlanningPage() {
   const availableToAddSpecial = availableToAddAll.filter(c => (c.special_dates?.length ?? 0) > 0)
 
   // Subcategorias disponíveis — só as de tipo despesa (planejamento só cobre gastos)
-  const availableSubcategories = subcategories.filter(s => s.type === 'despesa' && !activeSubcategoryNames.includes(s.name))
+  // Subcategoria cuja mãe já tem limite fica de fora, pelo mesmo motivo.
+  const availableSubcategories = subcategories.filter(s =>
+    !activeSubcategoryNames.includes(s.name) &&
+    !activeCategoryNames.includes(motherOf(s.name, motherNames))
+  )
 
   // Valores realizados
   const actualIncome = transactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
@@ -217,11 +241,12 @@ export default function PlanningPage() {
   transactions.forEach(t => {
     actualByCategoryAll[t.category] = (actualByCategoryAll[t.category] || 0) + Number(t.amount)
   })
-  // Realizado por subcategoria — soma por group_label, independente da categoria
-  const actualByGroupLabel: Record<string, number> = {}
-  transactions.filter(t => t.type === 'despesa' && t.group_label).forEach(t => {
-    const label = t.group_label as string
-    actualByGroupLabel[label] = (actualByGroupLabel[label] || 0) + Number(t.amount)
+  // Realizado da categoria principal: ela mesma mais as subcategorias dentro
+  // dela (o lançamento fica na subcategoria, mas o limite é da mãe).
+  const actualByMother: Record<string, number> = {}
+  transactions.filter(t => t.type === 'despesa').forEach(t => {
+    const mother = motherOf(t.category, motherNames)
+    actualByMother[mother] = (actualByMother[mother] || 0) + Number(t.amount)
   })
 
   function addCategory(name: string | null) {
@@ -284,7 +309,7 @@ export default function PlanningPage() {
 
   // Tabela: só categorias/subcategorias com limite > 0
   const tableCategories = expenseCategories.filter(c => parseNum(categoryLimits[c.name] ?? '') > 0)
-  const tableSubcategories = subcategories.filter(s => s.type === 'despesa' && parseNum(categoryLimits[subKey(s.name)] ?? '') > 0)
+  const tableSubcategories = subcategories.filter(s => parseNum(categoryLimits[subKey(s.name)] ?? '') > 0)
 
   // Total Despesas soma categoria + subcategoria — uma categoria não pode mais
   // ser adicionada em "Limite por categoria" se já pertence a uma subcategoria
@@ -303,8 +328,8 @@ export default function PlanningPage() {
   // das linhas mostradas (categoria fora do plano empurrava o total pra cima
   // sem aparecer em lugar nenhum da tabela, parecendo conta errada).
   const actualExpenses =
-    tableCategories.reduce((s, c) => s + (actualByCategory[c.name] ?? 0), 0) +
-    tableSubcategories.reduce((s, sub) => s + (actualByGroupLabel[sub.name] ?? 0), 0)
+    tableCategories.reduce((s, c) => s + (actualByMother[c.name] ?? 0), 0) +
+    tableSubcategories.reduce((s, sub) => s + (actualByCategory[sub.name] ?? 0), 0)
 
   // Gasto real do período inteiro, rastreado ou não no plano — só contexto,
   // nunca comparado direto contra totalPlanned (isso quebraria de novo o
@@ -319,6 +344,26 @@ export default function PlanningPage() {
     () => sumInvestmentContributions(transactions, boards),
     [transactions, boards],
   )
+
+  // 50/30/20: cada gasto entra no balde da sua categoria (a subcategoria pode
+  // ter etiqueta própria — Restaurante "estilo de vida" dentro de Alimentação
+  // "essencial"). Só sugestão: a etiqueta é editável em Categorias.
+  const bucketSummary = useMemo(() => {
+    const byName = new Map(categories.map(c => [c.name.trim().toLowerCase(), c]))
+    const totals: Record<'essencial' | 'estilo' | 'futuro' | 'sem', number> = {
+      essencial: 0, estilo: 0, futuro: 0, sem: 0,
+    }
+    let total = 0
+    for (const t of transactions) {
+      if (t.type !== 'despesa') continue
+      const cat = byName.get(t.category.trim().toLowerCase())
+      const mother = cat?.parent_id ? categories.find(m => m.id === cat.parent_id) : null
+      const bucket = cat?.bucket ?? mother?.bucket ?? null
+      totals[bucket ?? 'sem'] += Number(t.amount)
+      total += Number(t.amount)
+    }
+    return { totals, total }
+  }, [transactions, categories])
 
   const hasTable = tableCategories.length > 0 || tableSubcategories.length > 0 || incomeNum > 0 || investNum > 0
 
@@ -676,7 +721,8 @@ export default function PlanningPage() {
                     {/* Categorias de despesa */}
                     {tableCategories.map(cat => {
                       const planned = parseNum(categoryLimits[cat.name] ?? '')
-                      const actual = actualByCategory[cat.name] ?? 0
+                      // Inclui o que foi gasto nas subcategorias dentro dela.
+                      const actual = actualByMother[cat.name] ?? 0
                       const diff = actual - planned
                       return (
                         <tr key={cat.name} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
@@ -707,7 +753,7 @@ export default function PlanningPage() {
                         a elas, ver comentário de totalPlanned acima) */}
                     {tableSubcategories.map(sub => {
                       const planned = parseNum(categoryLimits[subKey(sub.name)] ?? '')
-                      const actual = actualByGroupLabel[sub.name] ?? 0
+                      const actual = actualByCategory[sub.name] ?? 0
                       const diff = actual - planned
                       return (
                         <tr key={`sub:${sub.name}`} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
@@ -792,6 +838,53 @@ export default function PlanningPage() {
               </>
             )}
           </div>
+
+          {/* 50/30/20 — sugestão, ajustável mudando a etiqueta das categorias */}
+          {bucketSummary.total > 0 && (
+            <div className="nobli-card p-5 space-y-3">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Essencial · Estilo de vida · Futuro</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                    Sugestão 50/30/20 sobre as despesas do período. Para mudar onde uma categoria entra,
+                    edite a etiqueta dela em Configurações › Categorias.
+                  </p>
+                </div>
+                <a href="/settings/categories" className="text-xs text-blue-600 hover:underline shrink-0">Ajustar etiquetas →</a>
+              </div>
+
+              <div className="space-y-2.5">
+                {([
+                  ['essencial', 'Essencial', 50, 'bg-blue-500'],
+                  ['estilo', 'Estilo de vida', 30, 'bg-amber-500'],
+                  ['futuro', 'Futuro', 20, 'bg-emerald-500'],
+                  ['sem', 'Sem etiqueta', null, 'bg-slate-300 dark:bg-slate-600'],
+                ] as const).map(([key, label, target, color]) => {
+                  const value = bucketSummary.totals[key]
+                  if (key === 'sem' && value <= 0.005) return null
+                  const pct = bucketSummary.total > 0 ? (value / bucketSummary.total) * 100 : 0
+                  return (
+                    <div key={key}>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-slate-600 dark:text-slate-300">
+                          {label}
+                          {target !== null && (
+                            <span className="text-slate-400 dark:text-slate-500"> · sugerido {target}%</span>
+                          )}
+                        </span>
+                        <span className="text-slate-700 dark:text-slate-200 font-semibold tabular-nums">
+                          {pct.toFixed(0)}% · {fmt(value)}
+                        </span>
+                      </div>
+                      <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${Math.min(100, pct)}%` }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Resumo de desvio */}
           {hasTable && totalPlanned > 0 && (
