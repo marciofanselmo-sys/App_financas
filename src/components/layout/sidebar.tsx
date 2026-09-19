@@ -12,7 +12,7 @@ import {
   LayoutDashboard, ArrowLeftRight, LogOut, Settings,
   Tag, ChevronDown, Target, RefreshCw, BarChart2, CalendarCheck,
   Zap, CreditCard, FileText, HelpCircle, ChevronRight, Layers, Shield,
-  PiggyBank, Sparkles, MessageSquarePlus, ArrowUpRight,
+  PiggyBank, MessageSquarePlus, ArrowUpRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -50,8 +50,9 @@ const NAV_GROUPS = [
 
 const SETTINGS_ITEMS = [
   { href: '/settings/categories',          label: 'Categorias',          icon: Tag      },
-  { href: '/settings/subcategories',       label: 'Subcategorias',       icon: Layers   },
-  { href: '/settings/isolated-categories', label: 'Categorias isoladas', icon: Sparkles },
+  // Renomeado: no modelo novo, "subcategoria" é o segundo nível de Categorias.
+  // Esta tela é o agrupador antigo, usado só por Recorrências até a etapa 4.
+  { href: '/settings/subcategories',       label: 'Grupos de recorrência', icon: Layers },
   { href: '/settings/rules',               label: 'Regras auto.',        icon: Zap      },
 ]
 

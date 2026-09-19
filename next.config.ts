@@ -29,6 +29,10 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       { source: '/import', destination: '/transactions', permanent: false },
+      // Categorias, Subcategorias e Categorias isoladas viraram uma tela só
+      // (dois níveis + eventos). Link antigo cai nela.
+      { source: '/categories', destination: '/settings/categories', permanent: false },
+      { source: '/settings/isolated-categories', destination: '/settings/categories', permanent: false },
     ]
   },
   async headers() {

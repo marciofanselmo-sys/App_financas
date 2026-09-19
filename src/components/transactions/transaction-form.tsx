@@ -293,7 +293,7 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label>Categoria</Label>
-              <a href="/categories" className="text-xs text-blue-600 hover:underline">
+              <a href="/settings/categories" className="text-xs text-blue-600 hover:underline">
                 + Gerenciar categorias
               </a>
             </div>
