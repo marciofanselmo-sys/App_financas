@@ -5,7 +5,7 @@
 > que falta pro produto completo. Atualize este arquivo conforme decisões forem
 > tomadas — ele existe pra não precisar reexplicar o histórico do zero.
 >
-> Última atualização: 2026-07-09.
+> Última atualização: 2026-09-19.
 
 ---
 
@@ -75,15 +75,16 @@ não precisar re-explicar do zero, não são compromissos assumidos.
 - [ ] Painel admin com visão de: usuários ativos, plano de cada um, uso de recursos, erros recentes
 
 ### 3.4 Observabilidade
-- [ ] Integrar Sentry (ou equivalente) — hoje falhas só aparecem no console do navegador (já aconteceu com sync de regra e salvar planejamento nesta fase, ambos silenciosos até investigação manual)
-- [ ] Alternativa mais simples: tabela própria de log de erros + painel no `/admin`, se não quiser depender de serviço externo
+- [x] **Tabela própria de log de erros + painel no `/admin`** (set/2026) — `app_errors`, alimentada por `logSafeError` e por um listener de erros não tratados. Erros agrupados por onde + mensagem, com contagem de usuários afetados. Sem serviço externo nem custo. Motivação real: um worker do pdf.js em versão errada quebrou toda importação de PDF e só foi descoberto porque o próprio dono tentou importar.
+- [ ] Integrar Sentry — quando houver cliente pagando. A tabela própria não **avisa**: é preciso abrir o `/admin` para ver.
 - [ ] Alertas básicos (e-mail/Slack) para erro em produção
 
 ### 3.5 Legal / LGPD
-- [ ] Termos de Uso
-- [ ] Política de Privacidade
-- [ ] Fluxo de exportação de dados pessoais (o usuário poder baixar tudo que o app guarda sobre ele)
-- [ ] Confirmar que exclusão de conta cobre 100% dos dados pessoais (já corrigida nesta fase — é a base pronta pra isso, falta só o texto legal em volta)
+- [x] Termos de Uso — `/terms`, no ar
+- [x] Política de Privacidade — `/privacy`, no ar
+- [x] Fluxo de exportação de dados pessoais — `src/lib/account-export.ts`
+- [ ] Confirmar que exclusão de conta cobre 100% dos dados pessoais — a lista de tabelas (`supabase/functions/_shared/user-tables.ts`) foi atualizada em set/2026 com `csv_mappings` e `app_errors`, que ficavam para trás. **Falta redeploy da edge function `delete-account`** para valer em produção.
+- [ ] Incluir na Política de Privacidade o uso de IA para ler extratos, **se** o item de PDF com IA (3.7) for feito
 
 ### 3.6 Segurança / robustez adicional
 - [ ] Rate limiting nas rotas sensíveis (login, cadastro, endpoints de API)
@@ -93,6 +94,12 @@ não precisar re-explicar do zero, não são compromissos assumidos.
 ### 3.7 Diferencial de produto (médio prazo, não prioridade agora)
 - [ ] Os parsers próprios de banco (C6, Itaú, Inter, Mercado Pago, RICO) são hoje o maior trunfo de marketing: "funciona com o banco que você já usa, sem precisar de Open Finance"
 - [ ] Evolução natural, quando fizer sentido: integrar Open Finance via Pluggy ou Belvo, eliminando o passo manual de "baixar PDF/CSV todo mês" — projeto à parte, não é prioridade hoje
+- [x] **CSV de qualquer banco, aprendido** (set/2026) — o usuário mapeia as colunas uma vez e o app guarda o formato (`csv_mappings`, pela impressão digital do cabeçalho). Na próxima importação do mesmo banco, reconhece sozinho. Todas as regras (categorização, deduplicação, pagamento de fatura, parcelas) já valiam para qualquer formato. Hoje é **por usuário**.
+- [ ] **Compartilhar formatos de CSV entre usuários** — o layout do CSV de um banco é o mesmo para todos: o primeiro ensina, os outros ganham de graça. A tabela guarda só nomes de coluna, então não há problema de privacidade. **Precisa de trava** antes: um mapeamento errado propagaria para todo mundo (ex: só compartilhar depois que 2–3 usuários confirmarem o mesmo mapeamento).
+- [ ] **PDF de qualquer banco, lido por IA** — hoje só 4 formatos de PDF têm parser (fatura e extrato Inter, Itaú, Mercado Pago); qualquer outro o usuário precisa converter ou digitar. PDF não tem colunas — chega como uma linha só de texto —, então não dá para "aprender" o formato como no CSV. O caminho é um modelo de IA ler o texto e devolver as transações. Custos a resolver antes:
+  - **Exatidão:** a IA pode ler um valor errado — grave num app financeiro. Conferir contra os totais impressos no próprio extrato, quando houver (como já é feito com o Mercado Pago), e sempre mostrar prévia antes de gravar.
+  - **LGPD:** o texto do extrato vai para um serviço externo. Precisa de cláusula na Política de Privacidade e consentimento explícito do usuário.
+  - **Custo:** centavos por importação. Pequeno, mas passa a existir — entra na conta do preço do plano.
 
 ---
 
