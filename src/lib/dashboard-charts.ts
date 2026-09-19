@@ -101,22 +101,46 @@ export interface ChartSegment {
   color?: string
 }
 
-export function buildPatrimonyChartData(overview: PatrimonyOverview): ChartSegment[] {
-  const segments: ChartSegment[] = []
+export interface PatrimonyChartData {
+  /** O que o usuário TEM: contas com saldo positivo e investimentos. Vai no gráfico. */
+  assets: ChartSegment[]
+  /**
+   * O que o usuário DEVE: contas com saldo negativo (cartão com fatura em
+   * aberto, conta no negativo). `value` é o quanto se deve, sempre positivo —
+   * quem exibe coloca o sinal.
+   */
+  debts: ChartSegment[]
+  /** assets − debts. Fecha com o "Patrimônio total" do card de cima. */
+  net: number
+}
 
-  for (const b of overview.cashBreakdown) {
-    if (b.balance !== 0) {
-      segments.push({ name: b.name, value: Math.abs(b.balance), color: b.color })
-    }
-  }
-  if (overview.unassignedCash !== 0) {
-    segments.push({ name: 'Sem conta', value: Math.abs(overview.unassignedCash), color: '#94a3b8' })
-  }
-  for (const inv of overview.investments) {
-    segments.push({ name: inv.name, value: inv.patrimonio, color: '#2563EB' })
+/**
+ * Separa o patrimônio entre o que se tem e o que se deve.
+ *
+ * Antes tudo ia para o mesmo gráfico com Math.abs(): um cartão devendo
+ * R$ 478 virava uma fatia de +R$ 478 do patrimônio. O gráfico de rosca não
+ * desenha valor negativo, e o abs "resolvia" isso trocando o significado do
+ * número — dívida aparecia como dinheiro do usuário, e as fatias somavam mais
+ * do que o patrimônio real mostrado logo acima.
+ */
+export function buildPatrimonyChartData(overview: PatrimonyOverview): PatrimonyChartData {
+  const assets: ChartSegment[] = []
+  const debts: ChartSegment[] = []
+
+  const place = (name: string, value: number, color: string) => {
+    if (value > 0.005) assets.push({ name, value, color })
+    else if (value < -0.005) debts.push({ name, value: -value, color })
   }
 
-  return segments.filter(s => s.value > 0)
+  for (const b of overview.cashBreakdown) place(b.name, b.balance, b.color)
+  place('Sem conta', overview.unassignedCash, '#94a3b8')
+  for (const inv of overview.investments) place(inv.name, inv.patrimonio, '#2563EB')
+
+  assets.sort((a, b) => b.value - a.value)
+  debts.sort((a, b) => b.value - a.value)
+
+  const net = assets.reduce((s, a) => s + a.value, 0) - debts.reduce((s, d) => s + d.value, 0)
+  return { assets, debts, net }
 }
 
 export function buildExpenseChartData(transactions: Transaction[]): ChartSegment[] {
