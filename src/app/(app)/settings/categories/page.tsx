@@ -6,7 +6,7 @@ import { useTransactions } from '@/hooks/use-transactions'
 import { useEvents } from '@/hooks/use-events'
 import { useSubcategories } from '@/hooks/use-subcategories'
 import { CategoryConversionCard } from '@/components/categories/category-conversion-card'
-import { Category, CategoryBucket, CategoryType, CATEGORY_COLORS, AppEvent } from '@/types'
+import { Category, CategoryBucket, CategoryType, CATEGORY_COLORS, AppEvent, Transaction } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -52,6 +52,16 @@ const SECTION_META: Record<SectionType, { label: string; icon: React.ElementType
 
 const money = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
+
+const MONTH_NAMES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
+// "2026-05" -> "mai/2026". Sem new Date(): a string já tem o mês certo, e
+// converter para Date em UTC devolveria o mês anterior no fim do dia.
+const monthLabel = (key: string) => {
+  const [year, month] = key.split('-')
+  return `${MONTH_NAMES[Number(month) - 1]}/${year}`
+}
+
+const dayLabel = (iso: string) => iso.slice(8, 10) + '/' + iso.slice(5, 7)
 
 interface FormState {
   name: string
@@ -106,6 +116,7 @@ export default function CategoriesPage() {
   const [eventSaving, setEventSaving] = useState(false)
   const [eventError, setEventError] = useState('')
   const [eventDeleteTarget, setEventDeleteTarget] = useState<AppEvent | null>(null)
+  const [openEvent, setOpenEvent] = useState<string | null>(null)
 
   const usageCount = useMemo(() => {
     const map: Record<string, number> = {}
@@ -125,6 +136,21 @@ export default function CategoriesPage() {
       if (t.date < s.first) s.first = t.date
       if (t.date > s.last) s.last = t.date
       map[t.event_id] = s
+    }
+    return map
+  }, [transactions])
+
+  // Detalhe do evento: um bloco por mês, com os lançamentos daquele mês.
+  const eventMonths = useMemo(() => {
+    const map: Record<string, Record<string, { spent: number; received: number; txs: Transaction[] }>> = {}
+    for (const t of transactions) {
+      if (!t.event_id) continue
+      const monthKey = t.date.slice(0, 7) // YYYY-MM, sem passar por Date (fuso)
+      const byMonth = map[t.event_id] ?? (map[t.event_id] = {})
+      const m = byMonth[monthKey] ?? (byMonth[monthKey] = { spent: 0, received: 0, txs: [] })
+      if (t.type === 'despesa') m.spent += t.amount
+      else m.received += t.amount
+      m.txs.push(t)
     }
     return map
   }, [transactions])
@@ -533,30 +559,43 @@ export default function CategoriesPage() {
             <div className="space-y-2">
               {events.events.map(ev => {
                 const s = eventStats[ev.id]
+                const months = Object.entries(eventMonths[ev.id] ?? {}).sort((a, b) => a[0].localeCompare(b[0]))
+                const expanded = openEvent === ev.id
                 return (
-                  <div key={ev.id} className="flex items-center gap-3 bg-white dark:bg-slate-800 rounded-xl px-4 py-3 shadow-sm">
+                  <div key={ev.id} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm">
+                  <div className="flex items-center gap-3 px-4 py-3">
                     <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: ev.color + '25' }}>
                       <Sparkles className="h-4 w-4" style={{ color: ev.color }} />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-slate-700 dark:text-slate-200 text-sm truncate">
-                        {ev.name}
-                        {ev.closed && <span className="ml-2 text-[10px] font-medium text-slate-400">encerrado</span>}
-                      </p>
-                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                        {s
-                          ? `${s.count} lançamento${s.count === 1 ? '' : 's'} · ${s.first.split('-').reverse().join('/')} a ${s.last.split('-').reverse().join('/')}`
-                          : 'Nenhum lançamento marcado ainda'}
-                      </p>
-                    </div>
-                    {s && (
-                      <div className="text-right shrink-0">
-                        <p className="text-sm font-bold text-red-500 tabular-nums">{money(s.spent)}</p>
-                        {s.received > 0.005 && (
-                          <p className="text-xs text-green-600 dark:text-green-400 tabular-nums">+{money(s.received)}</p>
-                        )}
+                    <button
+                      type="button"
+                      disabled={!s}
+                      onClick={() => setOpenEvent(expanded ? null : ev.id)}
+                      className="flex-1 min-w-0 flex items-center gap-3 text-left disabled:cursor-default"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-slate-700 dark:text-slate-200 text-sm truncate flex items-center gap-1">
+                          {s && (expanded
+                            ? <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            : <ChevronRight className="h-3.5 w-3.5 text-slate-400 shrink-0" />)}
+                          {ev.name}
+                          {ev.closed && <span className="ml-1 text-[10px] font-medium text-slate-400">encerrado</span>}
+                        </p>
+                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                          {s
+                            ? `${s.count} lançamento${s.count === 1 ? '' : 's'} · ${s.first.split('-').reverse().join('/')} a ${s.last.split('-').reverse().join('/')}`
+                            : 'Nenhum lançamento marcado ainda'}
+                        </p>
                       </div>
-                    )}
+                      {s && (
+                        <div className="text-right shrink-0">
+                          <p className="text-sm font-bold text-red-500 tabular-nums">{money(s.spent)}</p>
+                          {s.received > 0.005 && (
+                            <p className="text-xs text-green-600 dark:text-green-400 tabular-nums">+{money(s.received)}</p>
+                          )}
+                        </div>
+                      )}
+                    </button>
                     <div className="flex gap-1 shrink-0">
                       <Button variant="ghost" size="icon" className="h-8 w-8"
                         title={ev.closed ? 'Reabrir evento' : 'Encerrar evento'}
@@ -573,6 +612,46 @@ export default function CategoriesPage() {
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
+                  </div>
+
+                  {expanded && months.length > 0 && (
+                    <div className="border-t border-slate-100 dark:border-white/[0.06] px-4 py-3 space-y-3">
+                      {months.map(([key, m]) => (
+                        <div key={key}>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                              {monthLabel(key)}
+                            </p>
+                            <div className="text-right">
+                              <span className="text-sm font-bold text-red-500 tabular-nums">{money(m.spent)}</span>
+                              {m.received > 0.005 && (
+                                <span className="ml-2 text-xs text-green-600 dark:text-green-400 tabular-nums">
+                                  +{money(m.received)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <ul className="mt-1 pl-3 border-l-2 border-slate-100 dark:border-white/[0.08] space-y-0.5">
+                            {m.txs
+                              .slice()
+                              .sort((a, b) => a.date.localeCompare(b.date))
+                              .map(t => (
+                                <li key={t.id} className="flex items-center justify-between gap-3 text-xs">
+                                  <span className="truncate text-slate-600 dark:text-slate-300">
+                                    <span className="text-slate-400 dark:text-slate-500 tabular-nums mr-1.5">{dayLabel(t.date)}</span>
+                                    {t.description}
+                                  </span>
+                                  <span className={cn('tabular-nums shrink-0',
+                                    t.type === 'despesa' ? 'text-slate-600 dark:text-slate-300' : 'text-green-600 dark:text-green-400')}>
+                                    {t.type === 'despesa' ? '' : '+'}{money(t.amount)}
+                                  </span>
+                                </li>
+                              ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   </div>
                 )
               })}
