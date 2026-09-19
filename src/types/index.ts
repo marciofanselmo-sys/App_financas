@@ -127,17 +127,7 @@ export interface DashboardSummary {
 }
 
 // Categorias padrão criadas automaticamente para novos usuários
-export const DEFAULT_CATEGORIES: Omit<Category, 'id' | 'user_id' | 'created_at'>[] = [
-  { name: 'Salário',      type: 'receita', color: '#10b981' },
-  { name: 'Freelance',    type: 'receita', color: '#06b6d4' },
-  { name: 'Alimentação',  type: 'despesa', color: '#f59e0b' },
-  { name: 'Transporte',   type: 'despesa', color: '#3b82f6' },
-  { name: 'Moradia',      type: 'despesa', color: '#8b5cf6' },
-  { name: 'Saúde',        type: 'despesa', color: '#ef4444' },
-  { name: 'Educação',     type: 'despesa', color: '#ec4899' },
-  { name: 'Lazer',        type: 'despesa', color: '#f97316' },
-  { name: 'Outros',       type: 'ambos',   color: '#6b7280' },
-]
+// Árvore padrão de categorias: src/lib/default-categories.ts
 
 export interface RICOPosition {
   ticker: string

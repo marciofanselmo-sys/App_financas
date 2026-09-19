@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Category, DEFAULT_CATEGORIES } from '@/types'
+import { Category } from '@/types'
+import { buildDefaultCategoryRows } from '@/lib/default-categories'
 import { createClient } from '@/lib/supabase/client'
 import { logSafeError } from '@/lib/supabase-error'
 
@@ -48,17 +49,14 @@ export function useCategories() {
     // inseriam — o usuário começava com 18 categorias, duas de cada. O
     // ignoreDuplicates deixa a segunda aba não fazer nada, apoiado na
     // constraint unique (user_id, name) de migration_categories.sql.
-    const defaults: Category[] = DEFAULT_CATEGORIES.map(c => ({
-      ...c,
-      id: uid(),
-      user_id: user.id,
-      created_at: new Date().toISOString(),
-    }))
+    const defaults = buildDefaultCategoryRows(user.id, [])
     const { error: seedError } = await supabase
       .from('categories')
       .upsert(defaults, { onConflict: 'user_id,name', ignoreDuplicates: true })
 
     if (seedError) logSafeError('useCategories.seed', seedError)
+    // Já nasce no modelo Categoria > Subcategoria: não oferece conversão.
+    else await supabase.auth.updateUser({ data: { category_tree_v2: true } })
 
     // Relê sempre, em vez de confiar no que esta aba tentou inserir: se a
     // outra aba ganhou a corrida, são as categorias DELA que estão no banco —
@@ -225,10 +223,7 @@ export function useCategories() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Não autenticado.' }
 
-    const existing = categories.map(c => c.name.toLowerCase())
-    const toAdd: Category[] = DEFAULT_CATEGORIES
-      .filter(c => !existing.includes(c.name.toLowerCase()))
-      .map(c => ({ ...c, id: uid(), user_id: user.id, created_at: new Date().toISOString() }))
+    const toAdd = buildDefaultCategoryRows(user.id, categories)
 
     if (toAdd.length === 0) return { error: null }
     const { error } = await supabase.from('categories').insert(toAdd)

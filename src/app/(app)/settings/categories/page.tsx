@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useCategories } from '@/hooks/use-categories'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useSubcategories } from '@/hooks/use-subcategories'
+import { CategoryConversionCard } from '@/components/categories/category-conversion-card'
 import { Category, CategoryType, CATEGORY_COLORS } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -63,9 +64,9 @@ interface MergeState {
 const EMPTY_FORM: FormState = { name: '', type: 'despesa', color: CATEGORY_COLORS[0] }
 
 export default function CategoriesPage() {
-  const { categories, loading, createCategory, updateCategory, deleteCategory, seedDefaults } = useCategories()
+  const { categories, loading, createCategory, updateCategory, deleteCategory, seedDefaults, refetch } = useCategories()
   const { transactions } = useTransactions()
-  const { categoriesByLabel } = useSubcategories()
+  const { categoriesByLabel, subcategories, loading: subcategoriesLoading } = useSubcategories()
 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Category | null>(null)
@@ -194,6 +195,13 @@ export default function CategoriesPage() {
           </Button>
         </div>
       </div>
+
+      <CategoryConversionCard
+        categories={categories}
+        groups={subcategories}
+        loading={loading || subcategoriesLoading}
+        onDone={refetch}
+      />
 
       <Link
         href="/settings/isolated-categories"
