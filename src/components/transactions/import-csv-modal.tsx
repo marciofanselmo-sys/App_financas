@@ -18,6 +18,7 @@ import { parseRicoExtratoXLSX, isRicoExtratoRows } from '@/utils/parse-rico-extr
 import { extractPdfText } from '@/utils/extract-pdf-text'
 import { selectAllPages } from '@/lib/supabase/select-all'
 import { reportError } from '@/lib/error-reporter'
+import { loadSavedMapping, saveMapping, guessSignConvention, type CsvMapping, type SignConvention } from '@/lib/csv-mapping-memory'
 import { findCounterpartBoard, hasExistingLeg, buildCounterpartLeg, legTypeFor } from '@/lib/internal-counterpart'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { parseMercadoPagoPDF, isMercadoPagoPDF, countMercadoPagoCandidates } from '@/utils/parse-mercadopago-pdf'
@@ -419,6 +420,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   const [headers, setHeaders] = useState<string[]>([])
   const [rawRows, setRawRows] = useState<Record<string, string>[]>([])
   const [mapping, setMapping] = useState<Record<string, string>>({})
+  const currentMapping = mapping
   // Contas do usuário: usadas para reconhecer, pela descrição, que um
   // pagamento quita outra conta dele (ex: a fatura do cartão).
   const { boards } = useTransactionBoards()
@@ -428,6 +430,9 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   // pular para a prévia fazia ele sumir antes de aparecer — o usuário nunca
   // sabia que linhas tinham ficado de fora.
   const [importWarning, setImportWarning] = useState('')
+  // O CSV veio num formato que o usuário já ensinou — o app aplicou o
+  // mapeamento salvo e pulou a tela de colunas. A prévia avisa e oferece ajuste.
+  const [mappingRecognized, setMappingRecognized] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<{ success: number; errors: number; duplicates: number; fixed: number; errorMessage?: string } | null>(null)
   const [fileError, setFileError] = useState('')
@@ -481,7 +486,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   }, [rules, categories])
 
   function reset() {
-    setStep('upload'); setFileType(null); setHeaders([]); setRawRows([]); setMapping({}); setPreview([]); setImportWarning('')
+    setStep('upload'); setFileType(null); setHeaders([]); setRawRows([]); setMapping({}); setPreview([]); setImportWarning(''); setMappingRecognized(false)
     setImporting(false); setImportResult(null); setFileError('')
     setReviewItems([]); setReviewCategories({})
     setDuplicateItems([]); setShowDuplicates(false)
@@ -581,7 +586,26 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
         complete: (results) => {
           if (!results.data.length) { setFileError('Arquivo vazio ou sem dados.'); return }
           const hs = results.meta.fields ?? []
-          setHeaders(hs); setRawRows(results.data); setMapping(guessCSVMapping(hs)); setFileType('csv'); setStep('map')
+          const guessed = guessCSVMapping(hs)
+          // A convenção de sinal entra no chute: pela maioria dos valores o app
+          // distingue extrato de conta (maioria negativa) de fatura (maioria
+          // positiva). Sem isso, extrato de conta entrava todo invertido.
+          guessed.sinal = guessSignConvention(
+            results.data.map(r => parseAmountBR(guessed.valor ? r[guessed.valor] : '')),
+          )
+          setHeaders(hs); setRawRows(results.data); setFileType('csv')
+
+          loadSavedMapping(hs).then(saved => {
+            if (saved) {
+              setMapping(saved as unknown as Record<string, string>)
+              setMappingRecognized(true)
+              buildCSVPreview(saved as unknown as Record<string, string>, results.data)
+            } else {
+              setMapping(guessed)
+              setMappingRecognized(false)
+              setStep('map')
+            }
+          })
         },
         error: () => setFileError('Erro ao ler CSV. Verifique o arquivo.'),
       })
@@ -798,8 +822,14 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   }
 
   // ── Generic CSV → Preview ──
-  function buildCSVPreview() {
-    const rows: PreviewRow[] = rawRows.map(raw => {
+  // Aceita mapeamento e linhas explícitos porque, quando o formato é
+  // reconhecido, isto roda logo depois de setMapping/setRawRows — e o estado
+  // do React ainda não foi atualizado nesse instante.
+  function buildCSVPreview(
+    mapping: Record<string, string> = currentMapping,
+    sourceRows: Record<string, string>[] = rawRows,
+  ) {
+    const rows: PreviewRow[] = sourceRows.map(raw => {
       const errors: string[] = []
       const description = stripEmbeddedDate((mapping.descricao ? raw[mapping.descricao] : '').trim())
       if (!description) errors.push('Descrição vazia')
@@ -811,13 +841,14 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
       let type: TransactionType
       const mappedType = mapping.tipo ? normalizeType(raw[mapping.tipo]) : null
       if (mappedType) {
-        // Coluna "tipo" escrita à mão no CSV. "transferencia" ali significa
-        // "é interna" — o tipo real vem do sinal do valor, como em qualquer
-        // outra linha.
         type = mappedType
       }
       else if (!isNaN(valorNum)) {
-        type = valorNum < 0 ? 'receita' : 'despesa'
+        // O que o sinal significa depende do arquivo — ver SignConvention.
+        // Sem mapeamento de sinal (formato salvo antes disto), vale o
+        // comportamento antigo: negativo é entrada.
+        const saida = mapping.sinal === 'negativo-saida' ? valorNum < 0 : valorNum > 0
+        type = saida ? 'despesa' : 'receita'
       }
       else { type = 'despesa'; errors.push('Tipo não mapeado — assumido "despesa"') }
       const category = normalizeCategory(mapping.categoria ? raw[mapping.categoria] : 'Outros', categoryNames)
@@ -1261,6 +1292,16 @@ function shiftDays(date: string, days: number): string {
                   </div>
                 ))}
               </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-200 w-44 shrink-0">Valores negativos são</span>
+                <Select value={mapping.sinal ?? 'negativo-entrada'} onValueChange={v => v && setMapping(m => ({ ...m, sinal: v }))}>
+                  <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="negativo-saida">Saídas (extrato de conta)</SelectItem>
+                    <SelectItem value="negativo-entrada">Entradas (fatura de cartão)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="text-xs text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800 p-3 rounded-lg space-y-1">
                 <p><strong>Categorias válidas:</strong> {categoryNames.join(', ')}</p>
                 <p><strong>Datas aceitas:</strong> AAAA-MM-DD ou DD/MM/AAAA</p>
@@ -1268,7 +1309,20 @@ function shiftDays(date: string, days: number): string {
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setStep('upload')} className="flex-1">Voltar</Button>
-                <Button onClick={buildCSVPreview} className="flex-1" disabled={!mapping.descricao || !mapping.valor || !mapping.data}>
+                <Button
+                  onClick={() => {
+                    buildCSVPreview()
+                    // Guarda o formato para a próxima vez. Não espera: se
+                    // falhar, a importação segue e o usuário só mapeia de novo.
+                    void saveMapping(headers, {
+                      data: mapping.data, valor: mapping.valor, descricao: mapping.descricao,
+                      tipo: mapping.tipo || undefined, categoria: mapping.categoria || undefined,
+                      sinal: (mapping.sinal as SignConvention) || 'negativo-entrada',
+                    } satisfies CsvMapping)
+                  }}
+                  className="flex-1"
+                  disabled={!mapping.descricao || !mapping.valor || !mapping.data}
+                >
                   Visualizar ({rawRows.length} linhas)
                 </Button>
               </div>
@@ -1278,6 +1332,14 @@ function shiftDays(date: string, days: number): string {
           {/* STEP 3: PREVIEW */}
           {step === 'preview' && (
             <div className="space-y-4 pt-2">
+              {mappingRecognized && (
+                <div className="flex items-start justify-between gap-3 text-sm text-blue-800 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <span>Formato reconhecido — usamos as colunas que você definiu da última vez.</span>
+                  <button type="button" onClick={() => { setMappingRecognized(false); setStep('map') }} className="shrink-0 underline font-medium">
+                    Ajustar colunas
+                  </button>
+                </div>
+              )}
               {importWarning && (
                 <div className="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg border border-amber-200 dark:border-amber-800">
                   <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />

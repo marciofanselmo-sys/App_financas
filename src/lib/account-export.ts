@@ -12,6 +12,7 @@ const USER_TABLES = [
   'user_profiles',
   'user_preferences',
   'user_suggestions',
+  'csv_mappings',
 ] as const
 
 export async function exportUserData(userId: string) {
