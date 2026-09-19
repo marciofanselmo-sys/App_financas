@@ -16,8 +16,11 @@
 
 -- 1. Categoria-mãe. Apagar a mãe solta as filhas (viram principais), nunca
 --    apaga subcategoria em cascata.
+--    text, não uuid: em produção categories.id é text (o app gera o id com
+--    crypto.randomUUID() no cliente), apesar de migration_categories.sql
+--    dizer uuid. A FK exige o mesmo tipo dos dois lados.
 alter table categories
-  add column if not exists parent_id uuid references categories(id) on delete set null;
+  add column if not exists parent_id text references categories(id) on delete set null;
 
 create index if not exists categories_parent_id_idx on categories(parent_id);
 
