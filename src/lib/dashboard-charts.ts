@@ -233,9 +233,14 @@ export function buildPlannedVsActual(
   for (const [key, planned] of Object.entries(plan.category_limits)) {
     if (planned <= 0) continue
     const label = isSubKey(key) ? subName(key) : key
-    const actual = isSubKey(key)
-      ? (actualByCategory[subName(key)] ?? 0)
-      : (actualByMother[key] ?? actualByCategory[key] ?? 0)
+    // Limite de categoria principal cobre o que foi gasto nas subcategorias
+    // dentro dela; limite de subcategoria conta só ela. O que manda é o nome,
+    // não o formato da chave — plano antigo pode ter "sub:" num nome que hoje
+    // é categoria principal.
+    const isMother = motherOf(label, mothers) === label
+    const actual = isMother
+      ? (actualByMother[label] ?? 0)
+      : (actualByCategory[label] ?? 0)
     rows.push({ label, planned, actual })
   }
 

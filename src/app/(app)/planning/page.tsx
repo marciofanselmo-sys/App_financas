@@ -171,6 +171,28 @@ export default function PlanningPage() {
   const [investmentTarget, setInvestmentTarget] = useState('')
   const [categoryLimits, setCategoryLimits] = useState<Record<string, string>>({})
 
+  // Planos salvos antes da conversão guardam "sub:Moradia" — e Moradia virou
+  // categoria PRINCIPAL. Sem reescrever a chave, o limite aparecia na coluna de
+  // subcategoria mas ficava fora da tabela Planejado × Realizado, como se o
+  // valor não existisse. Chave que não corresponde a nenhuma categoria (grupo
+  // que deixou de existir) é descartada.
+  useEffect(() => {
+    if (categories.length === 0) return
+    setCategoryLimits(prev => {
+      const next: Record<string, string> = {}
+      let changed = false
+      for (const [key, value] of Object.entries(prev)) {
+        const name = isSubKey(key) ? subName(key) : key
+        const cat = categories.find(c => c.name === name)
+        if (!cat) { changed = true; continue }
+        const fixed = cat.parent_id ? subKey(name) : name
+        if (fixed !== key) changed = true
+        next[fixed] = value
+      }
+      return changed ? next : prev
+    })
+  }, [categories])
+
   useEffect(() => {
     if (plan) {
       setExpectedIncome(plan.expected_income > 0 ? String(plan.expected_income) : '')
