@@ -432,6 +432,34 @@ export default function CategoriesPage() {
             </div>
           )}
 
+          {(() => {
+            const outros = parents.find(isOutros)
+            const stranded = outros ? (childrenOf.get(outros.id) ?? []).length : 0
+            const unlabeled = parents.filter(p => !p.bucket && p.type !== 'receita' && !isOutros(p)).length
+            if (stranded === 0 && unlabeled === 0) return null
+            return (
+              <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-xl p-3.5">
+                <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                <div className="text-sm text-amber-700 dark:text-amber-300 space-y-1">
+                  <p className="font-semibold">Vale organizar</p>
+                  {stranded > 0 && (
+                    <p>
+                      <strong>{stranded}</strong> subcategoria{stranded === 1 ? ' está' : 's estão'} dentro de &ldquo;Outros&rdquo;.
+                      Edite cada uma e escolha a categoria certa no campo <strong>Dentro de</strong> — os relatórios e o
+                      Planejamento passam a fazer sentido.
+                    </p>
+                  )}
+                  {unlabeled > 0 && (
+                    <p>
+                      <strong>{unlabeled}</strong> categoria{unlabeled === 1 ? '' : 's'} de despesa sem a etiqueta
+                      Essencial / Estilo de vida / Futuro. Sem ela, o painel 50/30/20 do Planejamento fica incompleto.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
+
           {categories.length > 0 && (
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />

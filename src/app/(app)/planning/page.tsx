@@ -875,6 +875,19 @@ export default function PlanningPage() {
                 <a href="/settings/categories" className="text-xs text-blue-600 hover:underline shrink-0">Ajustar etiquetas →</a>
               </div>
 
+              {bucketSummary.totals.sem / bucketSummary.total > 0.15 && (
+                <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-xl p-3">
+                  <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    <strong>{fmt(bucketSummary.totals.sem)}</strong> ({Math.round((bucketSummary.totals.sem / bucketSummary.total) * 100)}%)
+                    do que você gastou está em categorias sem etiqueta — em geral, o que ficou dentro de &ldquo;Outros&rdquo;.
+                    Enquanto isso, esta divisão não reflete a sua vida.{' '}
+                    <a href="/settings/categories" className="underline font-medium">Organize suas categorias</a>:
+                    mova as subcategorias para a categoria certa e marque se cada uma é essencial, estilo de vida ou futuro.
+                  </p>
+                </div>
+              )}
+
               <div className="space-y-2.5">
                 {([
                   ['essencial', 'Essencial', 50, 'bg-blue-500'],
