@@ -125,11 +125,26 @@ export default function CategoriesPage() {
   const [eventDeleteTarget, setEventDeleteTarget] = useState<AppEvent | null>(null)
   const [openEvent, setOpenEvent] = useState<string | null>(null)
 
+  // Por nome E tipo: o mesmo nome pode existir em despesa e em receita, e sem
+  // separar as duas mostravam a mesma contagem — impossível saber qual delas
+  // tem lançamento de verdade na hora de limpar duplicadas.
   const usageCount = useMemo(() => {
     const map: Record<string, number> = {}
-    for (const t of transactions) if (t.category) map[t.category] = (map[t.category] ?? 0) + 1
+    for (const t of transactions) {
+      if (!t.category) continue
+      const byName = t.category.trim().toLowerCase()
+      map[`${t.type}|${byName}`] = (map[`${t.type}|${byName}`] ?? 0) + 1
+    }
     return map
   }, [transactions])
+
+  // "ambos" soma os dois tipos.
+  const countOf = (cat: Category) => {
+    const n = cat.name.trim().toLowerCase()
+    return cat.type === 'ambos'
+      ? (usageCount[`despesa|${n}`] ?? 0) + (usageCount[`receita|${n}`] ?? 0)
+      : (usageCount[`${cat.type}|${n}`] ?? 0)
+  }
 
   // Totais por evento: quanto saiu, quanto voltou (estorno/reembolso) e o período.
   const eventStats = useMemo(() => {
@@ -191,10 +206,6 @@ export default function CategoriesPage() {
     despesa: visibleParents.filter(c => c.type === 'despesa' || c.type === 'ambos'),
     receita: visibleParents.filter(c => c.type === 'receita' || c.type === 'ambos'),
   }
-
-  const countWithChildren = (parent: Category) =>
-    (usageCount[parent.name] ?? 0) +
-    (childrenOf.get(parent.id) ?? []).reduce((s, ch) => s + (usageCount[ch.name] ?? 0), 0)
 
   function toggle(id: string) {
     setCollapsed(prev => {
@@ -348,7 +359,11 @@ export default function CategoriesPage() {
     setEventFormOpen(false)
   }
 
-  const deleteCount = deleteTarget ? (usageCount[deleteTarget.name] ?? 0) : 0
+  const deleteCount = deleteTarget ? countOf(deleteTarget) : 0
+  // Excluir só mexe em lançamentos se nenhuma outra categoria ficar com o
+  // mesmo nome (ver deleteCategory em use-categories.ts).
+  const deleteHasTwin = !!deleteTarget && categories.some(
+    c => c.id !== deleteTarget.id && c.name.trim().toLowerCase() === deleteTarget.name.trim().toLowerCase())
   const deleteKids = deleteTarget ? (childrenOf.get(deleteTarget.id) ?? []).length : 0
   const mergeTargets = mergeState
     ? categories.filter(c =>
@@ -359,7 +374,7 @@ export default function CategoriesPage() {
         (mergeState.mode === 'juntar' || !c.parent_id) &&
         (c.type === mergeState.from.type || c.type === 'ambos' || mergeState.from.type === 'ambos'))
     : []
-  const mergeCount = mergeState ? (usageCount[mergeState.from.name] ?? 0) : 0
+  const mergeCount = mergeState ? countOf(mergeState.from) : 0
   const incomeParents = parents
     .filter(p => p.type === 'receita' || p.type === 'ambos')
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
@@ -375,7 +390,7 @@ export default function CategoriesPage() {
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
 
   function renderCategoryRow(cat: Category, isChild: boolean, motherType?: CategoryType) {
-    const count = usageCount[cat.name] ?? 0
+    const count = countOf(cat)
     // Tipo diferente do da mãe não quebra conta nenhuma (o cálculo usa o tipo
     // do lançamento), mas embaralha a leitura dos relatórios — vale avisar.
     const typeMismatch = !!motherType && motherType !== 'ambos' && cat.type !== 'ambos' && cat.type !== motherType
@@ -572,9 +587,15 @@ export default function CategoriesPage() {
 
                     <div className="space-y-2">
                       {items.map(parent => {
-                        const kids = (childrenOf.get(parent.id) ?? []).filter(k => !q || matches(k) || matches(parent))
+                        // Uma mãe "Ambos" (o Outros) aparece nas duas seções.
+                        // Cada seção mostra só as subcategorias do tipo dela,
+                        // senão a mesma lista se repete em Despesas e em
+                        // Receitas e parece que está tudo duplicado.
+                        const kids = (childrenOf.get(parent.id) ?? [])
+                          .filter(k => k.type === type || k.type === 'ambos')
+                          .filter(k => !q || matches(k) || matches(parent))
                         const open = !collapsed.has(parent.id)
-                        const total = countWithChildren(parent)
+                        const total = countOf(parent) + kids.reduce((sum, k) => sum + countOf(k), 0)
                         return (
                           <div key={parent.id} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors">
                             <div className="flex items-center gap-1 pl-2">
@@ -880,7 +901,17 @@ export default function CategoriesPage() {
             <p className="text-sm text-slate-500 dark:text-slate-400">
               Tem certeza que deseja excluir <strong className="text-slate-700 dark:text-slate-200">&ldquo;{deleteTarget?.name}&rdquo;</strong>?
             </p>
-            {(deleteCount > 0 || deleteKids > 0) && (
+            {deleteHasTwin && (
+              <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl p-3">
+                <AlertTriangle className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Existe outra categoria com o mesmo nome, então <strong>nenhum lançamento é movido</strong>:
+                  eles continuam apontando para esse nome e passam a usar a categoria que ficar.
+                </p>
+              </div>
+            )}
+
+            {!deleteHasTwin && (deleteCount > 0 || deleteKids > 0) && (
               <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-xl p-3.5">
                 <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
                 <div className="text-sm text-amber-700 dark:text-amber-300">
