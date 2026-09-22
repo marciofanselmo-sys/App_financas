@@ -6,6 +6,7 @@ import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { sumInvestmentContributions } from '@/lib/investment-contributions'
 import { useCategories } from '@/hooks/use-categories'
 import { motherNameByCategory, motherOf } from '@/lib/category-tree'
+import { realMovements, internalTotals } from '@/lib/internal-movement'
 import { useBudgetPlan } from '@/hooks/use-budget-plan'
 import { useRecurringMonthlyTotal } from '@/hooks/use-recurring-monthly-total'
 import { categoriesForDate } from '@/lib/special-category-filter'
@@ -251,22 +252,25 @@ export default function PlanningPage() {
     !activeCategoryNames.includes(motherOf(s.name, motherNames))
   )
 
-  // Valores realizados
-  const actualIncome = transactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
+  // Valores realizados — movimentação entre contas do próprio usuário não é
+  // gasto nem ganho, então não entra no realizado do plano.
+  const realTransactions = realMovements(transactions)
+  const internal = internalTotals(transactions)
+  const actualIncome = realTransactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
 
   const actualByCategory: Record<string, number> = {}
-  transactions.filter(t => t.type === 'despesa').forEach(t => {
+  realTransactions.filter(t => t.type === 'despesa').forEach(t => {
     actualByCategory[t.category] = (actualByCategory[t.category] || 0) + Number(t.amount)
   })
   // Inclui receitas também (para Investimento que pode ser saída ou entrada)
   const actualByCategoryAll: Record<string, number> = {}
-  transactions.forEach(t => {
+  realTransactions.forEach(t => {
     actualByCategoryAll[t.category] = (actualByCategoryAll[t.category] || 0) + Number(t.amount)
   })
   // Realizado da categoria principal: ela mesma mais as subcategorias dentro
   // dela (o lançamento fica na subcategoria, mas o limite é da mãe).
   const actualByMother: Record<string, number> = {}
-  transactions.filter(t => t.type === 'despesa').forEach(t => {
+  realTransactions.filter(t => t.type === 'despesa').forEach(t => {
     const mother = motherOf(t.category, motherNames)
     actualByMother[mother] = (actualByMother[mother] || 0) + Number(t.amount)
   })
@@ -358,7 +362,7 @@ export default function PlanningPage() {
   // "Total Despesas" bater com a soma das linhas da tabela). Mostrado como
   // nota abaixo da tabela quando existe gasto fora do que foi planejado, pra
   // não parecer que o app "esqueceu" parte das despesas.
-  const totalDespesasPeriodo = transactions.filter(t => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0)
+  const totalDespesasPeriodo = realTransactions.filter(t => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0)
   const untrackedExpenses = Math.max(0, totalDespesasPeriodo - actualExpenses)
 
   // Investimento linkado à categoria de mesmo nome
@@ -376,7 +380,7 @@ export default function PlanningPage() {
       essencial: 0, estilo: 0, futuro: 0, sem: 0,
     }
     let total = 0
-    for (const t of transactions) {
+    for (const t of realTransactions) {
       if (t.type !== 'despesa') continue
       const cat = byName.get(t.category.trim().toLowerCase())
       const mother = cat?.parent_id ? categories.find(m => m.id === cat.parent_id) : null
@@ -385,7 +389,7 @@ export default function PlanningPage() {
       total += Number(t.amount)
     }
     return { totals, total }
-  }, [transactions, categories])
+  }, [realTransactions, categories])
 
   const hasTable = tableCategories.length > 0 || tableSubcategories.length > 0 || incomeNum > 0 || investNum > 0
 
@@ -860,6 +864,13 @@ export default function PlanningPage() {
               </>
             )}
           </div>
+
+          {internal.count > 0 && (
+            <p className="text-xs text-slate-400 dark:text-slate-500 px-1">
+              Fora do realizado: {internal.count} lançamento{internal.count === 1 ? '' : 's'} de movimentação
+              entre suas contas (pagamento de fatura, transferência). Eles continuam no saldo das contas.
+            </p>
+          )}
 
           {/* 50/30/20 — sugestão, ajustável mudando a etiqueta das categorias */}
           {bucketSummary.total > 0 && (

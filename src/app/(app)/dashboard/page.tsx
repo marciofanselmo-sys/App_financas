@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { buildDisplayItems } from '@/lib/recurring-groups'
+import { realMovements, internalTotals } from '@/lib/internal-movement'
 import { useSubcategoryNames } from '@/hooks/use-subcategory-names'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
@@ -98,6 +99,11 @@ export default function DashboardPage() {
   const { categories } = useCategories()
   const subcategoryNames = useSubcategoryNames()
 
+  // Pagamento de fatura e transferência entre as contas do usuário não são
+  // gasto nem ganho — entram no saldo da conta, não no total do período.
+  const realTransactions = useMemo(() => realMovements(transactions), [transactions])
+  const internal = useMemo(() => internalTotals(transactions), [transactions])
+
   const chartMonths = useMemo(() => getMonthRange(month, year, 6), [month, year])
 
   const monthlyContributions = useMemo(
@@ -132,17 +138,17 @@ export default function DashboardPage() {
     [patrimony],
   )
   const expenseChartData = useMemo(
-    () => buildExpenseChartData(transactions, categories),
-    [transactions, categories],
+    () => buildExpenseChartData(realTransactions, categories),
+    [realTransactions, categories],
   )
   const plannedVsActual = useMemo(
-    () => buildPlannedVsActual(plan, transactions, categories),
-    [plan, transactions, categories],
+    () => buildPlannedVsActual(plan, realTransactions, categories),
+    [plan, realTransactions, categories],
   )
 
   const pinnedBoards = boards.filter(b => b.show_on_dashboard && !b.is_investment)
 
-  const summary: DashboardSummary = transactions.reduce(
+  const summary: DashboardSummary = realTransactions.reduce(
     (acc, t) => {
       if (t.type === 'receita') acc.totalIncome += Number(t.amount)
       else acc.totalExpenses += Number(t.amount)
@@ -240,6 +246,14 @@ export default function DashboardPage() {
         ) : (
           <SummaryCards summary={summary} />
         )}
+
+        {!loading && internal.count > 0 && (
+          <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+            Fora destes totais: {internal.count} lançamento{internal.count === 1 ? '' : 's'} de
+            movimentação entre suas contas (pagamento de fatura, transferência).{' '}
+            <Link href="/analytics" className="underline">Ver detalhe</Link>
+          </p>
+        )}
       </div>
 
       <InvestTargetChart
@@ -292,7 +306,7 @@ export default function DashboardPage() {
         {loading ? (
           <div className="h-56 nobli-card animate-pulse" />
         ) : (
-          <TopCategoriesBar transactions={transactions} categories={categories} />
+          <TopCategoriesBar transactions={realTransactions} categories={categories} />
         )}
 
         {/* Parcelas Ativas */}

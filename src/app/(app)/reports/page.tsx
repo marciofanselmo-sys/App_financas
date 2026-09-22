@@ -27,6 +27,7 @@ import {
   buildYoYIncomeComparison,
 } from '@/lib/report-charts'
 import { AnnualFlowChart, YoYComparisonChart } from '@/components/reports/annual-charts'
+import { realMovements, internalTotals } from '@/lib/internal-movement'
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -79,7 +80,7 @@ function ReportHeader({ title, subtitle }: { title: string; subtitle: string }) 
 
 // ── Relatório Mensal ──────────────────────────────────────────────────────────
 function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: number; year: number; boardId: string; excludeBoardIds: string[] }) {
-  const { transactions, loading } = useTransactions({
+  const { transactions: allTransactions, loading } = useTransactions({
     month,
     year,
     board_id: boardId !== 'all' ? boardId : undefined,
@@ -87,6 +88,11 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
   })
   const { plan } = useBudgetPlan(month, year)
   const { categories } = useCategories()
+
+  // Movimentação entre contas do próprio usuário fica fora dos totais; o
+  // rodapé mostra quanto foi, para nada sumir sem explicação.
+  const transactions = useMemo(() => realMovements(allTransactions), [allTransactions])
+  const internal = useMemo(() => internalTotals(allTransactions), [allTransactions])
 
   const income   = transactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
   const expenses = transactions.filter(t => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0)
@@ -154,6 +160,16 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">{scoreLabel}</p>
         </div>
       </div>
+
+      {internal.count > 0 && (
+        <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-500">
+          Fora destes totais: {internal.count} lançamento{internal.count === 1 ? '' : 's'} de movimentação
+          entre suas contas{internal.out > 0.005 ? ` (${fmt(internal.out)} de saída` : ''}
+          {internal.in > 0.005 ? `${internal.out > 0.005 ? ' e ' : ' ('}${fmt(internal.in)} de entrada` : ''}
+          {(internal.out > 0.005 || internal.in > 0.005) ? ')' : ''} — pagamento de fatura, transferência
+          entre contas suas. Continuam no extrato e no saldo das contas.
+        </p>
+      )}
 
       {/* Gastos por categoria */}
       {byCategory.length > 0 && (
@@ -310,12 +326,15 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
     exclude_board_ids: boardId === 'all' ? excludeBoardIds : undefined,
   }
 
-  const { transactions, loading } = useTransactions({ year, ...txFilters })
+  const { transactions: allTransactions, loading } = useTransactions({ year, ...txFilters })
   const { categories } = useCategories()
   const { transactions: prevTransactions, loading: prevLoading } = useTransactions({
     year: year - 1,
     ...txFilters,
   })
+
+  const transactions = useMemo(() => realMovements(allTransactions), [allTransactions])
+  const internal = useMemo(() => internalTotals(allTransactions), [allTransactions])
 
   const chartMonths = useMemo(() => aggregateYearMonths(transactions), [transactions])
   const prevChartMonths = useMemo(() => aggregateYearMonths(prevTransactions), [prevTransactions])
@@ -368,6 +387,17 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
   return (
     <div className="space-y-6">
       <ReportHeader title={`Relatório Anual — ${year}`} subtitle={`${transactions.length} transações no ano · comparativo com ${year - 1}`} />
+
+      {internal.count > 0 && (
+        <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-500">
+          Fora destes totais: {internal.count} lançamento{internal.count === 1 ? '' : 's'} de movimentação
+          entre suas contas{internal.out > 0.005 ? ` (${fmt(internal.out)} de saída` : ''}
+          {internal.in > 0.005 ? `${internal.out > 0.005 ? ' e ' : ' ('}${fmt(internal.in)} de entrada` : ''}
+          {(internal.out > 0.005 || internal.in > 0.005) ? ')' : ''} — pagamento de fatura, transferência
+          entre contas suas. Continuam no extrato e no saldo das contas.
+        </p>
+      )}
+
 
       <AnnualFlowChart data={chartMonths} year={year} />
       <YoYComparisonChart

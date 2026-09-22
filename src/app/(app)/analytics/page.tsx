@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useCategories } from '@/hooks/use-categories'
-import { TrendingDown, TrendingUp, Wallet, BarChart2, Loader2, AlertCircle, CheckCircle2, X } from 'lucide-react'
+import { TrendingDown, TrendingUp, Wallet, BarChart2, Loader2, AlertCircle, CheckCircle2, X , ArrowLeftRight } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
 import Link from 'next/link'
@@ -17,6 +17,7 @@ import { useRules } from '@/hooks/use-rules'
 import { categoriesForDate } from '@/lib/special-category-filter'
 import { CategoryOptions } from '@/components/categories/category-options'
 import { motherNameByCategory, motherOf } from '@/lib/category-tree'
+import { isInternalMovement, internalTotals } from '@/lib/internal-movement'
 import { installmentLabel } from '@/utils/format-installment'
 import { aggregateDailyFlow } from '@/lib/analytics-charts'
 import { DailyFlowChart } from '@/components/analytics/daily-flow-chart'
@@ -79,6 +80,8 @@ export default function AnalyticsPage() {
     const incomeMap: Record<string, Bucket> = {}
 
     for (const t of transactions) {
+      // Movimentação entre contas do próprio usuário não é gasto nem ganho.
+      if (isInternalMovement(t)) continue
       const amt = Number(t.amount)
       const mother = motherOf(t.category, mothers)
       const target = t.type === 'receita' ? incomeMap : expenseMap
@@ -147,6 +150,9 @@ export default function AnalyticsPage() {
       t => names.has(t.category) && t.type === selectedCategory.type
     ).sort((a, b) => b.date.localeCompare(a.date))
   }, [selectedCategory, transactions])
+
+  // Só para mostrar à parte — nada some sem explicação.
+  const internal = useMemo(() => internalTotals(transactions), [transactions])
 
   const dailyFlowData = useMemo(
     () => aggregateDailyFlow(transactions, month, year),
@@ -250,6 +256,21 @@ export default function AnalyticsPage() {
               <p className={`text-xl font-bold ${balance >= 0 ? 'text-blue-600' : 'text-orange-500'}`}>{fmt(balance)}</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {!loading && internal.count > 0 && (
+        <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl p-3.5">
+          <ArrowLeftRight className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            <strong className="text-slate-600 dark:text-slate-300">Entre suas contas:</strong>{' '}
+            {internal.out > 0.005 && <>{fmt(internal.out)} saíram</>}
+            {internal.out > 0.005 && internal.in > 0.005 && ' e '}
+            {internal.in > 0.005 && <>{fmt(internal.in)} entraram</>}
+            {' '}em {internal.count} lançamento{internal.count === 1 ? '' : 's'} marcados como movimentação
+            entre contas suas (pagamento de fatura, transferência). Eles aparecem no extrato e no saldo
+            das contas, mas ficam <strong>fora</strong> dos totais acima — não são gasto nem ganho.
+          </p>
         </div>
       )}
 
