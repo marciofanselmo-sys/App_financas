@@ -112,6 +112,7 @@ export default function CategoriesPage() {
   const [mergeState, setMergeState] = useState<MergeState | null>(null)
   const [merging, setMerging] = useState(false)
   const [splitting, setSplitting] = useState<string | null>(null)
+  const [splitState, setSplitState] = useState<{ cat: Category; parentId: string | null } | null>(null)
 
   const [seeding, setSeeding] = useState(false)
   const [seedError, setSeedError] = useState('')
@@ -281,17 +282,24 @@ export default function CategoriesPage() {
 
   // Mover: só troca a mãe. A categoria continua existindo, com o mesmo nome,
   // e nenhum lançamento é tocado.
-  // "Ambos" legado: cria a irmã do outro tipo com o mesmo nome e deixa esta
-  // como despesa. Nenhum lançamento é tocado — cada um passa a resolver pela
-  // categoria do seu próprio tipo.
-  async function splitAmbos(cat: Category) {
-    setSplitting(cat.id)
+  // "Ambos" legado vira duas categorias de mesmo nome: esta fica como despesa,
+  // e nasce uma de receita na categoria-mãe que o usuário escolher (a mãe de
+  // despesa não serve para a metade de receita). Nenhum lançamento é tocado —
+  // cada um passa a resolver pela categoria do seu próprio tipo.
+  async function confirmSplit() {
+    if (!splitState) return
+    setSplitting(splitState.cat.id)
     const { error: createError } = await createCategory({
-      name: cat.name, type: 'receita', color: cat.color,
-      bucket: null, parent_id: cat.parent_id ?? null,
+      name: splitState.cat.name,
+      type: 'receita',
+      color: splitState.cat.color,
+      bucket: null,
+      parent_id: splitState.parentId,
     })
-    if (!createError) await updateCategory(cat.id, { type: 'despesa' })
+    if (!createError) await updateCategory(splitState.cat.id, { type: 'despesa' })
     setSplitting(null)
+    setSplitState(null)
+    await refetch()
   }
 
   async function confirmMove() {
@@ -352,6 +360,10 @@ export default function CategoriesPage() {
         (c.type === mergeState.from.type || c.type === 'ambos' || mergeState.from.type === 'ambos'))
     : []
   const mergeCount = mergeState ? (usageCount[mergeState.from.name] ?? 0) : 0
+  const incomeParents = parents
+    .filter(p => p.type === 'receita' || p.type === 'ambos')
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+
   const parentItems = [
     { value: NO_PARENT, label: 'Nenhuma (categoria principal)' },
     ...parents.filter(p => !editing || p.id !== editing.id)
@@ -406,7 +418,7 @@ export default function CategoriesPage() {
             variant="ghost" size="sm" className="h-7 text-xs shrink-0 text-blue-600 dark:text-blue-400"
             title="Cria uma categoria de receita com o mesmo nome e deixa esta como despesa"
             disabled={splitting === cat.id}
-            onClick={() => splitAmbos(cat)}
+            onClick={() => setSplitState({ cat, parentId: null })}
           >
             {splitting === cat.id ? 'Separando...' : 'Separar'}
           </Button>
@@ -974,6 +986,52 @@ export default function CategoriesPage() {
                   ? '← Só mover para dentro de outra categoria'
                   : 'Na verdade quero juntar esta categoria com outra (os lançamentos passam para lá) →'}
               </button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* SEPARAR "AMBOS" EM DESPESA + RECEITA */}
+      <Dialog open={!!splitState} onOpenChange={v => { if (!v) setSplitState(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>Separar em despesa e receita</DialogTitle></DialogHeader>
+          {splitState && (
+            <div className="space-y-4 pt-2">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                <strong className="text-slate-700 dark:text-slate-200">&ldquo;{splitState.cat.name}&rdquo;</strong> vira
+                duas categorias com o mesmo nome: uma de <strong>despesa</strong>, que fica onde está, e uma
+                de <strong>receita</strong>. Os lançamentos se dividem sozinhos pelo tipo de cada um —
+                <strong> nenhum é alterado</strong>.
+              </p>
+
+              <div className="space-y-2">
+                <Label>A parte de receita vai para dentro de</Label>
+                <Select
+                  value={splitState.parentId ?? NO_PARENT}
+                  onValueChange={v => { if (v) setSplitState(st => st ? { ...st, parentId: v === NO_PARENT ? null : v } : null) }}
+                  items={[
+                    { value: NO_PARENT, label: 'Nenhuma (categoria principal)' },
+                    ...incomeParents.map(p => ({ value: p.id, label: p.name })),
+                  ]}
+                >
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_PARENT}>Nenhuma (categoria principal)</SelectItem>
+                    {incomeParents.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  Só categorias principais de receita: a metade de receita não cabe dentro de uma
+                  categoria de despesa.
+                </p>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <Button variant="outline" onClick={() => setSplitState(null)} className="flex-1">Cancelar</Button>
+                <Button onClick={confirmSplit} disabled={splitting === splitState.cat.id} className="flex-1">
+                  {splitting === splitState.cat.id ? 'Separando...' : 'Separar'}
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>
