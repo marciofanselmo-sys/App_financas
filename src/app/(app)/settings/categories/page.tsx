@@ -374,8 +374,11 @@ export default function CategoriesPage() {
     .filter(p => !editing || p.id !== editing.id)
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
 
-  function renderCategoryRow(cat: Category, isChild: boolean) {
+  function renderCategoryRow(cat: Category, isChild: boolean, motherType?: CategoryType) {
     const count = usageCount[cat.name] ?? 0
+    // Tipo diferente do da mãe não quebra conta nenhuma (o cálculo usa o tipo
+    // do lançamento), mas embaralha a leitura dos relatórios — vale avisar.
+    const typeMismatch = !!motherType && motherType !== 'ambos' && cat.type !== 'ambos' && cat.type !== motherType
     return (
       <div
         key={cat.id}
@@ -410,8 +413,16 @@ export default function CategoriesPage() {
             {BUCKET_LABELS[cat.bucket]}
           </Badge>
         )}
-        {(cat.type === 'ambos' || !isChild) && (
-          <Badge className={`text-xs shrink-0 border-0 ${TYPE_BADGE[cat.type]}`}>{TYPE_LABELS[cat.type]}</Badge>
+        {/* Sempre visível, inclusive nas subcategorias: sem isso não dava para
+            saber se uma subcategoria era de entrada ou de saída. */}
+        <Badge className={`text-xs shrink-0 border-0 ${TYPE_BADGE[cat.type]}`}>{TYPE_LABELS[cat.type]}</Badge>
+        {typeMismatch && (
+          <span
+            title="Esta subcategoria é de um tipo diferente da categoria em que está. Use a seta (→) para movê-la."
+            className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 shrink-0"
+          >
+            <AlertTriangle className="h-2.5 w-2.5" /> fora do tipo
+          </span>
         )}
         {cat.type === 'ambos' && cat.name.toLowerCase() !== 'outros' && (
           <Button
@@ -581,7 +592,7 @@ export default function CategoriesPage() {
                               <div className="pb-2 pl-10 pr-2">
                                 {kids.length > 0 && (
                                   <div className="border-l-2 border-slate-100 dark:border-white/[0.08] pl-2">
-                                    {kids.map(kid => renderCategoryRow(kid, true))}
+                                    {kids.map(kid => renderCategoryRow(kid, true, parent.type))}
                                   </div>
                                 )}
                                 <button type="button" onClick={() => openCreate(parent.id)}
