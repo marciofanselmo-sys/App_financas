@@ -77,8 +77,12 @@ export function useCategories() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Não autenticado.' }
 
-    const duplicate = categories.find(c => c.name.toLowerCase() === cat.name.toLowerCase())
-    if (duplicate) return { error: 'Já existe uma categoria com esse nome.' }
+    // Mesmo nome pode existir em Despesa e em Receita: o lançamento guarda só
+    // o nome, e quem diz de qual das duas ele é vem do tipo dele. "Trabalho"
+    // como entrada e "Trabalho" como saída são coisas diferentes na vida real.
+    const duplicate = categories.find(c =>
+      c.name.toLowerCase() === cat.name.toLowerCase() && c.type === cat.type)
+    if (duplicate) return { error: `Já existe uma categoria "${cat.name}" desse tipo.` }
 
     const newCat: Category = {
       ...cat,

@@ -16,7 +16,7 @@ export function TopCategoriesBar({ transactions, categories }: TopCategoriesBarP
   const mothers = motherNameByCategory(categories ?? [])
   const catMap: Record<string, number> = {}
   transactions.filter(t => t.type === 'despesa').forEach(t => {
-    const name = motherOf(t.category, mothers)
+    const name = motherOf(t.category, mothers, t.type)
     catMap[name] = (catMap[name] || 0) + Number(t.amount)
   })
 

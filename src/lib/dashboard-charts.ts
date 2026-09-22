@@ -156,7 +156,7 @@ export function buildExpenseChartData(transactions: Transaction[], categories: C
   transactions
     .filter(t => t.type === 'despesa')
     .forEach(t => {
-      const name = motherOf(t.category, mothers)
+      const name = motherOf(t.category, mothers, t.type)
       map[name] = (map[name] || 0) + Number(t.amount)
     })
 
@@ -224,7 +224,7 @@ export function buildPlannedVsActual(
     .forEach(t => {
       const amount = Number(t.amount)
       actualByCategory[t.category] = (actualByCategory[t.category] || 0) + amount
-      const mother = motherOf(t.category, mothers)
+      const mother = motherOf(t.category, mothers, t.type)
       actualByMother[mother] = (actualByMother[mother] || 0) + amount
     })
 

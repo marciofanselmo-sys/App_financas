@@ -111,6 +111,7 @@ export default function CategoriesPage() {
 
   const [mergeState, setMergeState] = useState<MergeState | null>(null)
   const [merging, setMerging] = useState(false)
+  const [splitting, setSplitting] = useState<string | null>(null)
 
   const [seeding, setSeeding] = useState(false)
   const [seedError, setSeedError] = useState('')
@@ -280,6 +281,19 @@ export default function CategoriesPage() {
 
   // Mover: só troca a mãe. A categoria continua existindo, com o mesmo nome,
   // e nenhum lançamento é tocado.
+  // "Ambos" legado: cria a irmã do outro tipo com o mesmo nome e deixa esta
+  // como despesa. Nenhum lançamento é tocado — cada um passa a resolver pela
+  // categoria do seu próprio tipo.
+  async function splitAmbos(cat: Category) {
+    setSplitting(cat.id)
+    const { error: createError } = await createCategory({
+      name: cat.name, type: 'receita', color: cat.color,
+      bucket: null, parent_id: cat.parent_id ?? null,
+    })
+    if (!createError) await updateCategory(cat.id, { type: 'despesa' })
+    setSplitting(null)
+  }
+
   async function confirmMove() {
     if (!mergeState?.toId) return
     setMerging(true)
@@ -386,6 +400,16 @@ export default function CategoriesPage() {
         )}
         {(cat.type === 'ambos' || !isChild) && (
           <Badge className={`text-xs shrink-0 border-0 ${TYPE_BADGE[cat.type]}`}>{TYPE_LABELS[cat.type]}</Badge>
+        )}
+        {cat.type === 'ambos' && cat.name.toLowerCase() !== 'outros' && (
+          <Button
+            variant="ghost" size="sm" className="h-7 text-xs shrink-0 text-blue-600 dark:text-blue-400"
+            title="Cria uma categoria de receita com o mesmo nome e deixa esta como despesa"
+            disabled={splitting === cat.id}
+            onClick={() => splitAmbos(cat)}
+          >
+            {splitting === cat.id ? 'Separando...' : 'Separar'}
+          </Button>
         )}
         <div className="flex gap-1 shrink-0">
           <Button variant="ghost" size="icon" className="h-8 w-8" title="Mover para outra categoria"
@@ -757,14 +781,30 @@ export default function CategoriesPage() {
 
             <div className="space-y-2">
               <Label>Tipo</Label>
-              <Select value={form.type} onValueChange={v => v && setForm(f => ({ ...f, type: v as CategoryType }))}>
+              {/* Sem "Ambos": ele virava saco de gato, misturando entrada e
+                  saída na mesma categoria. O mesmo NOME pode existir nos dois
+                  tipos (ex.: "Trabalho" de receita e de despesa) — o lançamento
+                  cai na certa sozinho, porque ele já sabe se é entrada ou saída. */}
+              <Select
+                value={form.type}
+                onValueChange={v => v && setForm(f => ({ ...f, type: v as CategoryType }))}
+                items={[
+                  { value: 'despesa', label: 'Despesa' },
+                  { value: 'receita', label: 'Receita' },
+                  ...(form.type === 'ambos' ? [{ value: 'ambos', label: 'Ambos (antigo)' }] : []),
+                ]}
+              >
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="despesa">Despesa</SelectItem>
                   <SelectItem value="receita">Receita</SelectItem>
-                  <SelectItem value="ambos">Ambos</SelectItem>
+                  {form.type === 'ambos' && <SelectItem value="ambos">Ambos (antigo)</SelectItem>}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                O mesmo nome pode existir nos dois tipos — &ldquo;Trabalho&rdquo; de entrada e de saída são
+                categorias diferentes, e cada lançamento cai na certa sozinho.
+              </p>
             </div>
 
             <div className="space-y-2">

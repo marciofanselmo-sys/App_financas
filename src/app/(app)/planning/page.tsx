@@ -271,7 +271,7 @@ export default function PlanningPage() {
   // dela (o lançamento fica na subcategoria, mas o limite é da mãe).
   const actualByMother: Record<string, number> = {}
   realTransactions.filter(t => t.type === 'despesa').forEach(t => {
-    const mother = motherOf(t.category, motherNames)
+    const mother = motherOf(t.category, motherNames, t.type)
     actualByMother[mother] = (actualByMother[mother] || 0) + Number(t.amount)
   })
 

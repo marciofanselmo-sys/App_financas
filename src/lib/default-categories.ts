@@ -45,7 +45,10 @@ export const DEFAULT_CATEGORY_TREE: DefaultNode[] = [
   { name: 'Investimentos', type: 'despesa', color: '#84cc16', bucket: 'futuro', children: [
     { name: 'Aplicações' }, { name: 'Reserva de emergência' }, { name: 'Previdência' },
   ] },
-  { name: 'Outros', type: 'ambos', color: '#6b7280' },
+  // Destino padrão do app (importação sem categoria, exclusão de categoria).
+  // Existe nos dois tipos, com o mesmo nome: o lançamento resolve pelo tipo dele.
+  { name: 'Outros', type: 'despesa', color: '#6b7280' },
+  { name: 'Outros', type: 'receita', color: '#6b7280' },
 ]
 
 /**
@@ -59,7 +62,9 @@ export function buildDefaultCategoryRows(userId: string, existing: Category[]): 
   const rows: Category[] = []
 
   for (const node of DEFAULT_CATEGORY_TREE) {
-    const found = byName.get(node.name.toLowerCase())
+    // Nome + tipo: "Outros" existe em despesa e em receita.
+    const found = existing.find(c => c.name.trim().toLowerCase() === node.name.toLowerCase() && c.type === node.type)
+      ?? (node.children ? byName.get(node.name.toLowerCase()) : undefined)
     const parentId = found?.id ?? crypto.randomUUID()
     if (!found) {
       rows.push({

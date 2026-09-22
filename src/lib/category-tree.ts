@@ -1,4 +1,4 @@
-import { Category } from '@/types'
+import { Category, TransactionType } from '@/types'
 
 export interface CategoryOption {
   cat: Category
@@ -38,22 +38,44 @@ export function categoryFullName(cat: Category, all: Category[]): string {
   return parent ? `${parent.name} › ${cat.name}` : cat.name
 }
 
+const key = (name: string) => name.trim().toLowerCase()
+
 /**
  * Nome da categoria-mãe de cada categoria (a própria, quando ela já é mãe).
- * Chave em minúsculas — os lançamentos guardam o NOME da categoria, e é por
- * ele que os gráficos somam.
+ * Os lançamentos guardam só o NOME, então a chave é o nome — e, quando o
+ * mesmo nome existe em Despesa e em Receita (permitido de propósito), a
+ * chave "tipo|nome" desempata.
  */
 export function motherNameByCategory(categories: Category[]): Map<string, string> {
   const byId = new Map(categories.map(c => [c.id, c]))
   const map = new Map<string, string>()
   for (const c of categories) {
-    const parent = c.parent_id ? byId.get(c.parent_id) : null
-    map.set(c.name.trim().toLowerCase(), parent?.name ?? c.name)
+    const mother = (c.parent_id ? byId.get(c.parent_id)?.name : null) ?? c.name
+    map.set(`${c.type}|${key(c.name)}`, mother)
+    // Sem tipo: a primeira vence, e "ambos" (legado) cobre os dois.
+    if (!map.has(key(c.name)) || c.type === 'ambos') map.set(key(c.name), mother)
   }
   return map
 }
 
-/** Categoria-mãe de um nome de categoria; o próprio nome se não achar. */
-export function motherOf(categoryName: string, map: Map<string, string>): string {
-  return map.get(categoryName.trim().toLowerCase()) ?? categoryName
+/**
+ * Categoria-mãe de um nome; o próprio nome se não achar. `type` é o tipo do
+ * LANÇAMENTO — é ele que decide qual das categorias de mesmo nome vale.
+ */
+export function motherOf(categoryName: string, map: Map<string, string>, type?: TransactionType): string {
+  const k = key(categoryName)
+  if (type) {
+    const exact = map.get(`${type}|${k}`) ?? map.get(`ambos|${k}`)
+    if (exact) return exact
+  }
+  return map.get(k) ?? categoryName
+}
+
+/** A categoria certa para um nome + tipo de lançamento. */
+export function findCategory(categories: Category[], name: string, type?: TransactionType): Category | null {
+  const k = key(name)
+  const sameName = categories.filter(c => key(c.name) === k)
+  if (sameName.length === 0) return null
+  if (!type) return sameName[0]
+  return sameName.find(c => c.type === type) ?? sameName.find(c => c.type === 'ambos') ?? sameName[0]
 }

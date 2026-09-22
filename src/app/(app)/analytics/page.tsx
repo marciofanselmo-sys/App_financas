@@ -83,7 +83,7 @@ export default function AnalyticsPage() {
       // Movimentação entre contas do próprio usuário não é gasto nem ganho.
       if (isInternalMovement(t)) continue
       const amt = Number(t.amount)
-      const mother = motherOf(t.category, mothers)
+      const mother = motherOf(t.category, mothers, t.type)
       const target = t.type === 'receita' ? incomeMap : expenseMap
       if (t.type === 'receita') totalIncome += amt
       else totalExpenses += amt
