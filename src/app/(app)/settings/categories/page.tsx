@@ -75,7 +75,12 @@ const EMPTY_FORM: FormState = {
   name: '', type: 'despesa', color: CATEGORY_COLORS[0], bucket: null, parentId: null,
 }
 
-interface MergeState { from: Category; toId: string }
+// A seta na linha agora MOVE (troca a mãe, sem tocar em lançamento nenhum).
+// Juntar duas categorias continua existindo, mas escondido atrás de uma
+// confirmação explícita: ela renomeia os lançamentos da origem e apaga a
+// categoria — não tem desfazer, e o banco não guarda histórico.
+type MoveMode = 'mover' | 'juntar'
+interface MergeState { from: Category; toId: string; mode: MoveMode }
 interface EventFormState { name: string; color: string }
 
 /**
@@ -273,6 +278,17 @@ export default function CategoriesPage() {
     setDeleteTarget(null)
   }
 
+  // Mover: só troca a mãe. A categoria continua existindo, com o mesmo nome,
+  // e nenhum lançamento é tocado.
+  async function confirmMove() {
+    if (!mergeState?.toId) return
+    setMerging(true)
+    const { error } = await updateCategory(mergeState.from.id, { parent_id: mergeState.toId })
+    setMerging(false)
+    if (error) return
+    setMergeState(null)
+  }
+
   async function confirmMerge() {
     if (!mergeState?.toId) return
     const target = categories.find(c => c.id === mergeState.toId)
@@ -316,8 +332,12 @@ export default function CategoriesPage() {
     ? categories.filter(c =>
         c.id !== mergeState.from.id &&
         c.parent_id !== mergeState.from.id &&
+        // Mover: a nova mãe precisa ser categoria principal (o app tem dois
+        // níveis, não três).
+        (mergeState.mode === 'juntar' || !c.parent_id) &&
         (c.type === mergeState.from.type || c.type === 'ambos' || mergeState.from.type === 'ambos'))
     : []
+  const mergeCount = mergeState ? (usageCount[mergeState.from.name] ?? 0) : 0
   const parentItems = [
     { value: NO_PARENT, label: 'Nenhuma (categoria principal)' },
     ...parents.filter(p => !editing || p.id !== editing.id)
@@ -368,8 +388,8 @@ export default function CategoriesPage() {
           <Badge className={`text-xs shrink-0 border-0 ${TYPE_BADGE[cat.type]}`}>{TYPE_LABELS[cat.type]}</Badge>
         )}
         <div className="flex gap-1 shrink-0">
-          <Button variant="ghost" size="icon" className="h-8 w-8" title="Mesclar com outra categoria"
-            onClick={() => setMergeState({ from: cat, toId: '' })}>
+          <Button variant="ghost" size="icon" className="h-8 w-8" title="Mover para outra categoria"
+            onClick={() => setMergeState({ from: cat, toId: '', mode: 'mover' })}>
             <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
           </Button>
           <Button variant="ghost" size="icon" className="h-8 w-8" title="Editar" onClick={() => openEdit(cat)}>
@@ -814,7 +834,7 @@ export default function CategoriesPage() {
                     </p>
                   )}
                   <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                    Dica: use &ldquo;Mesclar&rdquo; (→) para mandar tudo para uma categoria específica.
+                    Dica: a seta (→) move a categoria para dentro de outra sem mexer nos lançamentos.
                   </p>
                 </div>
               </div>
@@ -835,19 +855,33 @@ export default function CategoriesPage() {
       {/* MESCLAR */}
       <Dialog open={!!mergeState} onOpenChange={v => { if (!v) setMergeState(null) }}>
         <DialogContent className="sm:max-w-sm">
-          <DialogHeader><DialogTitle>Mesclar categoria</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>
+              {mergeState?.mode === 'juntar' ? 'Juntar categorias' : 'Mover categoria'}
+            </DialogTitle>
+          </DialogHeader>
           {mergeState && (
             <div className="space-y-4 pt-2">
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Todos os lançamentos de <strong className="text-slate-700 dark:text-slate-200">&ldquo;{mergeState.from.name}&rdquo;</strong> vão
-                para a categoria escolhida, e &ldquo;{mergeState.from.name}&rdquo; deixa de existir.
-                Subcategorias dentro dela também passam para lá.
+                {mergeState.mode === 'juntar' ? (
+                  <>
+                    Os {mergeCount} lançamentos de <strong className="text-slate-700 dark:text-slate-200">&ldquo;{mergeState.from.name}&rdquo;</strong> passam
+                    a ficar na categoria escolhida, e &ldquo;{mergeState.from.name}&rdquo; deixa de existir.
+                  </>
+                ) : (
+                  <>
+                    <strong className="text-slate-700 dark:text-slate-200">&ldquo;{mergeState.from.name}&rdquo;</strong> vira
+                    subcategoria da categoria escolhida. O nome continua o mesmo e
+                    <strong> nenhum lançamento é alterado</strong>.
+                  </>
+                )}
               </p>
+
               <div className="space-y-2">
-                <Label>Categoria destino</Label>
+                <Label>{mergeState.mode === 'juntar' ? 'Categoria destino' : 'Mover para dentro de'}</Label>
                 <Select
                   value={mergeState.toId}
-                  onValueChange={v => v && setMergeState(s => s ? { ...s, toId: v } : null)}
+                  onValueChange={v => v && setMergeState(st => st ? { ...st, toId: v } : null)}
                   items={mergeTargets.map(c => ({
                     value: c.id,
                     label: c.parent_id
@@ -867,12 +901,39 @@ export default function CategoriesPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {mergeState.mode === 'juntar' && (
+                <div className="flex items-start gap-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3">
+                  <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+                  <p className="text-xs text-red-600 dark:text-red-300">
+                    <strong>Isso não tem desfazer.</strong> Depois de juntar, não existe mais como saber
+                    quais lançamentos eram de &ldquo;{mergeState.from.name}&rdquo; e quais já estavam no destino.
+                  </p>
+                </div>
+              )}
+
               <div className="flex gap-2 pt-1">
                 <Button variant="outline" onClick={() => setMergeState(null)} className="flex-1">Cancelar</Button>
-                <Button onClick={confirmMerge} disabled={!mergeState.toId || merging} className="flex-1">
-                  {merging ? 'Mesclando...' : 'Mesclar e excluir'}
-                </Button>
+                {mergeState.mode === 'juntar' ? (
+                  <Button variant="destructive" onClick={confirmMerge} disabled={!mergeState.toId || merging} className="flex-1">
+                    {merging ? 'Juntando...' : 'Juntar mesmo assim'}
+                  </Button>
+                ) : (
+                  <Button onClick={confirmMove} disabled={!mergeState.toId || merging} className="flex-1">
+                    {merging ? 'Movendo...' : 'Mover'}
+                  </Button>
+                )}
               </div>
+
+              <button
+                type="button"
+                className="text-xs text-slate-400 dark:text-slate-500 hover:underline"
+                onClick={() => setMergeState(st => st ? { ...st, toId: '', mode: st.mode === 'juntar' ? 'mover' : 'juntar' } : null)}
+              >
+                {mergeState.mode === 'juntar'
+                  ? '← Só mover para dentro de outra categoria'
+                  : 'Na verdade quero juntar esta categoria com outra (os lançamentos passam para lá) →'}
+              </button>
             </div>
           )}
         </DialogContent>
