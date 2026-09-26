@@ -10,7 +10,6 @@ import { PeriodFilter } from '@/components/dashboard/period-filter'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Transaction } from '@/types'
 import { useRules } from '@/hooks/use-rules'
@@ -46,8 +45,7 @@ export default function AnalyticsPage() {
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
   const [boardId, setBoardId] = useState<string>('all')
-  const [selectedCategory, setSelectedCategory] = useState<{ cat: string; type: 'despesa' | 'receita'; names: string[] } | null>(null)
-  // Categoria-mãe aberta na lista, mostrando as subcategorias dentro dela.
+  // Categoria aberta na lista, mostrando os lançamentos dela ali mesmo.
   const [expandedCat, setExpandedCat] = useState<string | null>(null)
 
   const { boards } = useTransactionBoards()
@@ -75,7 +73,7 @@ export default function AnalyticsPage() {
     let totalExpenses = 0
     // Soma pela categoria-mãe e guarda o detalhe por subcategoria dentro dela.
     const mothers = motherNameByCategory(categories)
-    type Bucket = { total: number; count: number; subs: Record<string, { total: number; count: number }> }
+    type Bucket = { total: number; count: number; txs: Transaction[]; subs: Record<string, { total: number; count: number }> }
     const expenseMap: Record<string, Bucket> = {}
     const incomeMap: Record<string, Bucket> = {}
 
@@ -88,9 +86,10 @@ export default function AnalyticsPage() {
       if (t.type === 'receita') totalIncome += amt
       else totalExpenses += amt
 
-      const bucket = target[mother] ?? (target[mother] = { total: 0, count: 0, subs: {} })
+      const bucket = target[mother] ?? (target[mother] = { total: 0, count: 0, txs: [], subs: {} })
       bucket.total += amt
       bucket.count += 1
+      bucket.txs.push(t)
       if (t.category !== mother) {
         const sub = bucket.subs[t.category] ?? (bucket.subs[t.category] = { total: 0, count: 0 })
         sub.total += amt
@@ -105,6 +104,7 @@ export default function AnalyticsPage() {
           total: d.total,
           count: d.count,
           pct: total > 0 ? (d.total / total) * 100 : 0,
+          txs: [...d.txs].sort((a, b) => b.date.localeCompare(a.date)),
           subs: Object.entries(d.subs)
             .map(([name, sd]) => ({ name, total: sd.total, count: sd.count }))
             .sort((a, b) => b.total - a.total),
@@ -143,13 +143,47 @@ export default function AnalyticsPage() {
     setSavingTxId(null)
   }
 
-  const categoryTxs: Transaction[] = useMemo(() => {
-    if (!selectedCategory) return []
-    const names = new Set(selectedCategory.names)
-    return transactions.filter(
-      t => names.has(t.category) && t.type === selectedCategory.type
-    ).sort((a, b) => b.date.localeCompare(a.date))
-  }, [selectedCategory, transactions])
+  // Lançamentos da categoria aberta, direto na lista — sem pop-up.
+  // Cada linha deixa trocar a categoria ali mesmo (regra automática propaga).
+  function renderTxList(txs: Transaction[], mother: string) {
+    return (
+      <div className="mt-2 ml-4 pl-3 border-l-2 border-slate-100 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700/60">
+        {txs.map(tx => {
+          const usable = categoriesForDate(categories, tx.date).filter(c => c.type === tx.type || c.type === 'ambos')
+          return (
+            <div key={tx.id} className="py-2 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-slate-700 dark:text-slate-200 truncate">{tx.description}</p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {format(new Date(tx.date + 'T00:00:00'), "dd 'de' MMM", { locale: ptBR })}
+                  {tx.category !== mother && ` · ${tx.category}`}
+                  {installmentLabel(tx) && ` · Parcela ${installmentLabel(tx)}`}
+                </p>
+              </div>
+              <div className="shrink-0 flex items-center gap-1.5">
+                {savingTxId === tx.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+                <Select
+                  value={tx.category}
+                  onValueChange={v => v && v !== tx.category && handleRecategorize(tx.id, v)}
+                  disabled={savingTxId === tx.id}
+                >
+                  <SelectTrigger className="h-7 text-xs px-2 w-auto min-w-[120px] border-dashed">
+                    <SelectValue placeholder="Categoria" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <CategoryOptions list={usable} all={categories} className="text-xs" />
+                  </SelectContent>
+                </Select>
+              </div>
+              <span className={`text-sm font-medium tabular-nums shrink-0 w-24 text-right ${tx.type === 'receita' ? 'text-green-600' : 'text-red-500'}`}>
+                {fmt(Number(tx.amount))}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
 
   // Só para mostrar à parte — nada some sem explicação.
   const internal = useMemo(() => internalTotals(transactions), [transactions])
@@ -317,16 +351,13 @@ export default function AnalyticsPage() {
               <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
                 {/* Bar chart section */}
                 <div className="p-5 space-y-3">
-                  {expenseByCategory.map(({ cat, total, count, pct, subs }) => {
+                  {expenseByCategory.map(({ cat, total, count, pct, subs, txs }) => {
                     const open = expandedCat === `despesa:${cat}`
-                    const allNames = [cat, ...subs.map(sub => sub.name)]
                     return (
                       <div key={cat}>
                         <button
                           className="w-full text-left group"
-                          onClick={() => subs.length > 0
-                            ? setExpandedCat(open ? null : `despesa:${cat}`)
-                            : setSelectedCategory({ cat, type: 'despesa', names: allNames })}
+                          onClick={() => setExpandedCat(open ? null : `despesa:${cat}`)}
                         >
                           <div className="flex items-center justify-between mb-1">
                             <div className="flex items-center gap-2">
@@ -335,10 +366,10 @@ export default function AnalyticsPage() {
                                 style={{ backgroundColor: colorFor(cat) }}
                               />
                               <span className="text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:underline">{cat}</span>
-                              <span className="text-xs text-slate-400">({count} {count === 1 ? 'lançamento' : 'lançamentos'})</span>
+                              <span className="text-xs text-slate-400">{open ? '▾' : '▸'} ({count} {count === 1 ? 'lançamento' : 'lançamentos'})</span>
                               {subs.length > 0 && (
                                 <span className="text-[10px] text-slate-400">
-                                  {open ? '▾' : '▸'} {subs.length} subcategoria{subs.length === 1 ? '' : 's'}
+                                  · {subs.length} subcategoria{subs.length === 1 ? '' : 's'}
                                 </span>
                               )}
                             </div>
@@ -359,27 +390,18 @@ export default function AnalyticsPage() {
                         </button>
 
                         {open && (
-                          <div className="mt-2 ml-4 pl-3 border-l-2 border-slate-100 dark:border-slate-700 space-y-1.5">
-                            <button
-                              className="w-full flex items-center justify-between gap-3 text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                              onClick={() => setSelectedCategory({ cat, type: 'despesa', names: allNames })}
-                            >
-                              Ver todos os lançamentos de {cat}
-                            </button>
-                            {subs.map(sub => (
-                              <button
-                                key={sub.name}
-                                className="w-full flex items-center justify-between gap-3 text-xs group"
-                                onClick={() => setSelectedCategory({ cat: sub.name, type: 'despesa', names: [sub.name] })}
-                              >
-                                <span className="truncate text-slate-600 dark:text-slate-300 group-hover:underline">
-                                  {sub.name}
-                                  <span className="text-slate-400 ml-1.5">({sub.count})</span>
-                                </span>
-                                <span className="tabular-nums text-slate-600 dark:text-slate-300 shrink-0">{fmt(sub.total)}</span>
-                              </button>
-                            ))}
-                          </div>
+                          <>
+                            {subs.length > 0 && (
+                              <div className="mt-2 ml-4 flex flex-wrap gap-1.5">
+                                {subs.map(sub => (
+                                  <span key={sub.name} className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/60 rounded-full px-2 py-0.5">
+                                    {sub.name} · {fmt(sub.total)}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {renderTxList(txs, cat)}
+                          </>
                         )}
                       </div>
                     )
@@ -410,13 +432,14 @@ export default function AnalyticsPage() {
 
               <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
                 <div className="p-5 space-y-3">
-                  {incomeByCategory.map(({ cat, total, count, pct, subs }) => {
+                  {incomeByCategory.map(({ cat, total, count, pct, txs }) => {
                     const maxIncome = incomeByCategory[0]?.total ?? 1
+                    const open = expandedCat === `receita:${cat}`
                     return (
+                      <div key={cat}>
                       <button
-                        key={cat}
                         className="w-full text-left group"
-                        onClick={() => setSelectedCategory({ cat, type: 'receita', names: [cat, ...subs.map(sub => sub.name)] })}
+                        onClick={() => setExpandedCat(open ? null : `receita:${cat}`)}
                       >
                         <div className="flex items-center justify-between mb-1">
                           <div className="flex items-center gap-2">
@@ -425,7 +448,7 @@ export default function AnalyticsPage() {
                               style={{ backgroundColor: colorFor(cat) }}
                             />
                             <span className="text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:underline">{cat}</span>
-                            <span className="text-xs text-slate-400">({count} {count === 1 ? 'lançamento' : 'lançamentos'})</span>
+                            <span className="text-xs text-slate-400">{open ? '▾' : '▸'} ({count} {count === 1 ? 'lançamento' : 'lançamentos'})</span>
                           </div>
                           <div className="flex items-center gap-3">
                             <span className="text-xs text-slate-400 w-10 text-right">{pct.toFixed(0)}%</span>
@@ -439,6 +462,8 @@ export default function AnalyticsPage() {
                           />
                         </div>
                       </button>
+                      {open && renderTxList(txs, cat)}
+                      </div>
                     )
                   })}
                 </div>
@@ -466,82 +491,6 @@ export default function AnalyticsPage() {
         </>
       )}
 
-      {/* Category detail dialog */}
-      <Dialog open={!!selectedCategory} onOpenChange={() => setSelectedCategory(null)}>
-        <DialogContent className="sm:max-w-lg max-h-[80vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <span
-                className="inline-block w-3 h-3 rounded-full shrink-0"
-                style={{
-                  backgroundColor: !selectedCategory
-                    ? '#6366f1'
-                    : colorFor(selectedCategory.cat),
-                }}
-              />
-              {selectedCategory?.cat}
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="overflow-y-auto flex-1 -mx-6 px-6">
-            {categoryTxs.length === 0 ? (
-              <p className="text-sm text-slate-400 py-6 text-center">Nenhum lançamento encontrado.</p>
-            ) : (
-              <div className="divide-y divide-slate-100 dark:divide-slate-700">
-                {categoryTxs.map(tx => (
-                  <div key={tx.id} className="py-3 flex items-center gap-3">
-                    {/* Coluna 1: descrição + data (+ parcela, se houver) */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{tx.description}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        {format(new Date(tx.date + 'T00:00:00'), "dd 'de' MMM, yyyy", { locale: ptBR })}
-                        {installmentLabel(tx) && ` · Parcela ${installmentLabel(tx)}`}
-                      </p>
-                    </div>
-
-                    {/* Coluna 2: categoria — muda só essa transação; se for categoria
-                        normal, a regra automática cuida de propagar pro histórico.
-                        Normais e isoladas em seletores separados, mesmo padrão do
-                        resto do app — escolher em um desmarca o outro. */}
-                    {(() => {
-                      const usable = categoriesForDate(categories, tx.date).filter(c => c.type === tx.type || c.type === 'ambos')
-                      return (
-                        <div className="shrink-0 flex items-center gap-1.5">
-                          {savingTxId === tx.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
-                          <Select
-                            value={tx.category}
-                            onValueChange={v => v && v !== tx.category && handleRecategorize(tx.id, v)}
-                            disabled={savingTxId === tx.id}
-                          >
-                            <SelectTrigger className="h-7 text-xs px-2 w-auto min-w-[120px] border-dashed">
-                              <SelectValue placeholder="Categoria" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <CategoryOptions list={usable} all={categories} className="text-xs" />
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )
-                    })()}
-
-                    {/* Coluna 3: valor */}
-                    <span className={`text-sm font-semibold shrink-0 w-24 text-right ${tx.type === 'receita' ? 'text-green-600' : 'text-red-500'}`}>
-                      {tx.type === 'receita' ? '+ ' : '- '}{fmt(Number(tx.amount))}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-slate-100 dark:border-slate-700 pt-3 flex justify-between items-center mt-2">
-            <span className="text-xs text-slate-500">{categoryTxs.length} {categoryTxs.length === 1 ? 'lançamento' : 'lançamentos'}</span>
-            <span className={`text-sm font-bold ${selectedCategory?.type === 'receita' ? 'text-green-600' : 'text-red-500'}`}>
-              {fmt(categoryTxs.reduce((s, t) => s + Number(t.amount), 0))}
-            </span>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
