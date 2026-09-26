@@ -46,11 +46,35 @@ export function statusForEvent(event: string): SubscriptionStatus | null {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+/**
+ * Qual plano foi comprado.
+ *
+ * O caminho confiável é o id da oferta na Cakto, configurado no ambiente.
+ * Sem ele, cai no nome da oferta/produto — que funciona, mas quebra se
+ * alguém renomear a oferta no painel. Na dúvida, entrega o plano mais
+ * completo: é melhor dar a mais para quem pagou do que a menos.
+ */
+export function planoDaOferta(order: CaktoOrderData): { tier: 'essencial' | 'completo'; periodo: 'mensal' | 'anual' } {
+  const ofertas: Record<string, { tier: 'essencial' | 'completo'; periodo: 'mensal' | 'anual' }> = {}
+  const mapear = (envVar: string | undefined, tier: 'essencial' | 'completo', periodo: 'mensal' | 'anual') => {
+    if (envVar) ofertas[envVar] = { tier, periodo }
+  }
+  mapear(process.env.CAKTO_OFFER_ESSENCIAL_MENSAL, 'essencial', 'mensal')
+  mapear(process.env.CAKTO_OFFER_ESSENCIAL_ANUAL, 'essencial', 'anual')
+  mapear(process.env.CAKTO_OFFER_COMPLETO_MENSAL, 'completo', 'mensal')
+  mapear(process.env.CAKTO_OFFER_COMPLETO_ANUAL, 'completo', 'anual')
+
+  const porId = order.offer?.id ? ofertas[order.offer.id] : undefined
+  if (porId) return porId
+
+  const nome = `${order.offer?.name ?? ''} ${order.product?.name ?? ''}`.toLowerCase()
+  const periodo: 'mensal' | 'anual' = /anual|annual|12 ?meses/.test(nome) ? 'anual' : 'mensal'
+  const tier: 'essencial' | 'completo' = /essencial|basico|básico/.test(nome) ? 'essencial' : 'completo'
+  return { tier, periodo }
+}
+
 function isAnnual(order: CaktoOrderData): boolean {
-  const annualOfferId = process.env.CAKTO_OFFER_ID_ANUAL
-  if (annualOfferId && order.offer?.id === annualOfferId) return true
-  const name = `${order.offer?.name ?? ''} ${order.product?.name ?? ''}`.toLowerCase()
-  return /anual|annual|12 ?meses/.test(name)
+  return planoDaOferta(order).periodo === 'anual'
 }
 
 /**
@@ -173,7 +197,9 @@ export async function handleCaktoEvent(
     const row = {
       user_id: resolved.userId,
       status,
-      plan: status === 'active' ? (isAnnual(order) ? 'pro_anual' : 'pro_mensal') : 'free',
+      plan: status === 'active'
+        ? `${planoDaOferta(order).tier}_${planoDaOferta(order).periodo}`
+        : 'free',
       provider: 'cakto',
       provider_subscription_id: (order.subscription as { id?: string } | null)?.id ?? null,
       provider_order_id: order.id,

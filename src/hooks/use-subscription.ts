@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { logSafeError } from '@/lib/supabase-error'
-import { Feature, PLANS, PlanDefinition, PlanTier, tierFor } from '@/lib/plans'
+import { BillingPeriod, Feature, PLANS, PlanDefinition, PlanTier, tierFor } from '@/lib/plans'
 
 export type SubscriptionStatus =
   | 'free' | 'active' | 'past_due' | 'canceled' | 'refunded' | 'chargeback'
@@ -63,12 +63,33 @@ export function usePlan(): { tier: PlanTier; plan: PlanDefinition; can: (f: Feat
   return { tier, plan, can, loading, userId }
 }
 
-/** Link do checkout com o id do usuário, que volta no webhook como `callback`. */
-export function checkoutUrl(userId: string | null, utmSource = 'app'): string {
-  const base = process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_URL
+/**
+ * Link do checkout de cada plano, com o id do usuário no `callback` — é ele
+ * que o webhook usa para ligar o pagamento à conta certa, sem depender de o
+ * e-mail do checkout ser igual ao do cadastro.
+ *
+ * As quatro variáveis são escritas uma a uma de propósito: o Next troca
+ * `process.env.NEXT_PUBLIC_*` no código durante o build, e acesso dinâmico
+ * (process.env[chave]) chegaria vazio no navegador.
+ */
+const CHECKOUTS: Record<string, string | undefined> = {
+  essencial_mensal: process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_ESSENCIAL_MENSAL,
+  essencial_anual: process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_ESSENCIAL_ANUAL,
+  completo_mensal: process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_COMPLETO_MENSAL,
+  completo_anual: process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_COMPLETO_ANUAL,
+}
+
+export function checkoutUrl(
+  userId: string | null,
+  utmSource = 'app',
+  opcoes?: { tier?: PlanTier; periodo?: BillingPeriod },
+): string {
+  const chave = `${opcoes?.tier ?? 'completo'}_${opcoes?.periodo ?? 'mensal'}`
+  const base = CHECKOUTS[chave] ?? process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_URL
   if (!base) return '#'
   const url = new URL(base)
   if (userId) url.searchParams.set('callback', userId)
   if (!url.searchParams.has('utm_source')) url.searchParams.set('utm_source', utmSource)
+  url.searchParams.set('plano', chave)
   return url.toString()
 }

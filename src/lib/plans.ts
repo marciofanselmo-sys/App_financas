@@ -111,3 +111,34 @@ export function requiredTier(feature: Feature): PlanTier {
   if (PLANS.essencial.features[feature]) return 'essencial'
   return 'completo'
 }
+
+// ── Preços ──────────────────────────────────────────────────────────────────
+export type BillingPeriod = 'mensal' | 'anual'
+
+/** Desconto do plano anual, pago de uma vez, 12 meses à frente. */
+export const ANNUAL_DISCOUNT = 0.15
+
+const MENSAL: Record<Exclude<PlanTier, 'free'>, number> = {
+  essencial: 29.9,
+  completo: 49.9,
+}
+
+export interface Preco {
+  /** Cobrado por mês (no anual, o valor do ano dividido por 12). */
+  porMes: number
+  /** O que sai do bolso na hora. */
+  total: number
+  /** Quanto o anual economiza em um ano. */
+  economia: number
+}
+
+export function precoDe(tier: PlanTier, periodo: BillingPeriod): Preco | null {
+  if (tier === 'free') return null
+  const mensal = MENSAL[tier]
+  if (periodo === 'mensal') return { porMes: mensal, total: mensal, economia: 0 }
+  const total = mensal * 12 * (1 - ANNUAL_DISCOUNT)
+  return { porMes: total / 12, total, economia: mensal * 12 - total }
+}
+
+export const moeda = (v: number) =>
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)

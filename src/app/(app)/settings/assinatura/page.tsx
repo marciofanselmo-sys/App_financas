@@ -1,7 +1,8 @@
 'use client'
 
+import { useState } from 'react'
 import { useSubscription, checkoutUrl } from '@/hooks/use-subscription'
-import { PLANS, PlanTier } from '@/lib/plans'
+import { ANNUAL_DISCOUNT, BillingPeriod, PLANS, PlanTier, moeda, precoDe } from '@/lib/plans'
 import { Badge } from '@/components/ui/badge'
 import { Check, Sparkles, AlertTriangle, Crown } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -13,12 +14,6 @@ import { cn } from '@/lib/utils'
  */
 
 const ORDEM: PlanTier[] = ['free', 'essencial', 'completo']
-
-const PRECO: Record<PlanTier, string> = {
-  free: 'R$ 0',
-  essencial: 'R$ 29,90',
-  completo: 'R$ 29,90',
-}
 
 const ITENS: Record<PlanTier, string[]> = {
   free: [
@@ -54,6 +49,7 @@ const dataBR = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/')
 
 export default function AssinaturaPage() {
   const { subscription, status, tier, userId, loading } = useSubscription()
+  const [periodo, setPeriodo] = useState<BillingPeriod>('mensal')
 
   if (loading) {
     return (
@@ -116,6 +112,28 @@ export default function AssinaturaPage() {
         )}
       </div>
 
+      {/* Mensal x anual */}
+      <div className="flex items-center justify-center gap-2">
+        <div className="inline-flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+          {(['mensal', 'anual'] as BillingPeriod[]).map(p => (
+            <button
+              key={p} type="button" onClick={() => setPeriodo(p)}
+              className={cn(
+                'px-4 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                periodo === p
+                  ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700',
+              )}
+            >
+              {p === 'mensal' ? 'Mensal' : 'Anual'}
+            </button>
+          ))}
+        </div>
+        <Badge className="text-[10px] border-0 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+          {Math.round(ANNUAL_DISCOUNT * 100)}% de desconto no anual
+        </Badge>
+      </div>
+
       {/* Planos */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {ORDEM.map(t => {
@@ -139,10 +157,28 @@ export default function AssinaturaPage() {
                     </Badge>
                   )}
                 </div>
-                <p className="text-2xl font-extrabold text-[#0B2D6B] dark:text-slate-100 mt-1">
-                  {PRECO[t]}
-                  {t !== 'free' && <span className="text-xs font-medium text-slate-400"> /mês</span>}
-                </p>
+                {(() => {
+                  const preco = precoDe(t, periodo)
+                  if (!preco) {
+                    return <p className="text-2xl font-extrabold text-[#0B2D6B] dark:text-slate-100 mt-1">R$ 0</p>
+                  }
+                  return (
+                    <div className="mt-1">
+                      <p className="text-2xl font-extrabold text-[#0B2D6B] dark:text-slate-100">
+                        {moeda(preco.porMes)}
+                        <span className="text-xs font-medium text-slate-400"> /mês</span>
+                      </p>
+                      {periodo === 'anual' && (
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                          {moeda(preco.total)} à vista por 12 meses ·{' '}
+                          <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                            economiza {moeda(preco.economia)}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
 
               <ul className="space-y-1.5 flex-1">
@@ -156,11 +192,11 @@ export default function AssinaturaPage() {
 
               {t !== 'free' && !atual && (
                 <a
-                  href={checkoutUrl(userId, `app_planos_${t}`)}
+                  href={checkoutUrl(userId, `app_planos_${t}_${periodo}`, { tier: t, periodo })}
                   target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 transition-colors"
                 >
-                  <Sparkles className="h-4 w-4" /> Assinar
+                  <Sparkles className="h-4 w-4" /> Assinar {periodo === 'anual' ? 'por 12 meses' : ''}
                 </a>
               )}
             </div>
@@ -169,6 +205,7 @@ export default function AssinaturaPage() {
       </div>
 
       <p className="text-xs text-slate-400 dark:text-slate-500">
+        No plano anual você paga uma vez e fica 12 meses sem se preocupar.
         Nenhum plano corta o seu histórico: seus lançamentos continuam inteiros mesmo no plano grátis.
         Se uma assinatura terminar, nada é apagado — os recursos pagos apenas deixam de abrir.
       </p>
