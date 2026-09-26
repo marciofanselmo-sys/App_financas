@@ -101,7 +101,8 @@ export default function CategoriesPage() {
 
   const [tab, setTab] = useState<'categorias' | 'eventos'>('categorias')
   const [search, setSearch] = useState('')
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  // Tudo começa recolhido; o usuário abre só o card que quer ver.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Category | null>(null)
@@ -254,7 +255,7 @@ export default function CategoriesPage() {
   }
 
   function toggle(id: string) {
-    setCollapsed(prev => {
+    setExpanded(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id); else next.add(id)
       return next
@@ -714,7 +715,8 @@ export default function CategoriesPage() {
                         const kids = (childrenOf.get(parent.id) ?? [])
                           .filter(k => k.type === type || k.type === 'ambos')
                           .filter(k => !q || matches(k) || matches(parent))
-                        const open = !collapsed.has(parent.id)
+                        // Buscando, abre sozinho para mostrar a subcategoria encontrada.
+                        const open = expanded.has(parent.id) || !!q
                         const total = countOf(parent) + kids.reduce((sum, k) => sum + countOf(k), 0)
                         // Só aparece quando a mãe já tem subcategorias: sem elas,
                         // os lançamentos diretos já são os da própria categoria.
