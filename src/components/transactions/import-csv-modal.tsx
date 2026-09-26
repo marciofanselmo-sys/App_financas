@@ -34,6 +34,8 @@ import { addMonths } from '@/utils/add-months'
 import { installmentLabel } from '@/utils/format-installment'
 import { categoriesForDate } from '@/lib/special-category-filter'
 import { CategoryOptions } from '@/components/categories/category-options'
+import { useImportQuota } from '@/hooks/use-import-quota'
+import { UpgradeCard } from '@/components/plan/plan-gate'
 
 // ─── CSV TEMPLATE ────────────────────────────────────────────────────────────
 
@@ -411,6 +413,8 @@ function parseC6Checking(content: string): PreviewRow[] {
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
 export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSVModalProps) {
+  // Plano grátis tem 1 importação por mês; o contador vive no servidor.
+  const quota = useImportQuota()
   const { categories } = useCategories()
   const { rules, syncCategoryToRule } = useRules()
   const categoryNames = categories.map(c => c.name)
@@ -1107,6 +1111,8 @@ function shiftDays(date: string, days: number): string {
 
     setImportResult({ success, errors, duplicates, fixed: installmentsFixed, errorMessage: firstErrorMessage })
     setImporting(false)
+    // Só conta como importação do mês o que realmente entrou.
+    if (success > 0) void quota.record()
     onImported()
 
     const dups = insertedOthers.filter(i => i.category === '__duplicate__')
@@ -1182,9 +1188,25 @@ function shiftDays(date: string, days: number): string {
             <DialogTitle>Importar transações</DialogTitle>
           </DialogHeader>
 
+          {/* Limite do plano: bloqueia antes do upload, não depois do trabalho
+              de escolher arquivo e revisar — e mostra quantas já foram usadas. */}
+          {step === 'upload' && quota.blocked && (
+            <div className="pt-2">
+              <UpgradeCard
+                feature="import"
+                pitch={`Você já usou ${quota.used} de ${quota.limit} importação${quota.limit === 1 ? '' : 'ões'} deste mês no plano grátis. Com o Essencial, importa quantos extratos quiser — e as regras categorizam sozinhas.`}
+              />
+            </div>
+          )}
+
           {/* STEP 1: UPLOAD */}
-          {step === 'upload' && (
+          {step === 'upload' && !quota.blocked && (
             <div className="space-y-4 pt-2">
+              {quota.limit !== null && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-lg px-3 py-2">
+                  Plano grátis: {quota.limit - quota.used} de {quota.limit} importação{quota.limit === 1 ? '' : 'ões'} disponível neste mês.
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div className="border dark:border-slate-700 rounded-lg p-3 space-y-1">
                   <p className="font-semibold text-blue-600">OFX / QFX</p>

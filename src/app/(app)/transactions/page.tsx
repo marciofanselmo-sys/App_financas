@@ -1,5 +1,8 @@
 'use client'
 
+import { usePlan } from '@/hooks/use-subscription'
+import { UpgradeCard } from '@/components/plan/plan-gate'
+
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
@@ -81,6 +84,7 @@ export default function TransactionsPage() {
   const router = useRouter()
   const now = new Date()
   const { boards: allBoards, loading, createBoard, updateBoard, deleteBoard } = useTransactionBoards()
+  const { plan } = usePlan()
   const boards = allBoards.filter(b => !b.is_investment)
   const { transactions } = useTransactions({ month: now.getMonth() + 1, year: now.getFullYear() })
   // Histórico completo, sem filtro de período: é daqui que sai o saldo de cada
@@ -88,6 +92,7 @@ export default function TransactionsPage() {
   const { transactions: allTransactions } = useTransactions()
 
   const [formOpen, setFormOpen] = useState(false)
+  const [boardLimitOpen, setBoardLimitOpen] = useState(false)
   const [formStep, setFormStep] = useState<'template' | 'form'>('template')
   const [editing, setEditing] = useState<TransactionBoard | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
@@ -121,6 +126,12 @@ export default function TransactionsPage() {
   }
 
   function openCreate() {
+    // Limite do plano: avisa ANTES de abrir o formulário, para ninguém
+    // preencher a conta inteira e só então descobrir que não pode criar.
+    if (plan.maxBoards !== null && allBoards.length >= plan.maxBoards) {
+      setBoardLimitOpen(true)
+      return
+    }
     setEditing(null)
     setForm(EMPTY_FORM)
     setFormStep('template')
@@ -300,6 +311,21 @@ export default function TransactionsPage() {
       )}
 
       {/* MODAL — template + form */}
+      {/* Limite de contas do plano */}
+      <Dialog open={boardLimitOpen} onOpenChange={v => { if (!v) setBoardLimitOpen(false) }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Limite de contas do seu plano</DialogTitle>
+          </DialogHeader>
+          <div className="pt-2">
+            <UpgradeCard
+              feature="import"
+              pitch={`Seu plano permite ${plan.maxBoards} conta${plan.maxBoards === 1 ? '' : 's'}, e você já usou todas. Nenhuma conta sua é apagada — para cadastrar mais uma, é só liberar um plano maior.`}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={formOpen} onOpenChange={v => { if (!v) setFormOpen(false) }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

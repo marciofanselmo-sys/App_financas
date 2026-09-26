@@ -82,3 +82,26 @@ alter table cakto_webhook_events enable row level security;
 -- precisa definir a senha antes de usar o app.
 alter table user_profiles
   add column if not exists needs_password boolean not null default false;
+
+-- ----------------------------------------------------------------------------
+-- Consumo do plano (hoje: importações por mês no plano grátis)
+--
+-- Quem escreve é o servidor, pela rota /api/plan/usage, com a chave de
+-- serviço. Se o usuário pudesse escrever aqui, bastaria uma aba do navegador
+-- para zerar o próprio contador.
+create table if not exists plan_usage (
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  feature    text not null,
+  -- Mês de referência no formato YYYY-MM.
+  period     text not null,
+  count      integer not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, feature, period)
+);
+
+alter table plan_usage enable row level security;
+
+drop policy if exists "users read own usage" on plan_usage;
+create policy "users read own usage"
+  on plan_usage for select
+  using (auth.uid() = user_id);
