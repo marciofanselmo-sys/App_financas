@@ -12,6 +12,8 @@ import {
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { NobliLogo } from '@/components/brand/nobli-logo'
+import { usePlan } from '@/hooks/use-subscription'
+import { ROUTE_FEATURE } from '@/lib/plans'
 
 // Primary items always visible in the bottom bar
 const PRIMARY = [
@@ -38,6 +40,13 @@ export function MobileNav() {
   const pathname = usePathname()
   const router   = useRouter()
   const [open, setOpen] = useState(false)
+  // Tela fora do plano: continua clicável (abre a explicação do plano), só
+  // com a letra mais fraca. Enquanto o plano carrega, nada fica apagado.
+  const { can, loading: planLoading } = usePlan()
+  const isLocked = (href: string) => {
+    const f = ROUTE_FEATURE[href]
+    return !!f && !planLoading && !can(f)
+  }
 
   // Close drawer on route change
   useEffect(() => { setOpen(false) }, [pathname])
@@ -93,7 +102,9 @@ export function MobileNav() {
                     'flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl text-[11px] font-medium transition-all',
                     active
                       ? 'bg-[#E8F2FF] dark:bg-blue-500/15 text-[#2563EB] dark:text-blue-400'
-                      : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-[#0B2D6B] dark:hover:text-slate-200'
+                      : isLocked(href)
+                        ? 'text-slate-400 dark:text-slate-600 hover:bg-slate-50 dark:hover:bg-white/5'
+                        : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-[#0B2D6B] dark:hover:text-slate-200'
                   )}
                 >
                   <Icon className={cn('h-5 w-5', active && 'text-[#2563EB] dark:text-blue-400')} />
@@ -131,7 +142,9 @@ export function MobileNav() {
                 'flex flex-1 flex-col items-center justify-center gap-1 h-full text-[10px] font-semibold transition-colors relative',
                 active
                   ? 'text-[#2563EB] dark:text-blue-400'
-                  : 'text-slate-400 dark:text-slate-500 hover:text-[#0B2D6B] dark:hover:text-slate-300'
+                  : isLocked(href)
+                    ? 'text-slate-300 dark:text-slate-600'
+                    : 'text-slate-400 dark:text-slate-500 hover:text-[#0B2D6B] dark:hover:text-slate-300'
               )}
             >
               {active && (

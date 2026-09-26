@@ -19,6 +19,8 @@ import { ThemeToggle } from '@/components/theme-toggle'
 import { useIsAdmin } from '@/hooks/use-is-admin'
 import { NobliLogo } from '@/components/brand/nobli-logo'
 import { BRAND } from '@/lib/brand'
+import { usePlan } from '@/hooks/use-subscription'
+import { ROUTE_FEATURE } from '@/lib/plans'
 
 // ── Grupos de navegação ────────────────────────────────────────────────────────
 const NAV_GROUPS = [
@@ -55,8 +57,8 @@ const SETTINGS_ITEMS = [
 ]
 
 // ── Componente de item de nav ──────────────────────────────────────────────────
-function NavItem({ href, label, icon: Icon, active }: {
-  href: string; label: string; icon: React.ElementType; active: boolean
+function NavItem({ href, label, icon: Icon, active, locked }: {
+  href: string; label: string; icon: React.ElementType; active: boolean; locked?: boolean
 }) {
   return (
     <Link
@@ -65,7 +67,9 @@ function NavItem({ href, label, icon: Icon, active }: {
         'flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-150',
         active
           ? 'bg-[#E8F2FF] dark:bg-blue-500/15 text-[#2563EB] dark:text-blue-300 shadow-sm shadow-[#2563EB]/5'
-          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-[#0B2D6B] dark:hover:text-slate-200'
+          : locked
+            ? 'text-slate-400 dark:text-slate-600 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-500 dark:hover:text-slate-400'
+            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-[#0B2D6B] dark:hover:text-slate-200'
       )}
     >
       <Icon className={cn('h-4 w-4 shrink-0', active ? 'text-[#2563EB] dark:text-blue-400' : '')} />
@@ -124,6 +128,13 @@ export function Sidebar() {
   const { isAdmin } = useIsAdmin()
   const [userName, setUserName]   = useState('')
   const { boards } = useTransactionBoards()
+  // Tela fora do plano: continua clicável (abre a explicação do plano), só
+  // com a letra mais fraca. Enquanto o plano carrega, nada fica apagado.
+  const { can, loading: planLoading } = usePlan()
+  const isLocked = (href: string) => {
+    const f = ROUTE_FEATURE[href]
+    return !!f && !planLoading && !can(f)
+  }
 
   // Contas de investimento têm sua própria aba — o board-detail continua
   // vivendo em /transactions/[boardId] pros dois casos (reuso da mesma tela),
@@ -210,12 +221,14 @@ export function Sidebar() {
                     key={item.href}
                     {...item}
                     active={isInInvestments}
+                    locked={isLocked(item.href)}
                   />
                 ) : (
                   <NavItem
                     key={item.href}
                     {...item}
                     active={pathname === item.href}
+                    locked={isLocked(item.href)}
                   />
                 )
               ))}
@@ -298,7 +311,9 @@ export function Sidebar() {
                   'flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-150',
                   pathname === href
                     ? 'bg-[#E8F2FF] dark:bg-blue-500/15 text-[#2563EB] dark:text-blue-300'
-                    : 'text-slate-500 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-[#0B2D6B] dark:hover:text-slate-300'
+                    : isLocked(href)
+                      ? 'text-slate-400 dark:text-slate-600 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-500 dark:hover:text-slate-400'
+                      : 'text-slate-500 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-[#0B2D6B] dark:hover:text-slate-300'
                 )}
               >
                 <Icon className="h-3.5 w-3.5" />

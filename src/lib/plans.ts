@@ -22,6 +22,17 @@ export type Feature =
   | 'investments'   // carteira e proventos
   | 'goals'         // metas
 
+/** Tela do menu → recurso do plano que ela exige (mesmo usado no withPlan da página). */
+export const ROUTE_FEATURE: Record<string, Feature> = {
+  '/reports':        'reports',
+  '/investments':    'investments',
+  '/planning':       'planning',
+  '/goals':          'goals',
+  '/recurring':      'recurring',
+  '/fixos':          'recurring',
+  '/settings/rules': 'rules',
+}
+
 export interface PlanDefinition {
   tier: PlanTier
   label: string
