@@ -5,6 +5,9 @@ import { useCategories } from '@/hooks/use-categories'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useEvents } from '@/hooks/use-events'
 import { useSubcategories } from '@/hooks/use-subcategories'
+import { useRules } from '@/hooks/use-rules'
+import { categoriesForDate } from '@/lib/special-category-filter'
+import { CategoryOptions } from '@/components/categories/category-options'
 import { CategoryConversionCard } from '@/components/categories/category-conversion-card'
 import { Category, CategoryBucket, CategoryType, CATEGORY_COLORS, AppEvent, Transaction } from '@/types'
 import { Button } from '@/components/ui/button'
@@ -15,7 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge'
 import {
   Plus, Pencil, Trash2, Tag, RotateCcw, Search, AlertTriangle, ArrowRight,
-  TrendingDown, TrendingUp, ChevronDown, ChevronRight, Sparkles, Lock, Unlock,
+  TrendingDown, TrendingUp, ChevronDown, ChevronRight, Sparkles, Lock, Unlock, Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -92,7 +95,8 @@ export default function CategoriesPage() {
   const { categories, loading, createCategory, updateCategory, deleteCategory, seedDefaults, refetch } = useCategories()
   // Grupos antigos: só para oferecer a conversão a quem ainda não converteu.
   const { subcategories, loading: subcategoriesLoading } = useSubcategories()
-  const { transactions } = useTransactions()
+  const { transactions, refetch: refetchTransactions } = useTransactions()
+  const { syncCategoryToRule } = useRules()
   const events = useEvents()
 
   const [tab, setTab] = useState<'categorias' | 'eventos'>('categorias')
@@ -137,6 +141,48 @@ export default function CategoriesPage() {
     }
     return map
   }, [transactions])
+
+  // Lançamentos que estão direto na categoria-mãe, sem subcategoria — é o
+  // caso dos centenas em "Outros". Viram uma linha "Outros › Outros" dentro
+  // do card, agrupados por descrição para reclassificar de uma vez.
+  const [openDirect, setOpenDirect] = useState<string | null>(null)
+  const [movingGroup, setMovingGroup] = useState<string | null>(null)
+  const [moveError, setMoveError] = useState('')
+  const txsByTypeName = useMemo(() => {
+    const map = new Map<string, Transaction[]>()
+    for (const t of transactions) {
+      if (!t.category) continue
+      const k = `${t.type}|${t.category.trim().toLowerCase()}`
+      const list = map.get(k) ?? []
+      list.push(t)
+      map.set(k, list)
+    }
+    return map
+  }, [transactions])
+
+  function groupByDescription(txs: Transaction[]) {
+    const groups = new Map<string, { description: string; txs: Transaction[]; total: number; last: string }>()
+    for (const t of txs) {
+      const k = t.description.trim().toUpperCase()
+      const g = groups.get(k) ?? { description: t.description.trim(), txs: [], total: 0, last: t.date }
+      g.txs.push(t)
+      g.total += Number(t.amount)
+      if (t.date > g.last) g.last = t.date
+      groups.set(k, g)
+    }
+    return [...groups.values()].sort((a, b) => b.txs.length - a.txs.length || b.total - a.total)
+  }
+
+  // Muda a categoria do grupo inteiro: a regra automática (correspondência
+  // exata) move todos os lançamentos com essa descrição e os próximos da importação.
+  async function moveGroup(key: string, description: string, category: string) {
+    setMovingGroup(key)
+    setMoveError('')
+    const { error } = await syncCategoryToRule(description, category, categories)
+    if (error) setMoveError(error)
+    await refetchTransactions()
+    setMovingGroup(null)
+  }
 
   // "ambos" soma os dois tipos.
   const countOf = (cat: Category) => {
@@ -389,6 +435,80 @@ export default function CategoriesPage() {
     .filter(p => !editing || p.id !== editing.id)
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
 
+  function renderDirectRow(parent: Category, type: SectionType, direct: Transaction[]) {
+    const key = `${type}|${parent.id}`
+    const open = openDirect === key
+    const total = direct.reduce((sum, t) => sum + Number(t.amount), 0)
+    const groups = open ? groupByDescription(direct) : []
+    return (
+      <div>
+        <button
+          type="button"
+          onClick={() => { setOpenDirect(open ? null : key); setMoveError('') }}
+          className="w-full flex items-center gap-3 rounded-xl px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors"
+        >
+          <span className="h-2 w-2 rounded-full shrink-0 ml-1 bg-slate-300 dark:bg-slate-600" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-slate-600 dark:text-slate-300 truncate">
+              {parent.name}
+              <span className="ml-2 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400">
+                sem subcategoria
+              </span>
+            </p>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+              {direct.length} transaç{direct.length === 1 ? 'ão' : 'ões'} · {money(total)}
+            </p>
+          </div>
+          {open ? <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" /> : <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />}
+        </button>
+
+        {open && (
+          <div className="ml-4 mt-1 mb-2 space-y-1">
+            <p className="text-xs text-slate-400 dark:text-slate-500 px-2 pb-1">
+              Agrupados por descrição. Escolha a categoria certa: todos os lançamentos com a mesma
+              descrição mudam juntos, e os próximos já chegam classificados.
+            </p>
+            {moveError && (
+              <p className="text-xs text-red-500 px-2 pb-1">{moveError}</p>
+            )}
+            {groups.map(g => {
+              const gKey = `${type}|${g.description.toUpperCase()}`
+              const usable = categoriesForDate(categories, g.last).filter(c => c.type === type || c.type === 'ambos')
+              return (
+                <div key={gKey} className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-white/[0.03]">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-slate-700 dark:text-slate-200 truncate">{g.description}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {g.txs.length}× · último em {g.last.split('-').reverse().join('/')}
+                    </p>
+                  </div>
+                  <span className={cn('text-sm tabular-nums shrink-0', type === 'receita' ? 'text-green-600' : 'text-red-500')}>
+                    {money(g.total)}
+                  </span>
+                  <div className="shrink-0 flex items-center gap-1.5">
+                    {movingGroup === gKey && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+                    <Select
+                      value={parent.name}
+                      onValueChange={v => v && v !== parent.name && moveGroup(gKey, g.description, v)}
+                      disabled={movingGroup !== null}
+                    >
+                      <SelectTrigger className="h-7 text-xs px-2 w-auto min-w-[120px] border-dashed">
+                        <SelectValue placeholder="Categoria" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <CategoryOptions list={usable} all={categories} className="text-xs" />
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   function renderCategoryRow(cat: Category, isChild: boolean, motherType?: CategoryType) {
     const count = countOf(cat)
     // Tipo diferente do da mãe não quebra conta nenhuma (o cálculo usa o tipo
@@ -596,13 +716,18 @@ export default function CategoriesPage() {
                           .filter(k => !q || matches(k) || matches(parent))
                         const open = !collapsed.has(parent.id)
                         const total = countOf(parent) + kids.reduce((sum, k) => sum + countOf(k), 0)
+                        // Só aparece quando a mãe já tem subcategorias: sem elas,
+                        // os lançamentos diretos já são os da própria categoria.
+                        // "Outros" é a exceção — sempre mostra, para reorganizar.
+                        const direct = txsByTypeName.get(`${type}|${parent.name.trim().toLowerCase()}`) ?? []
+                        const showDirect = direct.length > 0 && (kids.length > 0 || isOutros(parent))
                         return (
                           <div key={parent.id} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors">
                             <div className="flex items-center gap-1 pl-2">
                               <button type="button" onClick={() => toggle(parent.id)}
                                 className="h-7 w-7 flex items-center justify-center text-slate-400 hover:text-slate-600 shrink-0"
                                 title={open ? 'Recolher' : 'Expandir'}>
-                                {kids.length > 0
+                                {kids.length > 0 || showDirect
                                   ? (open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />)
                                   : <span className="h-4 w-4" />}
                               </button>
@@ -611,8 +736,9 @@ export default function CategoriesPage() {
 
                             {open && (
                               <div className="pb-2 pl-10 pr-2">
-                                {kids.length > 0 && (
+                                {(kids.length > 0 || showDirect) && (
                                   <div className="border-l-2 border-slate-100 dark:border-white/[0.08] pl-2">
+                                    {showDirect && renderDirectRow(parent, type, direct)}
                                     {kids.map(kid => renderCategoryRow(kid, true, parent.type))}
                                   </div>
                                 )}
