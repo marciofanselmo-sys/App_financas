@@ -109,11 +109,27 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/** Ping para conferir que a rota está de pé, sem expor nada. */
+/**
+ * Ping de configuração: diz o que falta preencher, sem revelar valor nenhum —
+ * só se cada variável existe. Serve para conferir o ambiente de produção sem
+ * precisar de acesso ao painel.
+ */
 export async function GET() {
-  return NextResponse.json({
-    ok: true,
-    service: 'cakto-webhook',
-    configured: Boolean(process.env.CAKTO_WEBHOOK_SECRET && process.env.SUPABASE_SERVICE_ROLE_KEY),
-  })
+  const env = {
+    supabase_service_role: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    cakto_webhook_secret: Boolean(process.env.CAKTO_WEBHOOK_SECRET),
+    resend_api_key: Boolean(process.env.RESEND_API_KEY),
+    site_url: process.env.NEXT_PUBLIC_SITE_URL ?? null,
+    checkouts: {
+      essencial_mensal: Boolean(process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_ESSENCIAL_MENSAL),
+      essencial_anual: Boolean(process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_ESSENCIAL_ANUAL),
+      completo_mensal: Boolean(process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_COMPLETO_MENSAL),
+      completo_anual: Boolean(process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_COMPLETO_ANUAL),
+    },
+  }
+
+  // Pronto para receber venda = dá para validar a entrega e gravar no banco.
+  const pronto = env.supabase_service_role && env.cakto_webhook_secret
+
+  return NextResponse.json({ ok: true, service: 'cakto-webhook', pronto, env })
 }
