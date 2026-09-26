@@ -32,6 +32,9 @@ export async function middleware(request: NextRequest) {
   const isPublicRoute =
     pathname.startsWith('/auth') ||
     pathname.startsWith('/demo') ||
+    // Webhook de pagamento: quem chama é a Cakto, que não tem sessão. A
+    // autenticação dele é a assinatura HMAC da própria entrega.
+    pathname.startsWith('/api/webhooks') ||
     pathname === '/privacy' ||
     pathname === '/terms'
 
