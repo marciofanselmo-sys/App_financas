@@ -122,6 +122,13 @@ export async function resolveUser(
   admin: SupabaseClient,
   order: CaktoOrderData,
   siteUrl: string,
+  /**
+   * Só compra aprovada cria conta. Cancelamento, reembolso e chargeback de um
+   * e-mail desconhecido não têm o que cancelar — criar conta ali encheria o
+   * banco de usuário fantasma (o evento de teste da Cakto, por exemplo, vem
+   * com um cliente fictício).
+   */
+  podeCriarConta: boolean,
 ): Promise<ResolvedUser | { error: string }> {
   const email = order.customer?.email?.trim().toLowerCase()
 
@@ -137,6 +144,17 @@ export async function resolveUser(
 
   if (!email) return { error: 'compra sem e-mail e sem callback válido' }
 
+  // Procura antes de criar: 'magiclink' devolve o usuário existente sem
+  // mandar e-mail nenhum.
+  const existing = await admin.auth.admin.generateLink({ type: 'magiclink', email })
+  if (!existing.error && existing.data?.user) {
+    return { userId: existing.data.user.id, email, created: false }
+  }
+
+  if (!podeCriarConta) {
+    return { error: `evento de um e-mail sem conta no app (${email}) — nada a fazer` }
+  }
+
   const redirectTo = `${siteUrl}/primeiro-acesso`
   const invite = await admin.auth.admin.generateLink({
     type: 'invite',
@@ -151,12 +169,6 @@ export async function resolveUser(
       created: true,
       inviteLink: invite.data.properties?.action_link,
     }
-  }
-
-  // Já existe: pega o id sem mandar e-mail nenhum.
-  const existing = await admin.auth.admin.generateLink({ type: 'magiclink', email })
-  if (!existing.error && existing.data?.user) {
-    return { userId: existing.data.user.id, email, created: false }
   }
 
   return { error: `não foi possível identificar o usuário (${invite.error?.message ?? 'erro desconhecido'})` }
@@ -188,7 +200,7 @@ export async function handleCaktoEvent(
       continue
     }
 
-    const resolved = await resolveUser(admin, order, siteUrl)
+    const resolved = await resolveUser(admin, order, siteUrl, status === 'active')
     if ('error' in resolved) {
       results.push({ ok: false, detail: resolved.error })
       continue
