@@ -1,6 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { CaktoOrderData, CaktoPayload, ordersOf } from './types'
-import { sendWelcomeEmail, sendSubscriptionActiveEmail } from '@/lib/email/send'
+import { enviarEmail } from '@/lib/email/send'
+import {
+  emailAssinaturaEncerrada, emailBoasVindas, emailPagamentoAtrasado,
+  emailPlanoLiberado, emailRenovacao,
+} from '@/lib/email/templates'
 
 /**
  * Traduz um evento da Cakto em acesso dentro do app.
@@ -230,30 +234,82 @@ export async function handleCaktoEvent(
       continue
     }
 
-    if (status === 'active') {
-      // Conta criada agora: manda o link de convite (o cliente define a
-      // senha). Conta que já existia: só avisa que o acesso foi liberado.
-      if (resolved.created && resolved.inviteLink) {
-        await admin.from('user_profiles').upsert(
-          {
-            user_id: resolved.userId,
-            full_name: order.customer?.name ?? '',
-            needs_password: true,
-          },
-          { onConflict: 'user_id' },
-        )
-        await sendWelcomeEmail({
-          to: resolved.email,
-          name: order.customer?.name ?? '',
-          link: resolved.inviteLink,
-        })
-      } else if (payload.event === 'purchase_approved' || payload.event === 'subscription_created') {
-        await sendSubscriptionActiveEmail({ to: resolved.email, name: order.customer?.name ?? '', siteUrl })
-      }
-    }
+    await avisarPorEmail({
+      evento: payload.event,
+      status,
+      resolved,
+      nome: order.customer?.name ?? undefined,
+      plano: rotuloDoPlano(order),
+      proximaCobranca: row.current_period_end,
+      admin,
+    })
 
     results.push({ ok: true, detail: `${payload.event} → ${status}`, userId: resolved.userId })
   }
 
   return results
+}
+
+const ROTULO: Record<string, string> = { essencial: 'Essencial', completo: 'Completo' }
+
+function rotuloDoPlano(order: CaktoOrderData): string {
+  const { tier, periodo } = planoDaOferta(order)
+  return `${ROTULO[tier]} ${periodo === 'anual' ? 'anual' : 'mensal'}`
+}
+
+/**
+ * Um e-mail por evento, sempre dizendo o que aconteceu e o que fazer.
+ * Nenhum deles carrega senha: quem não tem conta recebe link de uso único.
+ *
+ * Erro de e-mail não derruba o processamento — a assinatura já está gravada,
+ * e é ela que manda no acesso.
+ */
+async function avisarPorEmail(params: {
+  evento: string
+  status: SubscriptionStatus
+  resolved: ResolvedUser
+  nome?: string
+  plano: string
+  proximaCobranca: string | null
+  admin: SupabaseClient
+}) {
+  const { evento, status, resolved, nome, plano, proximaCobranca, admin } = params
+
+  if (status === 'active' && resolved.created && resolved.inviteLink) {
+    // Conta nasceu agora por causa da compra: marca que falta senha e manda o
+    // convite. É o único caminho de entrada de quem comprou pelo anúncio.
+    await admin.from('user_profiles').upsert(
+      { user_id: resolved.userId, full_name: nome ?? '', needs_password: true },
+      { onConflict: 'user_id' },
+    )
+    await enviarEmail(resolved.email, emailBoasVindas({ nome, link: resolved.inviteLink }))
+    return
+  }
+
+  switch (evento) {
+    // 'subscription_created' fica de fora: numa assinatura nova a Cakto manda
+    // ele E 'purchase_approved', e o cliente receberia dois e-mails iguais.
+    case 'purchase_approved':
+    case 'subscription_resumed':
+    case 'subscription_late_recovered':
+      await enviarEmail(resolved.email, emailPlanoLiberado({ nome, plano }))
+      break
+    case 'subscription_renewed':
+      await enviarEmail(resolved.email, emailRenovacao({ nome, plano, proximaCobranca }))
+      break
+    case 'subscription_late':
+    case 'subscription_renewal_refused':
+      await enviarEmail(resolved.email, emailPagamentoAtrasado({ nome }))
+      break
+    case 'subscription_canceled':
+      await enviarEmail(resolved.email, emailAssinaturaEncerrada({ nome, motivo: 'cancelamento' }))
+      break
+    case 'refund':
+      await enviarEmail(resolved.email, emailAssinaturaEncerrada({ nome, motivo: 'reembolso' }))
+      break
+    // Chargeback é disputa: avisar por e-mail automático pode piorar. Fica só
+    // registrado, para vocês tratarem caso a caso.
+    default:
+      break
+  }
 }
