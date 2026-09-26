@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ANNUAL_DISCOUNT, BillingPeriod, PLANS, PlanTier, moeda, precoDe } from '@/lib/plans'
+import { BillingPeriod, PLANS, PlanTier, maiorDescontoAnual, moeda, precoDe } from '@/lib/plans'
 import { checkoutUrl } from '@/hooks/use-subscription'
 import { Check, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -73,7 +73,7 @@ export function PricingSection() {
               ))}
             </div>
             <span className="text-xs font-medium px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-              {Math.round(ANNUAL_DISCOUNT * 100)}% off no anual
+              {maiorDescontoAnual()}% off no anual
             </span>
           </div>
         </div>

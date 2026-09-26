@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useSubscription, checkoutUrl } from '@/hooks/use-subscription'
-import { ANNUAL_DISCOUNT, BillingPeriod, PLANS, PlanTier, moeda, precoDe } from '@/lib/plans'
+import { BillingPeriod, PLANS, PlanTier, maiorDescontoAnual, moeda, precoDe } from '@/lib/plans'
 import { Badge } from '@/components/ui/badge'
 import { Check, Sparkles, AlertTriangle, Crown } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -130,7 +130,7 @@ export default function AssinaturaPage() {
           ))}
         </div>
         <Badge className="text-[10px] border-0 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-          {Math.round(ANNUAL_DISCOUNT * 100)}% de desconto no anual
+          {maiorDescontoAnual()}% de desconto no anual
         </Badge>
       </div>
 

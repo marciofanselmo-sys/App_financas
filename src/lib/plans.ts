@@ -115,12 +115,17 @@ export function requiredTier(feature: Feature): PlanTier {
 // ── Preços ──────────────────────────────────────────────────────────────────
 export type BillingPeriod = 'mensal' | 'anual'
 
-/** Desconto do plano anual, pago de uma vez, 12 meses à frente. */
-export const ANNUAL_DISCOUNT = 0.15
-
-const MENSAL: Record<Exclude<PlanTier, 'free'>, number> = {
-  essencial: 29.9,
-  completo: 49.9,
+/**
+ * Valores fixos, iguais aos das ofertas cadastradas na Cakto — não calculados
+ * a partir do mensal. O anual é número redondo de anúncio (R$ 297 / R$ 497),
+ * e derivar de uma porcentagem daria 304,98 e 508,98: o site mostraria um
+ * valor e o checkout cobraria outro.
+ *
+ * Mudou o preço na Cakto? Mude aqui também. São os dois lugares.
+ */
+const PRECOS: Record<Exclude<PlanTier, 'free'>, Record<BillingPeriod, number>> = {
+  essencial: { mensal: 29.9, anual: 297 },
+  completo: { mensal: 49.9, anual: 497 },
 }
 
 export interface Preco {
@@ -130,14 +135,28 @@ export interface Preco {
   total: number
   /** Quanto o anual economiza em um ano. */
   economia: number
+  /** Desconto do anual, em pontos percentuais inteiros. */
+  descontoPct: number
 }
 
 export function precoDe(tier: PlanTier, periodo: BillingPeriod): Preco | null {
   if (tier === 'free') return null
-  const mensal = MENSAL[tier]
-  if (periodo === 'mensal') return { porMes: mensal, total: mensal, economia: 0 }
-  const total = mensal * 12 * (1 - ANNUAL_DISCOUNT)
-  return { porMes: total / 12, total, economia: mensal * 12 - total }
+  const { mensal, anual } = PRECOS[tier]
+  if (periodo === 'mensal') return { porMes: mensal, total: mensal, economia: 0, descontoPct: 0 }
+  const cheio = mensal * 12
+  return {
+    porMes: anual / 12,
+    total: anual,
+    economia: cheio - anual,
+    descontoPct: Math.round(((cheio - anual) / cheio) * 100),
+  }
+}
+
+/** Maior desconto anual entre os planos — é o número que o selo anuncia. */
+export function maiorDescontoAnual(): number {
+  return Math.max(
+    ...(['essencial', 'completo'] as const).map(t => precoDe(t, 'anual')!.descontoPct),
+  )
 }
 
 export const moeda = (v: number) =>
