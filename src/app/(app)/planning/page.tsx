@@ -1,5 +1,7 @@
 'use client'
 
+import { withPlan } from '@/components/plan/with-plan'
+
 import { useState, useEffect, useMemo } from 'react'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
@@ -108,7 +110,7 @@ function parseNum(v: string) {
   return isNaN(n) || n <= 0 ? 0 : n
 }
 
-export default function PlanningPage() {
+function PlanningPage() {
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
@@ -964,3 +966,9 @@ export default function PlanningPage() {
     </div>
   )
 }
+
+export default withPlan(
+  'planning',
+  PlanningPage,
+  'Defina quanto quer gastar em cada categoria e acompanhe planejado × realizado durante o mês.',
+)

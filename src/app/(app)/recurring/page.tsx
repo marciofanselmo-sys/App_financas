@@ -1,5 +1,7 @@
 'use client'
 
+import { withPlan } from '@/components/plan/with-plan'
+
 import { useState } from 'react'
 import { todayISO } from '@/utils/local-date'
 import { useRecurring, InstallmentItem } from '@/hooks/use-recurring'
@@ -68,7 +70,7 @@ const EMPTY_FORM: ManualForm = {
   date: TODAY,
 }
 
-export default function RecurringPage() {
+function RecurringPage() {
   const { installments, loading, refetch, dismissInstallment } = useRecurring()
   const { categories } = useCategories()
   const { boards } = useTransactionBoards()
@@ -453,3 +455,9 @@ export default function RecurringPage() {
     </div>
   )
 }
+
+export default withPlan(
+  'recurring',
+  RecurringPage,
+  'Veja todos os seus parcelamentos em andamento, quanto falta em cada um e quando terminam.',
+)

@@ -1,5 +1,7 @@
 'use client'
 
+import { withPlan } from '@/components/plan/with-plan'
+
 import { useState, useMemo } from 'react'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
@@ -893,7 +895,7 @@ function InvestmentsReport({ boardId }: { boardId: string }) {
 }
 
 // ── Página principal ──────────────────────────────────────────────────────────
-export default function ReportsPage() {
+function ReportsPage() {
   const [type, setType] = useState<ReportType>('mensal')
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
@@ -1002,3 +1004,9 @@ export default function ReportsPage() {
     </div>
   )
 }
+
+export default withPlan(
+  'reports',
+  ReportsPage,
+  'Relatórios prontos para imprimir ou virar PDF, com o mês fechado, comparação com o ano anterior e os gastos fixos.',
+)

@@ -1,5 +1,7 @@
 'use client'
 
+import { withPlan } from '@/components/plan/with-plan'
+
 import { useState } from 'react'
 import { useGoals } from '@/hooks/use-goals'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
@@ -122,7 +124,7 @@ const EMPTY_FORM: FormState = {
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-export default function GoalsPage() {
+function GoalsPage() {
   const { goals, loading, error, clearError, createGoal, updateGoal, deleteGoal } = useGoals()
   const { boards } = useTransactionBoards()
   const [formOpen, setFormOpen]       = useState(false)
@@ -629,3 +631,9 @@ export default function GoalsPage() {
     </div>
   )
 }
+
+export default withPlan(
+  'goals',
+  GoalsPage,
+  'Defina objetivos com prazo e acompanhe o ritmo necessário para chegar lá.',
+)

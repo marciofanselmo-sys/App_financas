@@ -1,5 +1,7 @@
 'use client'
 
+import { withPlan } from '@/components/plan/with-plan'
+
 import { useState, useMemo } from 'react'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { usePositionImport } from '@/hooks/use-position-import'
@@ -62,7 +64,7 @@ const EMPTY_FORM: FormState = {
   type: 'ambos',
 }
 
-export default function InvestmentsPage() {
+function InvestmentsPage() {
   const { boards: allBoards, loading, createBoard, updateBoard, deleteBoard } = useTransactionBoards()
   const boards = allBoards.filter(b => b.is_investment)
 
@@ -581,3 +583,9 @@ export default function InvestmentsPage() {
     </div>
   )
 }
+
+export default withPlan(
+  'investments',
+  InvestmentsPage,
+  'Acompanhe a carteira, a alocação por classe e os proventos recebidos junto com o resto do seu dinheiro.',
+)

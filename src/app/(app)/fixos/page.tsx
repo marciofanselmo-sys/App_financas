@@ -1,5 +1,7 @@
 'use client'
 
+import { withPlan } from '@/components/plan/with-plan'
+
 import { useState, useMemo, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRecurring } from '@/hooks/use-recurring'
@@ -180,7 +182,7 @@ const TYPE_SECTIONS: {
 ]
 
 // ── Página principal ──────────────────────────────────────────────────────────
-export default function FixosPage() {
+function FixosPage() {
   const { recurring, installments, loading, refetch: refetchRecurring } = useRecurring()
   const subcategoryNames = useSubcategoryNames()
   const { decisions, loading: decisionsLoading, setDecision }     = useRecurringDecisions()
@@ -542,3 +544,9 @@ export default function FixosPage() {
     </div>
   )
 }
+
+export default withPlan(
+  'recurring',
+  FixosPage,
+  'O app encontra sozinho seus gastos fixos dos últimos 12 meses e mostra quanto da sua renda já está comprometida antes do mês começar.',
+)

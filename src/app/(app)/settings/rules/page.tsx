@@ -1,5 +1,7 @@
 'use client'
 
+import { withPlan } from '@/components/plan/with-plan'
+
 import { useState, useMemo, useEffect } from 'react'
 import { useRules, CategorizationRule, applyRuleToExisting } from '@/hooks/use-rules'
 import { useCategories } from '@/hooks/use-categories'
@@ -169,7 +171,7 @@ const SECTION_META: Record<SectionKey, { label: string; icon: React.ElementType;
   },
 }
 
-export default function RulesPage() {
+function RulesPage() {
   const { rules, loading, createRule, updateRule, deleteRule } = useRules()
   const { categories } = useCategories()
   const { boards } = useTransactionBoards()
@@ -582,3 +584,9 @@ export default function RulesPage() {
     </div>
   )
 }
+
+export default withPlan(
+  'rules',
+  RulesPage,
+  'As regras categorizam sozinhas tudo que se repete no seu extrato — você arruma uma vez e nunca mais.',
+)

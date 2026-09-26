@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { logSafeError } from '@/lib/supabase-error'
+import { Feature, PLANS, PlanDefinition, PlanTier, tierFor } from '@/lib/plans'
 
 export type SubscriptionStatus =
   | 'free' | 'active' | 'past_due' | 'canceled' | 'refunded' | 'chargeback'
@@ -25,12 +26,14 @@ export interface Subscription {
  */
 export function useSubscription() {
   const [subscription, setSubscription] = useState<Subscription | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
+    setUserId(user.id)
 
     const { data, error } = await supabase
       .from('subscriptions')
@@ -47,8 +50,17 @@ export function useSubscription() {
 
   const status = subscription?.status ?? 'free'
   const isPro = status === 'active' || status === 'past_due'
+  const tier = tierFor(status, subscription?.plan)
+  const plan: PlanDefinition = PLANS[tier]
+  const can = (feature: Feature) => plan.features[feature]
 
-  return { subscription, status, isPro, loading, refetch: load }
+  return { subscription, status, isPro, tier, plan, can, userId, loading, refetch: load }
+}
+
+/** Atalho para telas que só precisam saber o que está liberado. */
+export function usePlan(): { tier: PlanTier; plan: PlanDefinition; can: (f: Feature) => boolean; loading: boolean; userId: string | null } {
+  const { tier, plan, can, loading, userId } = useSubscription()
+  return { tier, plan, can, loading, userId }
 }
 
 /** Link do checkout com o id do usuário, que volta no webhook como `callback`. */

@@ -13,7 +13,7 @@ import {
   Tag, ChevronDown, Target, RefreshCw, BarChart2, CalendarCheck,
   Zap, CreditCard, FileText, HelpCircle, ChevronRight, Shield,
   PiggyBank, MessageSquarePlus, ArrowUpRight,
-} from 'lucide-react'
+, Crown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { useIsAdmin } from '@/hooks/use-is-admin'
@@ -51,6 +51,7 @@ const NAV_GROUPS = [
 const SETTINGS_ITEMS = [
   { href: '/settings/categories',          label: 'Categorias',          icon: Tag      },
   { href: '/settings/rules',               label: 'Regras auto.',        icon: Zap      },
+  { href: '/settings/assinatura',          label: 'Minha assinatura',    icon: Crown    },
 ]
 
 // ── Componente de item de nav ──────────────────────────────────────────────────
