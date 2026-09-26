@@ -12,8 +12,8 @@ import {
   LayoutDashboard, ArrowLeftRight, LogOut, Settings,
   Tag, ChevronDown, Target, RefreshCw, BarChart2, CalendarCheck,
   Zap, CreditCard, FileText, HelpCircle, ChevronRight, Shield,
-  PiggyBank, MessageSquarePlus, ArrowUpRight,
-, Crown } from 'lucide-react'
+  PiggyBank, MessageSquarePlus, ArrowUpRight, Crown,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { useIsAdmin } from '@/hooks/use-is-admin'
