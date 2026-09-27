@@ -35,7 +35,7 @@ export async function enviarEmail(para: string, email: Email): Promise<{ error: 
     if (!res.ok) {
       const detalhe = (await res.text()).slice(0, 300)
       console.error('[email] resend', res.status, detalhe)
-      return { error: `resend ${res.status}` }
+      return { error: `resend ${res.status}: ${detalhe}` }
     }
     return { error: null }
   } catch (e) {
