@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useCategories } from '@/hooks/use-categories'
-import { TrendingDown, TrendingUp, Wallet, BarChart2, Loader2, AlertCircle, CheckCircle2, X , ArrowLeftRight } from 'lucide-react'
+import { TrendingDown, TrendingUp, Wallet, BarChart2, Loader2, AlertCircle, CheckCircle2, X, ArrowLeftRight, ChevronRight } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
 import Link from 'next/link'
@@ -39,6 +39,32 @@ function colorFor(cat: string) {
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
+
+// Cabeçalho clicável de cada categoria da lista (despesas e entradas): seta
+// que gira ao abrir, nome e detalhe à esquerda, valor e % à direita — em duas
+// linhas, pra caber no celular sem cortar o valor.
+function CategoryRowHeader({ name, open, detail, pct, value, valueClass }: {
+  name: string
+  open: boolean
+  detail: string
+  pct: number
+  value: string
+  valueClass: string
+}) {
+  return (
+    <div className="flex items-center gap-2 mb-1.5">
+      <ChevronRight className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate group-hover:underline">{name}</p>
+        <p className="text-[11px] text-slate-400">{detail}</p>
+      </div>
+      <div className="shrink-0 text-right">
+        <p className={`text-sm font-semibold whitespace-nowrap ${valueClass}`}>{value}</p>
+        <p className="text-[11px] text-slate-400">{pct.toFixed(0)}%</p>
+      </div>
+    </div>
+  )
+}
 
 export default function AnalyticsPage() {
   const now = new Date()
@@ -359,25 +385,14 @@ export default function AnalyticsPage() {
                           className="w-full text-left group"
                           onClick={() => setExpandedCat(open ? null : `despesa:${cat}`)}
                         >
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
-                                style={{ backgroundColor: colorFor(cat) }}
-                              />
-                              <span className="text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:underline">{cat}</span>
-                              <span className="text-xs text-slate-400">{open ? '▾' : '▸'} ({count} {count === 1 ? 'lançamento' : 'lançamentos'})</span>
-                              {subs.length > 0 && (
-                                <span className="text-[10px] text-slate-400">
-                                  · {subs.length} subcategoria{subs.length === 1 ? '' : 's'}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <span className="text-xs text-slate-400 w-10 text-right">{pct.toFixed(0)}%</span>
-                              <span className="text-sm font-semibold text-red-500 w-28 text-right">{fmt(total)}</span>
-                            </div>
-                          </div>
+                          <CategoryRowHeader
+                            name={cat}
+                            open={open}
+                            detail={`${count} ${count === 1 ? 'lançamento' : 'lançamentos'}${subs.length > 0 ? ` · ${subs.length} subcategoria${subs.length === 1 ? '' : 's'}` : ''}`}
+                            pct={pct}
+                            value={fmt(total)}
+                            valueClass="text-red-500"
+                          />
                           <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
                             <div
                               className="h-full rounded-full transition-all duration-500"
@@ -441,20 +456,14 @@ export default function AnalyticsPage() {
                         className="w-full text-left group"
                         onClick={() => setExpandedCat(open ? null : `receita:${cat}`)}
                       >
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
-                              style={{ backgroundColor: colorFor(cat) }}
-                            />
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:underline">{cat}</span>
-                            <span className="text-xs text-slate-400">{open ? '▾' : '▸'} ({count} {count === 1 ? 'lançamento' : 'lançamentos'})</span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-xs text-slate-400 w-10 text-right">{pct.toFixed(0)}%</span>
-                            <span className="text-sm font-semibold text-green-600 w-28 text-right">{fmt(total)}</span>
-                          </div>
-                        </div>
+                        <CategoryRowHeader
+                          name={cat}
+                          open={open}
+                          detail={`${count} ${count === 1 ? 'lançamento' : 'lançamentos'}`}
+                          pct={pct}
+                          value={fmt(total)}
+                          valueClass="text-green-600"
+                        />
                         <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
                           <div
                             className="h-full rounded-full bg-green-500 transition-all duration-500"
