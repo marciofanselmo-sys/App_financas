@@ -22,38 +22,40 @@ export async function GET() {
   }
 
   try {
-    const res = await fetch('https://api.resend.com/domains', {
-      headers: { Authorization: `Bearer ${apiKey}` },
+    // Chave com permissão só de ENVIO não pode listar domínios — usar
+    // GET /domains para testar daria "recusada" mesmo com a chave correta.
+    // O teste certo é bater no endpoint de envio com um corpo inválido de
+    // propósito: 401/403 significa chave ruim; 422/400 significa que a
+    // autenticação passou e só o conteúdo foi recusado. Nada é enviado.
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
       cache: 'no-store',
     })
 
     if (res.status === 401 || res.status === 403) {
-      return NextResponse.json({ ok: false, motivo: 'chave recusada pela Resend', remetente })
-    }
-    if (!res.ok) {
-      return NextResponse.json({ ok: false, motivo: `resend respondeu ${res.status}`, remetente })
+      const detalhe = (await res.text()).slice(0, 200)
+      return NextResponse.json({ ok: false, motivo: 'chave recusada pela Resend', detalhe, remetente })
     }
 
-    const body = await res.json() as { data?: { name: string; status: string; region?: string }[] }
-    const dominios = (body.data ?? []).map(d => ({ dominio: d.name, estado: d.status, regiao: d.region }))
-
-    // O remetente vem como "NOBLI <contato@dominio>" — o que importa é o
-    // domínio depois do @, porque é ele que precisa estar verificado.
-    const dominioDoRemetente = remetente?.match(/@([^>\s]+)/)?.[1]?.toLowerCase() ?? null
-    const verificado = dominios.some(
-      d => d.dominio.toLowerCase() === dominioDoRemetente && d.estado === 'verified',
-    )
+    // Qualquer outra resposta significa que a chave foi aceita.
+    let dominios: unknown = 'não consultado (chave de envio não lista domínios)'
+    const lista = await fetch('https://api.resend.com/domains', {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      cache: 'no-store',
+    })
+    if (lista.ok) {
+      const body = await lista.json() as { data?: { name: string; status: string }[] }
+      dominios = (body.data ?? []).map(d => ({ dominio: d.name, estado: d.status }))
+    }
 
     return NextResponse.json({
-      ok: verificado,
-      chave: 'válida',
+      ok: true,
+      chave: 'aceita pela Resend',
+      status_do_teste: res.status,
       remetente,
-      dominio_do_remetente: dominioDoRemetente,
-      verificado,
       dominios,
-      aviso: verificado
-        ? null
-        : 'O domínio do remetente não aparece como verificado na Resend — os e-mails vão falhar ou cair em spam.',
     })
   } catch (e) {
     return NextResponse.json({
