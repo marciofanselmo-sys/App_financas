@@ -32,6 +32,9 @@ export async function middleware(request: NextRequest) {
   const isPublicRoute =
     // Página do produto: é para onde os anúncios apontam.
     pathname === '/' ||
+    // Retorno do checkout: quem comprou pelo anúncio ainda não tem sessão.
+    pathname === '/obrigado' ||
+    pathname === '/primeiro-acesso' ||
     pathname.startsWith('/auth') ||
     pathname.startsWith('/demo') ||
     // Webhook de pagamento: quem chama é a Cakto, que não tem sessão. A
