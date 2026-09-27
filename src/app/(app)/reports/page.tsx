@@ -15,7 +15,7 @@ import { useSubcategoryNames } from '@/hooks/use-subcategory-names'
 import { subKey } from '@/lib/plan-keys'
 import { calcHealthScore, scoreConfig } from '@/components/dashboard/summary-cards'
 import {
-  Printer, CalendarDays, BarChart2, CreditCard, RefreshCw, CheckCircle,
+  Printer, CalendarDays, BarChart2, CreditCard, RefreshCw,
   ChevronLeft, ChevronRight, ChevronsUpDown, TrendingUp, Tag,
 } from 'lucide-react'
 import { CategorySummary, PositionsBreakdown, ProventosBreakdown } from '@/components/investments/rico-position-summary'
@@ -88,7 +88,8 @@ interface CategoryRow {
   name: string
   amount: number
   color: string
-  subs: { name: string; amount: number }[]
+  /** `note`: detalhe pequeno embaixo do nome (ex.: "11x · última 07/09/2026"). */
+  subs: { name: string; amount: number; note?: string }[]
 }
 
 // Soma pela categoria-mãe (lançamento em "Mercado" conta em "Alimentação")
@@ -121,8 +122,10 @@ function groupByMother(transactions: Transaction[], categories: Category[]): Cat
  * coluna Planejado (Mensal). No celular só cabem Categoria e Valor — o resto
  * vai numa linha pequena embaixo do valor.
  */
-function CategoryTable({ title, rows, total, valueLabel, months, limits }: {
+function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, subLabel = 'subcategorias' }: {
   title: string
+  hint?: string
+  subLabel?: string
   rows: CategoryRow[]
   total: number
   valueLabel: string
@@ -171,12 +174,12 @@ function CategoryTable({ title, rows, total, valueLabel, months, limits }: {
             className="print:hidden shrink-0 flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
           >
             <ChevronsUpDown className="h-3.5 w-3.5" />
-            {allOpen ? 'Ocultar subcategorias' : 'Mostrar subcategorias'}
+            {allOpen ? `Ocultar ${subLabel}` : `Mostrar ${subLabel}`}
           </button>
         )}
       </div>
       <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 mb-3">
-        Toque numa categoria para ver as subcategorias — elas já estão somadas no total dela.
+        {hint ?? 'Toque numa categoria para ver as subcategorias — elas já estão somadas no total dela.'}
         {months ? ` Média calculada sobre ${months} ${months === 1 ? 'mês' : 'meses'} com movimento.` : ''}
       </p>
       <div className={table}>
@@ -221,12 +224,15 @@ function CategoryTable({ title, rows, total, valueLabel, months, limits }: {
                     <td className={`${H} ${P} py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500`}>{pct(cat.amount)}</td>
                     {limits && <td className={`${H} ${P} py-2.5 text-right text-slate-400 dark:text-slate-500 print:text-slate-400`}>{limitOf(cat.name)}</td>}
                   </tr>
-                  {isOpen && cat.subs.map(sub => (
-                    <tr key={`${cat.name}|${sub.name}`} className="bg-slate-50/50 dark:bg-slate-800/30 print:bg-white">
+                  {isOpen && cat.subs.map((sub, i) => (
+                    <tr key={`${cat.name}|${sub.name}|${i}`} className="bg-slate-50/50 dark:bg-slate-800/30 print:bg-white">
                       <td className="pl-12 sm:pl-14 pr-2.5 sm:pr-4 py-2 text-xs text-slate-500 dark:text-slate-400 print:text-slate-500">
                         <div className="flex items-center gap-2">
                           <Tag className="h-3 w-3 text-slate-400 shrink-0" />
-                          {sub.name}
+                          <span>
+                            {sub.name}
+                            {sub.note && <span className="block text-[11px] text-slate-400 dark:text-slate-500">{sub.note}</span>}
+                          </span>
                         </div>
                       </td>
                       <td className={`${P} py-2 text-right text-xs text-slate-500 dark:text-slate-400 print:text-slate-500`}>
@@ -670,23 +676,25 @@ function FixedChargesReport({ boardId, excludeBoardIds }: { boardId: string; exc
   const allItems   = useMemo(() => buildDisplayItems(despesaRecurring, new Map(), subcategoryNames), [despesaRecurring, subcategoryNames])
   const confirmed  = allItems.filter(i => decisions.get(i.key) === 'confirmed')
   const pending    = allItems.filter(i => !decisions.has(i.key))
-  const totalMonthly = confirmed.reduce((s, i) => s + i.avgAmount, 0)
   const fmtDate      = (d: string) => { const [y, m, day] = d.split('-'); return `${day}/${m}/${y}` }
+  const totalMonthly = confirmed.reduce((s, i) => s + i.avgAmount, 0)
 
-  // Um item agrupado hoje é uma subcategoria (Aluguel, Internet): mostra o
-  // caminho completo dela, "Moradia › Aluguel".
-  function categoryCell(item: ReturnType<typeof buildDisplayItems>[number]) {
-    const name = item.isGroup ? (item.subcategory ?? item.category) : item.category
-    if (!name) return '—'
-    const cat = categories.find(c => c.name === name)
-    const mother = cat?.parent_id ? categories.find(m => m.id === cat.parent_id) : null
-    return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700/50 text-[11px]">
-        <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: categoryColor(name) }} />
-        {mother ? `${mother.name} › ${name}` : name}
-      </span>
-    )
-  }
+  // Mesma tabela do Mensal/Anual: cada gasto fixo fica dentro da
+  // categoria-mãe dele (Internet, Aluguel e Luz dentro de Moradia).
+  const byCategory: CategoryRow[] = (() => {
+    const mothers = motherNameByCategory(categories)
+    const map: Record<string, CategoryRow> = {}
+    for (const item of confirmed) {
+      const catName = (item.isGroup ? (item.subcategory ?? item.category) : item.category) || 'Outros'
+      const mother = motherOf(catName, mothers, 'despesa')
+      const row = map[mother] ?? (map[mother] = { name: mother, amount: 0, color: categoryColor(mother), subs: [] })
+      row.amount += item.avgAmount
+      row.subs.push({ name: item.name, amount: item.avgAmount, note: `${item.monthsCount}x · última ${fmtDate(item.lastDate)}` })
+    }
+    return Object.values(map)
+      .map(r => ({ ...r, subs: [...r.subs].sort((a, b) => b.amount - a.amount) }))
+      .sort((a, b) => b.amount - a.amount)
+  })()
 
   if (loading || decisionsLoading) return <div className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</div>
 
@@ -709,44 +717,14 @@ function FixedChargesReport({ boardId, excludeBoardIds }: { boardId: string; exc
       </div>
 
       {confirmed.length > 0 && (
-        <div>
-          <h3 className={`${secTitle} flex items-center gap-2`}>
-            <CheckCircle className="h-4 w-4 text-emerald-500" /> Confirmados como Fixo
-          </h3>
-          <div className={table}>
-            <table className="w-full text-sm">
-              <thead className={thead}>
-                <tr>
-                  <th className={`text-left px-4 py-2.5 ${th}`}>Descrição</th>
-                  <th className={`text-left px-4 py-2.5 ${th}`}>Categoria</th>
-                  <th className={`text-center px-4 py-2.5 ${th}`}>Detec.</th>
-                  <th className={`text-right px-4 py-2.5 ${th}`}>Última</th>
-                  <th className={`text-right px-4 py-2.5 ${th}`}>Média/mês</th>
-                </tr>
-              </thead>
-              <tbody className={tdiv}>
-                {confirmed.map((item, i) => (
-                  <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-                    <td className="px-4 py-2.5 text-slate-700 dark:text-slate-200 print:text-slate-700">
-                      <div className="font-medium">{item.name}</div>
-                      {item.isGroup && (
-                        <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">{item.descriptions.join(', ')}</div>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400 print:text-slate-500 text-xs">{categoryCell(item)}</td>
-                    <td className="px-4 py-2.5 text-center text-slate-500 dark:text-slate-400 print:text-slate-500">{item.monthsCount}x</td>
-                    <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{fmtDate(item.lastDate)}</td>
-                    <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(item.avgAmount)}</td>
-                  </tr>
-                ))}
-                <tr className={tfoot}>
-                  <td className="px-4 py-2.5 text-slate-700 dark:text-slate-200 print:text-slate-700" colSpan={4}>Total</td>
-                  <td className="px-4 py-2.5 text-right text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(totalMonthly)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <CategoryTable
+          title="Confirmados como Fixo"
+          rows={byCategory}
+          total={totalMonthly}
+          valueLabel="Média/mês"
+          subLabel="gastos"
+          hint="Toque numa categoria para ver os gastos fixos dela. Valores são a média mensal de cada gasto."
+        />
       )}
 
       {/* Sugestões ainda não revisadas ficam só em /fixos — o relatório mostra
