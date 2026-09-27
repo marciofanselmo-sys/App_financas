@@ -42,6 +42,8 @@ const marketingRewrites = LP_ORIGIN
       { source: '/', destination: `${LP_ORIGIN}/` },
       { source: '/lp/:path*', destination: `${LP_ORIGIN}/lp/:path*` },
       { source: '/quiz/:path*', destination: `${LP_ORIGIN}/quiz/:path*` },
+      // Estáticos do build da landing (imagens, css, js).
+      { source: '/_lp/:path*', destination: `${LP_ORIGIN}/_lp/:path*` },
     ]
   : []
 
@@ -63,28 +65,6 @@ const nextConfig: NextConfig = {
       { source: '/categories', destination: '/settings/categories', permanent: false },
       { source: '/settings/isolated-categories', destination: '/settings/categories', permanent: false },
       { source: '/settings/subcategories', destination: '/settings/categories', permanent: false },
-    ]
-  },
-  /**
-   * Página de vendas hospedada por fora, no mesmo domínio.
-   *
-   * O time de aquisição publica no projeto Vercel dele; aqui o app só
-   * repassa os caminhos de marketing para lá. Para quem visita, é um site
-   * só em noblifinance.com.br — e eles publicam quando quiserem, sem tocar
-   * no código do produto, no banco ou nas chaves.
-   *
-   * Com LP_ORIGIN vazio, nada muda: continua valendo a página que está
-   * dentro do app. É o interruptor que liga a landing externa.
-   */
-  async rewrites() {
-    const lp = process.env.LP_ORIGIN?.replace(/\/$/, '')
-    if (!lp) return []
-    return [
-      { source: '/', destination: `${lp}/` },
-      { source: '/lp/:path*', destination: `${lp}/lp/:path*` },
-      { source: '/quiz/:path*', destination: `${lp}/quiz/:path*` },
-      // Arquivos estáticos da landing (imagens, css, js do build dela).
-      { source: '/_lp/:path*', destination: `${lp}/_lp/:path*` },
     ]
   },
   async headers() {
