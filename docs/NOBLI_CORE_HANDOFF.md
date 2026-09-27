@@ -395,8 +395,17 @@ comissões sobre vendas do produtor`
 
 **Coprodução não dá acesso de edição** ao produto na Cakto — foi verificado na
 prática. O coprodutor vê vendas e comissões, mas não edita produto, preço,
-checkout nem pixel. Para o que ele precisa (pixel e visual do checkout), o
-produtor aplica; para preço e oferta, o core faz pela API.
+checkout nem pixel.
+
+**Resolvido pela aba Equipe** (27/09/2026): `fariafelipesouza@gmail.com` foi
+convidado em Equipe e o convite está **Ativo**. A Cakto não oferece níveis de
+permissão — o acesso é total ao painel, e os sócios decidiram assim
+conscientemente. Com isso o segundo sócio edita pixel e visual do checkout
+diretamente, sem depender do produtor.
+
+Equipe e coprodução são independentes: Equipe dá acesso ao painel, coprodução
+divide a receita. Uma não substitui a outra. Preço e oferta continuam sendo
+feitos pelo core via API.
 
 ---
 
