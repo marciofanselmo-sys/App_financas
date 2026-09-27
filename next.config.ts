@@ -41,8 +41,13 @@ const marketingRewrites = LP_ORIGIN
   ? [
       { source: '/', destination: `${LP_ORIGIN}/` },
       { source: '/lp/:path*', destination: `${LP_ORIGIN}/lp/:path*` },
+      { source: '/quiz', destination: `${LP_ORIGIN}/quiz` },
       { source: '/quiz/:path*', destination: `${LP_ORIGIN}/quiz/:path*` },
-      // Estáticos do build da landing (imagens, css, js).
+      { source: '/landing-page', destination: `${LP_ORIGIN}/landing-page` },
+      { source: '/landing-page/:path*', destination: `${LP_ORIGIN}/landing-page/:path*` },
+      // Imagens e estáticos da landing. O app não usa /assets nem /_lp, então
+      // não há colisão de caminho entre os dois projetos.
+      { source: '/assets/:path*', destination: `${LP_ORIGIN}/assets/:path*` },
       { source: '/_lp/:path*', destination: `${LP_ORIGIN}/_lp/:path*` },
     ]
   : []

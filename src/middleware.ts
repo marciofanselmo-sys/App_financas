@@ -36,6 +36,8 @@ export async function middleware(request: NextRequest) {
     pathname === '/' ||
     pathname.startsWith('/lp') ||
     pathname.startsWith('/quiz') ||
+    pathname.startsWith('/landing-page') ||
+    pathname.startsWith('/assets') ||
     // Links curtos de assinatura: quem vem do anúncio não tem sessão.
     pathname.startsWith('/assinar') ||
     // Páginas de marketing servidas pelo projeto de aquisição.
