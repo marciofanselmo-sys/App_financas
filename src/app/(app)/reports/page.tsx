@@ -358,6 +358,14 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
       .sort((a, b) => b.amount - a.amount)
   }, [transactions, categories])
 
+  // Tabela própria das subcategorias, com a categoria-mãe ao lado.
+  const bySubcategory = useMemo(
+    () => byCategory
+      .flatMap(cat => cat.subs.map(([name, amount]) => ({ name, mother: cat.name, amount })))
+      .sort((a, b) => b.amount - a.amount),
+    [byCategory],
+  )
+
   const totalIncome   = monthly.reduce((s, m) => s + m.income, 0)
   const totalExpenses = monthly.reduce((s, m) => s + m.expenses, 0)
   const totalBalance  = totalIncome - totalExpenses
@@ -461,7 +469,7 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
         <div>
           <h3 className={secTitle}>Despesas por Categoria no Ano</h3>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 -mt-2 mb-3">
-            Subcategorias aparecem dentro da categoria e já estão somadas no total dela. Média calculada sobre {monthsForAvg} {monthsForAvg === 1 ? 'mês' : 'meses'} com movimento.
+            Total de cada categoria, já incluindo as subcategorias dela. Média calculada sobre {monthsForAvg} {monthsForAvg === 1 ? 'mês' : 'meses'} com movimento.
           </p>
           <div className={table}>
             <table className="w-full text-sm">
@@ -475,31 +483,14 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
               </thead>
               <tbody className={tdiv}>
                 {byCategory.map(cat => (
-                  <Fragment key={cat.name}>
-                    <tr className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-                      <td className="px-4 py-2.5 font-medium text-slate-700 dark:text-slate-300 print:text-slate-700">{cat.name}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(cat.amount)}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{fmt(cat.amount / monthsForAvg)}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">
-                        {totalExpenses > 0 ? fmtPct(cat.amount / totalExpenses) : '—'}
-                      </td>
-                    </tr>
-                    {cat.subs.map(([sub, amount]) => (
-                      <tr key={`${cat.name}|${sub}`} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-                        <td className="pl-9 pr-4 py-2 text-xs text-slate-500 dark:text-slate-400 print:text-slate-500">
-                          <div className="flex items-center gap-2">
-                            <Tag className="h-3 w-3 text-slate-400 shrink-0" />
-                            {sub}
-                          </div>
-                        </td>
-                        <td className="px-4 py-2 text-right text-xs text-slate-500 dark:text-slate-400 print:text-slate-500">{fmt(amount)}</td>
-                        <td className="px-4 py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">{fmt(amount / monthsForAvg)}</td>
-                        <td className="px-4 py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">
-                          {totalExpenses > 0 ? fmtPct(amount / totalExpenses) : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </Fragment>
+                  <tr key={cat.name} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+                    <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300 print:text-slate-700">{cat.name}</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(cat.amount)}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{fmt(cat.amount / monthsForAvg)}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">
+                      {totalExpenses > 0 ? fmtPct(cat.amount / totalExpenses) : '—'}
+                    </td>
+                  </tr>
                 ))}
                 <tr className={tfoot}>
                   <td className="px-4 py-2.5 text-slate-700 dark:text-slate-200 print:text-slate-700">Total</td>
@@ -507,6 +498,46 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
                   <td className="px-4 py-2.5 text-right text-red-500">{fmt(totalExpenses / monthsForAvg)}</td>
                   <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{totalExpenses > 0 ? fmtPct(1) : '—'}</td>
                 </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {bySubcategory.length > 0 && (
+        <div>
+          <h3 className={secTitle}>Despesas por Subcategoria no Ano</h3>
+          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 -mt-2 mb-3">
+            Detalhe dos gastos lançados em subcategorias. Esses valores já estão dentro da categoria na tabela acima — não somar as duas tabelas.
+          </p>
+          <div className={table}>
+            <table className="w-full text-sm">
+              <thead className={thead}>
+                <tr>
+                  <th className={`text-left px-4 py-2.5 ${th}`}>Subcategoria</th>
+                  <th className={`text-left px-4 py-2.5 ${th}`}>Categoria</th>
+                  <th className={`text-right px-4 py-2.5 ${th}`}>Total</th>
+                  <th className={`text-right px-4 py-2.5 ${th}`}>Média/mês</th>
+                  <th className={`text-right px-4 py-2.5 ${th}`}>% Total</th>
+                </tr>
+              </thead>
+              <tbody className={tdiv}>
+                {bySubcategory.map(sub => (
+                  <tr key={`${sub.mother}|${sub.name}`} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+                    <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300 print:text-slate-700">
+                      <div className="flex items-center gap-2">
+                        <Tag className="h-3 w-3 text-slate-400 shrink-0" />
+                        {sub.name}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-slate-500 dark:text-slate-400 print:text-slate-500">{sub.mother}</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(sub.amount)}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{fmt(sub.amount / monthsForAvg)}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">
+                      {totalExpenses > 0 ? fmtPct(sub.amount / totalExpenses) : '—'}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
