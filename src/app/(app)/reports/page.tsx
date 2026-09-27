@@ -56,7 +56,7 @@ const now = new Date()
 
 // ── Tokens de estilo reutilizados ─────────────────────────────────────────────
 const card  = 'bg-white dark:bg-[#111c2d] print:bg-white border border-slate-100 dark:border-white/[0.06] print:border-slate-200 rounded-xl p-4'
-const table = 'border border-slate-100 dark:border-white/[0.06] print:border-slate-200 rounded-xl overflow-hidden'
+const table = 'border border-slate-100 dark:border-white/[0.06] print:border-slate-200 rounded-xl overflow-x-auto print:overflow-visible [&_td.text-right]:whitespace-nowrap [&_th]:whitespace-nowrap'
 const thead = 'bg-slate-50 dark:bg-slate-700/40 print:bg-slate-50'
 const th    = 'text-xs font-semibold text-slate-500 dark:text-slate-400 print:text-slate-500 uppercase tracking-wide'
 const tdiv  = 'divide-y divide-slate-50 dark:divide-slate-700/50 print:divide-slate-100'
@@ -393,7 +393,7 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
         previousYear={year - 1}
       />
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className={card}>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Receitas totais</p>
           <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 print:text-emerald-600 mt-1">{fmt(totalIncome)}</p>
@@ -908,7 +908,7 @@ function ReportsPage() {
 
       {/* Controles */}
       <div className="print:hidden space-y-3">
-        <div className="flex gap-1 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-xl">
+        <div className="flex gap-1 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-xl overflow-x-auto">
           {REPORT_TYPES.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
@@ -919,7 +919,7 @@ function ReportsPage() {
                 if ((id === 'investimentos') !== (type === 'investimentos')) setBoardId('all')
                 setType(id)
               }}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex-1 shrink-0 whitespace-nowrap flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-semibold transition-all ${
                 type === id
                   ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm'
                   : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
