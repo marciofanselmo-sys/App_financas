@@ -51,6 +51,8 @@ export async function middleware(request: NextRequest) {
     // Webhook de pagamento: quem chama é a Cakto, que não tem sessão. A
     // autenticação dele é a assinatura HMAC da própria entrega.
     pathname.startsWith('/api/webhooks') ||
+    // Diagnóstico de configuração: responde só com estado, nunca com segredo.
+    pathname.startsWith('/api/diagnostico') ||
     pathname === '/privacy' ||
     pathname === '/terms'
 
