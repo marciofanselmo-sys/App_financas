@@ -30,14 +30,40 @@ export default function PrivacyPage() {
           acessa somente os próprios registros. Comunicação via HTTPS.
         </p>
 
-        <h2>4. Seus direitos (LGPD)</h2>
+        <h2>4. Empresas que tratam dados a nosso pedido</h2>
+        <p>
+          Para funcionar, o serviço se apoia em três fornecedores, cada um com acesso apenas
+          ao que precisa:
+        </p>
+        <ul>
+          <li>
+            <strong>Supabase</strong> — banco de dados e autenticação: guarda seu e-mail, sua
+            senha (criptografada) e os lançamentos que você cadastra ou importa.
+          </li>
+          <li>
+            <strong>Cakto</strong> — processa os pagamentos da assinatura. Os dados do seu
+            cartão são fornecidos diretamente a ela e <strong>nunca passam por nós</strong>.
+            Recebemos apenas a confirmação do pagamento, seu nome e seu e-mail, para liberar
+            o acesso.
+          </li>
+          <li>
+            <strong>Resend</strong> — envia os e-mails da conta (acesso, cobrança, aviso de
+            renovação). Recebe apenas o e-mail de destino e o conteúdo da mensagem.
+          </li>
+        </ul>
+        <p>
+          Não vendemos, alugamos nem compartilhamos seus dados financeiros com ninguém além
+          desses fornecedores, e nenhum deles os usa para finalidade própria.
+        </p>
+
+        <h2>5. Seus direitos (LGPD)</h2>
         <ul>
           <li>Acessar e exportar seus dados em Minha conta → Exportar meus dados</li>
           <li>Solicitar exclusão em Minha conta → Excluir minha conta</li>
           <li>Corrigir informações de perfil a qualquer momento</li>
         </ul>
 
-        <h2>5. Contato</h2>
+        <h2>6. Contato</h2>
         <p>
           Dúvidas sobre privacidade:{' '}
           <a href="mailto:contato@noblifinance.com.br" className="text-blue-600 hover:underline">
