@@ -1,10 +1,18 @@
 import type { NextConfig } from 'next'
 
-const securityHeaders = [
+const baseHeaders = [
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+]
+
+/**
+ * Política de segurança do APLICATIVO — restritiva de propósito: é onde
+ * estão os dados financeiros das pessoas. Nada de terceiros roda aqui.
+ */
+const securityHeaders = [
+  ...baseHeaders,
   {
     key: 'Content-Security-Policy',
     value: [
@@ -17,6 +25,36 @@ const securityHeaders = [
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
+    ].join('; '),
+  },
+]
+
+/**
+ * Política das páginas de MARKETING (landing e quiz), servidas do projeto do
+ * time de aquisição.
+ *
+ * Elas carregam CSS, fontes e bibliotecas de CDN. Com a política do app, todo
+ * o estilo era bloqueado e a página aparecia crua — foi o que aconteceu ao
+ * ligar a landing no domínio. Aqui esses domínios são liberados um a um, e só
+ * nestes caminhos: login, app, API e webhook continuam sob a política acima.
+ *
+ * `form-action` inclui a Cakto porque o botão de compra leva ao checkout.
+ * Nenhum dado de cliente do app passa por estas páginas.
+ */
+const marketingHeaders = [
+  ...baseHeaders,
+  {
+    key: 'Content-Security-Policy',
+    value: [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
+      "img-src 'self' data: blob: https:",
+      "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self' https://pay.cakto.com.br",
     ].join('; '),
   },
 ]
@@ -73,11 +111,12 @@ const nextConfig: NextConfig = {
     ]
   },
   async headers() {
+    // A regra mais específica vem depois: no Next, quando duas regras batem
+    // no mesmo caminho, a última vence para o mesmo cabeçalho.
+    const marketing = ['/', '/landing-page', '/landing-page/:path*', '/quiz', '/quiz/:path*', '/assets/:path*']
     return [
-      {
-        source: '/(.*)',
-        headers: securityHeaders,
-      },
+      { source: '/(.*)', headers: securityHeaders },
+      ...marketing.map(source => ({ source, headers: marketingHeaders })),
     ]
   },
 }
