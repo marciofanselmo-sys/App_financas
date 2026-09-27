@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useCategories } from '@/hooks/use-categories'
-import { TrendingDown, TrendingUp, Wallet, BarChart2, Loader2, AlertCircle, CheckCircle2, X, ArrowLeftRight, ChevronRight } from 'lucide-react'
+import { TrendingDown, TrendingUp, Wallet, BarChart2, Loader2, AlertCircle, CheckCircle2, X, ArrowLeftRight, ChevronRight, Tag } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
 import Link from 'next/link'
@@ -407,13 +407,19 @@ export default function AnalyticsPage() {
 
                         {open && (
                           <>
+                            {/* Subcategorias em linhas, como nos Relatórios. */}
                             {subs.length > 0 && (
-                              <div className="mt-2 ml-4 flex flex-wrap gap-1.5">
+                              <div className="mt-2 ml-1.5 pl-3 border-l-2 border-slate-100 dark:border-slate-700">
+                                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 pt-1 pb-0.5">Subcategorias</p>
                                 {subs.map(sub => (
-                                  <span key={sub.name} className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/60 rounded-full px-2 py-0.5">
-                                    {sub.name} · {fmt(sub.total)}
-                                  </span>
+                                  <div key={sub.name} className="flex items-center gap-2 py-1">
+                                    <Tag className="h-3 w-3 text-slate-400 shrink-0" />
+                                    <span className="flex-1 min-w-0 text-[13px] text-slate-600 dark:text-slate-300 truncate">{sub.name}</span>
+                                    <span className="text-[11px] text-slate-400 shrink-0">{sub.count} {sub.count === 1 ? 'lançamento' : 'lançamentos'}</span>
+                                    <span className="text-[13px] font-medium tabular-nums text-slate-700 dark:text-slate-200 shrink-0 w-24 text-right">{fmt(sub.total)}</span>
+                                  </div>
                                 ))}
+                                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 pt-2">Lançamentos</p>
                               </div>
                             )}
                             {renderTxList(txs)}

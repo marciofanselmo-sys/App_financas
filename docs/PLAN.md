@@ -280,13 +280,13 @@
 
 ---
 
-## 🔲 M17 — Importação: Expansão de Bancos
+## 🚧 M17 — Importação: Expansão de Bancos
 **Branch:** `feat/import-banks`
 **Objetivo:** Suportar os principais bancos brasileiros com parsers dedicados.
 
-- [ ] Integrar `parse-mercadopago-pdf.ts` na UI de importação (parser existe, falta o botão)
+- [x] Integrar `parse-mercadopago-pdf.ts` na UI de importação (detectado automaticamente no upload de PDF)
 - [ ] Mercado Pago: validar e testar com extratos reais
-- [ ] Pesquisar e implementar parser para Nubank CSV (formato específico)
+- [x] Parser Nubank (cartão e conta corrente) — também entraram Inter (PDF e extrato) e Itaú (extrato PDF)
 - [ ] Pesquisar e implementar parser para XP Investimentos
 - [ ] Documentar formato esperado de cada banco na tela de importação
 
@@ -309,21 +309,21 @@
 
 ---
 
-## 🔲 M19 — SaaS: Produto Comercial
+## 🚧 M19 — SaaS: Produto Comercial
 **Branch:** `feat/saas-commercial`
 **Objetivo:** App pronto para receber usuários pagantes com landing page e assinatura.
 
 - [x] Funil de vendas mapeado como estratégia comercial: `@no.blesse` (orgânico + Meta Ads) → Quiz diagnóstico financeiro → Página de resultado personalizada → Checkout Cakto → Onboarding → Retenção
 - [x] Mapa mental do funil documentado em `mapa-mental-funil.html` (fora da pasta `gestao-financeira`, em `~/Gestão Financeira /funil-de-vendas/`)
 - [x] Posicionamento e preço confirmados: R$29,90/mês via Cakto, identidade "Controle financeiro" via canal `@no.blesse`
-- [ ] Landing page pública (`/`) com proposta de valor, features e CTA
-- [ ] Página de pricing com planos (gratuito / premium)
-- [ ] Integração com sistema de pagamento (Cakto)
-- [ ] Quiz diagnóstico financeiro (etapa do funil antes do checkout)
-- [ ] Onboarding guiado (wizard passo a passo para novos usuários)
-- [ ] E-mail de boas-vindas após cadastro
-- [ ] Proteção de features premium por plano
-- [ ] Página de sucesso pós-assinatura
+- [x] Landing page pública (`/`) com proposta de valor, features e CTA (`components/landing/`)
+- [x] Seção de preços com os planos Essencial e Completo (`pricing-section.tsx`)
+- [x] Integração com a Cakto: checkout (`/assinar`) e webhook que libera/renova/encerra o plano (`lib/cakto/`) — falta a conta do produtor ser aprovada para vender
+- [ ] Quiz diagnóstico financeiro (etapa do funil antes do checkout) — `/quiz` já é rota pública no middleware, mas a página não existe neste app
+- [x] Onboarding guiado para novos usuários (`onboarding-modal.tsx`, no Dashboard)
+- [x] E-mails transacionais pela Resend: boas-vindas com link de acesso após a compra, plano liberado, renovação, pagamento atrasado, assinatura encerrada — entrega testada em produção em 27/09/2026
+- [x] Proteção de features por plano (`components/plan/plan-gate.tsx`, `with-plan.tsx`)
+- [x] Páginas pós-assinatura: `/obrigado` e `/primeiro-acesso`
 
 **Commit final:** `feat: landing page, pricing e integração de pagamento`
 
@@ -349,8 +349,8 @@
 | M14 | Configurações & Perfil | ✅ Concluído |
 | M15 | Painel de Admin | ✅ Concluído |
 | M16 | Navegação Mobile Melhorada | 🚧 Parcial |
-| M17 | Importação: Expansão de Bancos | 🔲 Pendente |
+| M17 | Importação: Expansão de Bancos | 🚧 Parcial |
 | M18 | Manual do Usuário Completo | 🔲 Pendente |
-| M19 | SaaS: Produto Comercial | 🔲 Pendente |
+| M19 | SaaS: Produto Comercial | 🚧 Parcial |
 
 > **15 de 19 milestones concluídos.**
