@@ -694,7 +694,7 @@ function FixedChargesReport({ boardId, excludeBoardIds }: { boardId: string; exc
     <div className="space-y-6">
       <ReportHeader
         title="Relatório de Gastos Fixos"
-        subtitle={`${confirmed.length} confirmados · ${pending.length} aguardando revisão`}
+        subtitle={`${confirmed.length} ${confirmed.length === 1 ? 'gasto confirmado' : 'gastos confirmados'} como fixo`}
       />
 
       <div className="grid grid-cols-2 gap-3">
@@ -749,51 +749,30 @@ function FixedChargesReport({ boardId, excludeBoardIds }: { boardId: string; exc
         </div>
       )}
 
-      {pending.length > 0 && (
-        <div>
-          <h3 className="text-sm font-bold text-amber-500 dark:text-amber-400 print:text-amber-600 uppercase tracking-wide mb-3">
-            Aguardando Revisão ({pending.length})
-          </h3>
-          <div className="border border-amber-200 dark:border-amber-800/40 print:border-amber-200 rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-amber-50 dark:bg-amber-900/20 print:bg-amber-50">
-                <tr>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-amber-600 dark:text-amber-400 print:text-amber-600 uppercase tracking-wide">Descrição</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-amber-600 dark:text-amber-400 print:text-amber-600 uppercase tracking-wide">Categoria</th>
-                  <th className="text-center px-4 py-2.5 text-xs font-semibold text-amber-600 dark:text-amber-400 print:text-amber-600 uppercase tracking-wide">Meses</th>
-                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-amber-600 dark:text-amber-400 print:text-amber-600 uppercase tracking-wide">Média/mês</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-amber-100 dark:divide-amber-900/30 print:divide-amber-100">
-                {pending.map((item, i) => (
-                  <tr key={i}>
-                    <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300 print:text-slate-700">
-                      <div>{item.name}</div>
-                      {item.isGroup && (
-                        <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">{item.descriptions.join(', ')}</div>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400 print:text-slate-500 text-xs">{categoryCell(item)}</td>
-                    <td className="px-4 py-2.5 text-center text-slate-500 dark:text-slate-400 print:text-slate-500">{item.monthsCount}</td>
-                    <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(item.avgAmount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {confirmed.length === 0 && pending.length === 0 && (
-        <EmptyState
-          icon={RefreshCw}
-          iconColor="text-sky-500"
-          iconBg="bg-sky-50 dark:bg-sky-500/15"
-          title="Nenhuma cobrança fixa detectada"
-          description="O app detecta automaticamente despesas que aparecem em 2+ meses. Importe seus extratos para começar."
-          primaryLabel="Importar extrato"
-          primaryHref="/transactions"
-        />
+      {/* Sugestões ainda não revisadas ficam só em /fixos — o relatório mostra
+          apenas o que o usuário confirmou como fixo. */}
+      {confirmed.length === 0 && (
+        pending.length > 0 ? (
+          <EmptyState
+            icon={RefreshCw}
+            iconColor="text-sky-500"
+            iconBg="bg-sky-50 dark:bg-sky-500/15"
+            title="Nenhum gasto fixo confirmado"
+            description={`Há ${pending.length} ${pending.length === 1 ? 'sugestão' : 'sugestões'} de gasto fixo para revisar. Confirme as que são fixas para elas aparecerem aqui.`}
+            primaryLabel="Revisar gastos fixos"
+            primaryHref="/fixos"
+          />
+        ) : (
+          <EmptyState
+            icon={RefreshCw}
+            iconColor="text-sky-500"
+            iconBg="bg-sky-50 dark:bg-sky-500/15"
+            title="Nenhuma cobrança fixa detectada"
+            description="O app detecta automaticamente despesas que aparecem em 2+ meses. Importe seus extratos para começar."
+            primaryLabel="Importar extrato"
+            primaryHref="/transactions"
+          />
+        )
       )}
     </div>
   )
