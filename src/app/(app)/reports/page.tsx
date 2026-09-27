@@ -301,6 +301,29 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
 }
 
 // ── Relatório Anual ───────────────────────────────────────────────────────────
+// Valor com "R$" no desktop e na impressão; só o número no celular, onde o
+// cabeçalho da tabela já diz a moeda.
+const fmtNum = (v: number) =>
+  new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
+function Money({ v }: { v: number }) {
+  return (
+    <>
+      <span className="sm:hidden print:hidden">{fmtNum(v)}</span>
+      <span className="hidden sm:inline print:inline">{fmt(v)}</span>
+    </>
+  )
+}
+
+// No celular não cabem Média/mês e % Total como colunas: vão numa linha
+// pequena embaixo do total.
+function MobileAvgPct({ amount, months, total }: { amount: number; months: number; total: number }) {
+  return (
+    <span className="block sm:hidden print:hidden text-[11px] font-normal text-slate-400 dark:text-slate-500">
+      {fmt(amount / months)}/mês · {total > 0 ? fmtPct(amount / total) : '—'}
+    </span>
+  )
+}
+
 function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardId: string; excludeBoardIds: string[] }) {
   const txFilters = {
     board_id: boardId !== 'all' ? boardId : undefined,
@@ -424,33 +447,36 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
       )}
 
       <div>
-        <h3 className={secTitle}>Evolução Mensal</h3>
+        <h3 className={secTitle}>Evolução Mensal <span className="sm:hidden normal-case font-normal text-slate-400">(R$)</span></h3>
         <div className={table}>
-          <table className="w-full text-sm">
+          <table className="w-full text-xs sm:text-sm">
             <thead className={thead}>
               <tr>
-                <th className={`text-left px-4 py-2.5 ${th}`}>Mês</th>
-                <th className={`text-right px-4 py-2.5 ${th}`}>Receitas</th>
-                <th className={`text-right px-4 py-2.5 ${th}`}>Despesas</th>
-                <th className={`text-right px-4 py-2.5 ${th}`}>Saldo</th>
+                <th className={`text-left px-2 sm:px-4 py-2.5 ${th}`}>Mês</th>
+                <th className={`text-right px-2 sm:px-4 py-2.5 ${th}`}>Receitas</th>
+                <th className={`text-right px-2 sm:px-4 py-2.5 ${th}`}>Despesas</th>
+                <th className={`text-right px-2 sm:px-4 py-2.5 ${th}`}>Saldo</th>
               </tr>
             </thead>
             <tbody className={tdiv}>
               {monthly.map(m => (
                 <tr key={m.month} className={`hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors ${m.income === 0 && m.expenses === 0 ? 'opacity-40' : ''}`}>
-                  <td className="px-4 py-2.5 font-medium text-slate-700 dark:text-slate-300 print:text-slate-700">{MONTH_NAMES[m.month - 1]}</td>
-                  <td className="px-4 py-2.5 text-right text-emerald-600 dark:text-emerald-400 print:text-emerald-600 font-semibold">{m.income > 0 ? fmt(m.income) : '—'}</td>
-                  <td className="px-4 py-2.5 text-right text-red-500 font-semibold">{m.expenses > 0 ? fmt(m.expenses) : '—'}</td>
-                  <td className={`px-4 py-2.5 text-right font-bold ${m.balance >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500'}`}>
-                    {m.income > 0 || m.expenses > 0 ? fmt(m.balance) : '—'}
+                  <td className="px-2 sm:px-4 py-2.5 font-medium text-slate-700 dark:text-slate-300 print:text-slate-700">
+                    <span className="sm:hidden print:hidden capitalize">{MONTH_SHORT[m.month - 1]}</span>
+                    <span className="hidden sm:inline print:inline">{MONTH_NAMES[m.month - 1]}</span>
+                  </td>
+                  <td className="px-2 sm:px-4 py-2.5 text-right text-emerald-600 dark:text-emerald-400 print:text-emerald-600 font-semibold">{m.income > 0 ? <Money v={m.income} /> : '—'}</td>
+                  <td className="px-2 sm:px-4 py-2.5 text-right text-red-500 font-semibold">{m.expenses > 0 ? <Money v={m.expenses} /> : '—'}</td>
+                  <td className={`px-2 sm:px-4 py-2.5 text-right font-bold ${m.balance >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500'}`}>
+                    {m.income > 0 || m.expenses > 0 ? <Money v={m.balance} /> : '—'}
                   </td>
                 </tr>
               ))}
               <tr className={tfoot}>
-                <td className="px-4 py-2.5 text-slate-700 dark:text-slate-200 print:text-slate-700">Total {year}</td>
-                <td className="px-4 py-2.5 text-right text-emerald-600 dark:text-emerald-400 print:text-emerald-600">{fmt(totalIncome)}</td>
-                <td className="px-4 py-2.5 text-right text-red-500">{fmt(totalExpenses)}</td>
-                <td className={`px-4 py-2.5 text-right ${totalBalance >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500'}`}>{fmt(totalBalance)}</td>
+                <td className="px-2 sm:px-4 py-2.5 text-slate-700 dark:text-slate-200 print:text-slate-700">Total<span className="hidden sm:inline print:inline"> {year}</span></td>
+                <td className="px-2 sm:px-4 py-2.5 text-right text-emerald-600 dark:text-emerald-400 print:text-emerald-600"><Money v={totalIncome} /></td>
+                <td className="px-2 sm:px-4 py-2.5 text-right text-red-500"><Money v={totalExpenses} /></td>
+                <td className={`px-2 sm:px-4 py-2.5 text-right ${totalBalance >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500'}`}><Money v={totalBalance} /></td>
               </tr>
             </tbody>
           </table>
@@ -467,34 +493,40 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
             <table className="w-full text-sm">
               <thead className={thead}>
                 <tr>
-                  <th className={`text-left px-4 py-2.5 ${th}`}>Categoria</th>
-                  <th className={`text-right px-4 py-2.5 ${th}`}>Total</th>
-                  <th className={`text-right px-4 py-2.5 ${th}`}>Média/mês</th>
-                  <th className={`text-right px-4 py-2.5 ${th}`}>% Total</th>
+                  <th className={`text-left px-2.5 sm:px-4 py-2.5 ${th}`}>Categoria</th>
+                  <th className={`text-right px-2.5 sm:px-4 py-2.5 ${th}`}>Total</th>
+                  <th className={`hidden sm:table-cell print:table-cell text-right px-2.5 sm:px-4 py-2.5 ${th}`}>Média/mês</th>
+                  <th className={`hidden sm:table-cell print:table-cell text-right px-2.5 sm:px-4 py-2.5 ${th}`}>% Total</th>
                 </tr>
               </thead>
               <tbody className={tdiv}>
                 {byCategory.map(cat => (
                   <Fragment key={cat.name}>
                     <tr className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-                      <td className="px-4 py-2.5 font-medium text-slate-700 dark:text-slate-300 print:text-slate-700">{cat.name}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(cat.amount)}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{fmt(cat.amount / monthsForAvg)}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">
+                      <td className="px-2.5 sm:px-4 py-2.5 font-medium text-slate-700 dark:text-slate-300 print:text-slate-700">{cat.name}</td>
+                      <td className="px-2.5 sm:px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">
+                        {fmt(cat.amount)}
+                        <MobileAvgPct amount={cat.amount} months={monthsForAvg} total={totalExpenses} />
+                      </td>
+                      <td className="hidden sm:table-cell print:table-cell px-2.5 sm:px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{fmt(cat.amount / monthsForAvg)}</td>
+                      <td className="hidden sm:table-cell print:table-cell px-2.5 sm:px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">
                         {totalExpenses > 0 ? fmtPct(cat.amount / totalExpenses) : '—'}
                       </td>
                     </tr>
                     {cat.subs.map(([sub, amount]) => (
                       <tr key={`${cat.name}|${sub}`} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-                        <td className="pl-9 pr-4 py-2 text-xs text-slate-500 dark:text-slate-400 print:text-slate-500">
+                        <td className="pl-7 sm:pl-9 pr-2.5 sm:pr-4 py-2 text-xs text-slate-500 dark:text-slate-400 print:text-slate-500">
                           <div className="flex items-center gap-2">
                             <Tag className="h-3 w-3 text-slate-400 shrink-0" />
                             {sub}
                           </div>
                         </td>
-                        <td className="px-4 py-2 text-right text-xs text-slate-500 dark:text-slate-400 print:text-slate-500">{fmt(amount)}</td>
-                        <td className="px-4 py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">{fmt(amount / monthsForAvg)}</td>
-                        <td className="px-4 py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">
+                        <td className="px-2.5 sm:px-4 py-2 text-right text-xs text-slate-500 dark:text-slate-400 print:text-slate-500">
+                          {fmt(amount)}
+                          <MobileAvgPct amount={amount} months={monthsForAvg} total={totalExpenses} />
+                        </td>
+                        <td className="hidden sm:table-cell print:table-cell px-2.5 sm:px-4 py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">{fmt(amount / monthsForAvg)}</td>
+                        <td className="hidden sm:table-cell print:table-cell px-2.5 sm:px-4 py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">
                           {totalExpenses > 0 ? fmtPct(amount / totalExpenses) : '—'}
                         </td>
                       </tr>
@@ -502,10 +534,13 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
                   </Fragment>
                 ))}
                 <tr className={tfoot}>
-                  <td className="px-4 py-2.5 text-slate-700 dark:text-slate-200 print:text-slate-700">Total</td>
-                  <td className="px-4 py-2.5 text-right text-red-500">{fmt(totalExpenses)}</td>
-                  <td className="px-4 py-2.5 text-right text-red-500">{fmt(totalExpenses / monthsForAvg)}</td>
-                  <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{totalExpenses > 0 ? fmtPct(1) : '—'}</td>
+                  <td className="px-2.5 sm:px-4 py-2.5 text-slate-700 dark:text-slate-200 print:text-slate-700">Total</td>
+                  <td className="px-2.5 sm:px-4 py-2.5 text-right text-red-500">
+                    {fmt(totalExpenses)}
+                    <MobileAvgPct amount={totalExpenses} months={monthsForAvg} total={totalExpenses} />
+                  </td>
+                  <td className="hidden sm:table-cell print:table-cell px-2.5 sm:px-4 py-2.5 text-right text-red-500">{fmt(totalExpenses / monthsForAvg)}</td>
+                  <td className="hidden sm:table-cell print:table-cell px-2.5 sm:px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{totalExpenses > 0 ? fmtPct(1) : '—'}</td>
                 </tr>
               </tbody>
             </table>
@@ -966,7 +1001,7 @@ function ReportsPage() {
       </div>
 
       {/* Conteúdo */}
-      <div className="bg-white dark:bg-[#111c2d] print:bg-white rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] print:border-0 print:shadow-none p-6 print:p-0">
+      <div className="bg-white dark:bg-[#111c2d] print:bg-white rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] print:border-0 print:shadow-none p-3 sm:p-6 print:p-0">
         {type === 'mensal'   && <MonthlyReport month={month} year={year} boardId={boardId} excludeBoardIds={excludeBoardIds} />}
         {type === 'anual'    && <AnnualReport year={year} boardId={boardId} excludeBoardIds={excludeBoardIds} />}
         {type === 'parcelas' && <InstallmentsReport boardId={boardId} excludeBoardIds={excludeBoardIds} />}
