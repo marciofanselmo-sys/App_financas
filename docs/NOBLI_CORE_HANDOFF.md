@@ -67,8 +67,9 @@ O identificador único da pessoa é o **`auth.users.id` (uuid)**. O e-mail é
 
 - Acesso por **MCP remoto** (`https://mcp.cakto.com.br`) com chave de API de
   escopos `read write products offers orders webhooks`. **Sem** `withdrawals_write`.
-- A API pública **não expõe coprodução** — auditado: não existe endpoint de
-  coprodutor, convite ou split. Ver **H**.
+- A API pública **não expõe equipe nem permissões** — auditado nos 59 endpoints:
+  produtos, ofertas, pedidos, assinaturas, webhooks, financeiro. Acesso de
+  segundo usuário só pelo painel. Ver **H**.
 
 ## F. Produto na Cakto
 
@@ -102,29 +103,25 @@ Completo anual    https://pay.cakto.com.br/pi5nfna
 
 Exemplo: `https://pay.cakto.com.br/3jedo3p?utm_source=lp_direta&utm_campaign=lancamento&sck=lp01_v2`
 
-## H. Coprodução — **AÇÃO HUMANA NECESSÁRIA**
+## H. Acesso do segundo sócio à Cakto
 
-A API pública da Cakto **não suporta** criar, consultar ou aceitar coprodução.
-Foi verificado na integração, não presumido. Portanto isso **não pode** ser
-feito por nenhum agente: é painel, na mão, pelo dono do produto.
+**Coprodução não será usada.** Decisão dos sócios em 27/09/2026. A divisão da
+receita é tratada entre eles, fora da plataforma. O core não calcula split, não
+cria segunda venda para representar comissão e não tem tabela de comissão. Uma
+venda é uma venda.
 
-Passo a passo (produtor):
-1. Painel da Cakto → Produtos → **NOBLI Essencial**.
-2. Aba **Coprodução** → **Convidar coprodutor**.
-3. E-mail exato da conta Cakto do segundo sócio.
-4. Percentual acordado — **AÇÃO HUMANA NECESSÁRIA: DEFINIR PERCENTUAL**. Nenhum
-   valor foi presumido.
-5. Conferir duração/condição do contrato e enviar.
-6. Repetir para **NOBLI Completo** (a coprodução é por produto).
+O acesso do segundo sócio é pela aba **Equipe** do painel:
+`fariafelipesouza@gmail.com`, convite **Ativo** desde 27/09/2026. Com isso ele
+edita pixel, visual do checkout e vitrine sem depender do outro sócio.
 
-Aceite (segundo sócio): Produtos → Minhas Coproduções → NOBLI → três pontos → aceitar.
+**A Cakto não oferece níveis de permissão** — o acesso de equipe é total ao
+painel, incluindo faturamento, vendas e clientes. Foi uma decisão consciente
+dos sócios, não um descuido. A API pública não expõe equipe nem permissões
+(auditado nos 59 endpoints), então isso só existe no painel.
 
-**Regras que o core respeita:** a divisão é da Cakto. O core não calcula split,
-não cria segunda venda para representar comissão, e não tem tabela de comissão.
-Uma venda é uma venda.
-
-**Coprodução não dá acesso técnico.** Não implica acesso ao banco, ao backend,
-aos secrets nem à edição do produto.
+**Acesso de painel não é acesso técnico.** Não implica acesso ao banco, ao
+backend nem aos secrets. Preço e oferta continuam sendo feitos pelo core via
+API.
 
 ## I. Webhook
 
@@ -371,41 +368,16 @@ específico, com escopo mínimo — nunca a chave de serviço.
 
 ---
 
-## CHECKLIST DA COPRODUÇÃO — status real
+## CHECKLIST DO ACESSO DO SEGUNDO SÓCIO — status real
 
-- [ ] Conta Cakto do segundo sócio ativa/aprovada — **não verificado** (não há API)
-- [x] Produto NOBLI localizado — dois produtos criados e ativos
-- [x] Convite enviado nos DOIS produtos (Essencial e Completo) — 27/09/2026
-- [ ] Área de Coprodução localizada — só existe no painel; não verificável por API
-- [ ] E-mail Cakto do segundo sócio confirmado — **não informado**
-- [ ] Percentual definido pelos sócios — **AÇÃO HUMANA NECESSÁRIA**
-- [ ] Condição/período confirmado
-- [ ] Convite enviado
-- [ ] Convite recebido
-- [ ] Coprodutor aceitou
-- [ ] Coprodução aparece como ativa
-- [ ] Venda de teste/validação planejada — planejada, ainda não executada
-- [ ] Split validado após transação válida
+- [x] Acesso de equipe concedido a `fariafelipesouza@gmail.com` — Ativo, 27/09/2026
+- [x] Dois produtos criados e ativos (NOBLI Essencial e NOBLI Completo)
+- [ ] Conta Cakto do produtor aprovada para venda — **bloqueado**: o campo
+      Sobrenome do cadastro não aceita edição, suporte acionado
+- [ ] 2FA ativado nas duas contas — recomendado, já que o acesso de equipe é total
+- [ ] Venda de teste real em produção, com reembolso pela garantia
 
-**Registro da configuração** (27/09/2026):
-`COPRODUÇÃO STATUS: convites enviados, aguardando aceite · PRODUTOR: conta
-Cakto do sócio técnico · COPRODUTOR: fariafelipesouza@gmail.com · PERCENTUAL:
-a confirmar pelos sócios · DATA DE ATIVAÇÃO: — · CONDIÇÃO: duração eterna,
-comissões sobre vendas do produtor`
-
-**Coprodução não dá acesso de edição** ao produto na Cakto — foi verificado na
-prática. O coprodutor vê vendas e comissões, mas não edita produto, preço,
-checkout nem pixel.
-
-**Resolvido pela aba Equipe** (27/09/2026): `fariafelipesouza@gmail.com` foi
-convidado em Equipe e o convite está **Ativo**. A Cakto não oferece níveis de
-permissão — o acesso é total ao painel, e os sócios decidiram assim
-conscientemente. Com isso o segundo sócio edita pixel e visual do checkout
-diretamente, sem depender do produtor.
-
-Equipe e coprodução são independentes: Equipe dá acesso ao painel, coprodução
-divide a receita. Uma não substitui a outra. Preço e oferta continuam sendo
-feitos pelo core via API.
+Coprodução foi descartada — ver **H**.
 
 ---
 
@@ -419,7 +391,7 @@ feitos pelo core via API.
 
 ## Ações que dependem dos sócios (nenhum agente resolve)
 
-1. **Coprodução na Cakto**, incluindo o percentual.
+1. **Aprovação da conta Cakto para venda** (cadastro do produtor bloqueado).
 2. **Assinar o Supabase Pro** para ter backup.
 3. **Compra de teste real** em produção, com reembolso pela garantia.
 4. Decidir o **domínio oficial** e quem responde na raiz.
