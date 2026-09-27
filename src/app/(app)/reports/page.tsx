@@ -103,32 +103,29 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
   const score    = calcHealthScore(income, expenses)
   const { label: scoreLabel } = scoreConfig(score ?? 0)
 
+  // Soma pela categoria-mãe (lançamento em "Mercado" conta em "Alimentação")
+  // e guarda o detalhe por subcategoria dentro dela — mesma lógica da Análise.
   const byCategory = useMemo(() => {
-    const map: Record<string, number> = {}
+    const mothers = motherNameByCategory(categories)
+    const map: Record<string, { total: number; subs: Record<string, number> }> = {}
     transactions.filter(t => t.type === 'despesa').forEach(t => {
-      map[t.category] = (map[t.category] ?? 0) + Number(t.amount)
+      const amt = Number(t.amount)
+      const mother = motherOf(t.category, mothers, t.type)
+      const bucket = map[mother] ?? (map[mother] = { total: 0, subs: {} })
+      bucket.total += amt
+      if (t.category !== mother) bucket.subs[t.category] = (bucket.subs[t.category] ?? 0) + amt
     })
     return Object.entries(map)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, amount]) => ({
-        name, amount,
-        pct: expenses > 0 ? amount / expenses : 0,
+      .sort((a, b) => b[1].total - a[1].total)
+      .map(([name, b]) => ({
+        name,
+        amount: b.total,
+        pct: expenses > 0 ? b.total / expenses : 0,
         color: categories.find(c => c.name === name)?.color ?? '#6b7280',
+        subs: Object.entries(b.subs)
+          .sort((x, y) => y[1] - x[1])
+          .map(([sub, amount]) => ({ name: sub, amount, pct: expenses > 0 ? amount / expenses : 0 })),
       }))
-  }, [transactions, expenses, categories])
-
-  // Recorte transversal por subcategoria (Recorrências) — uma transação já
-  // conta na categoria dela em byCategory; isso é só informativo, não soma
-  // no total de despesas, mesmo princípio usado em /planning.
-  const bySubcategory = useMemo(() => {
-    const subNames = new Set(categories.filter(c => c.parent_id).map(c => c.name))
-    const map: Record<string, number> = {}
-    transactions.filter(t => t.type === 'despesa' && subNames.has(t.category)).forEach(t => {
-      map[t.category] = (map[t.category] ?? 0) + Number(t.amount)
-    })
-    return Object.entries(map)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, amount]) => ({ name, amount, pct: expenses > 0 ? amount / expenses : 0 }))
   }, [transactions, expenses, categories])
 
   const categoryLimits = plan?.category_limits ?? {}
@@ -178,6 +175,9 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
       {byCategory.length > 0 && (
         <div>
           <h3 className={secTitle}>Gastos por Categoria</h3>
+          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 -mt-2 mb-3">
+            Subcategorias aparecem dentro da categoria e já estão somadas no total dela.
+          </p>
           <div className={table}>
             <table className="w-full text-sm">
               <thead className={thead}>
@@ -190,21 +190,40 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
               </thead>
               <tbody className={tdiv}>
                 {byCategory.map(cat => (
-                  <tr key={cat.name} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-                    <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300 print:text-slate-700">
-                      <div className="flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                        {cat.name}
-                      </div>
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(cat.amount)}</td>
-                    <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{fmtPct(cat.pct)}</td>
-                    {hasPlanned && (
-                      <td className="px-4 py-2.5 text-right text-slate-400 dark:text-slate-500 print:text-slate-400">
-                        {categoryLimits[cat.name] ? fmt(Number(categoryLimits[cat.name])) : '—'}
+                  <Fragment key={cat.name}>
+                    <tr className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+                      <td className="px-4 py-2.5 font-medium text-slate-700 dark:text-slate-300 print:text-slate-700">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                          {cat.name}
+                        </div>
                       </td>
-                    )}
-                  </tr>
+                      <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(cat.amount)}</td>
+                      <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{fmtPct(cat.pct)}</td>
+                      {hasPlanned && (
+                        <td className="px-4 py-2.5 text-right text-slate-400 dark:text-slate-500 print:text-slate-400">
+                          {categoryLimits[cat.name] ? fmt(Number(categoryLimits[cat.name])) : '—'}
+                        </td>
+                      )}
+                    </tr>
+                    {cat.subs.map(sub => (
+                      <tr key={`${cat.name}|${sub.name}`} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+                        <td className="pl-9 pr-4 py-2 text-xs text-slate-500 dark:text-slate-400 print:text-slate-500">
+                          <div className="flex items-center gap-2">
+                            <Tag className="h-3 w-3 text-slate-400 shrink-0" />
+                            {sub.name}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 text-right text-xs text-slate-500 dark:text-slate-400 print:text-slate-500">{fmt(sub.amount)}</td>
+                        <td className="px-4 py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">{fmtPct(sub.pct)}</td>
+                        {hasPlanned && (
+                          <td className="px-4 py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">
+                            {categoryLimits[subKey(sub.name)] ? fmt(Number(categoryLimits[subKey(sub.name)])) : '—'}
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </Fragment>
                 ))}
                 <tr className={tfoot}>
                   <td className="px-4 py-2.5 text-slate-700 dark:text-slate-200 print:text-slate-700">Total</td>
@@ -212,47 +231,6 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
                   <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">100%</td>
                   {hasPlanned && <td />}
                 </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Gastos por subcategoria — recorte transversal, fora do total */}
-      {bySubcategory.length > 0 && (
-        <div>
-          <h3 className={secTitle}>Gastos por Subcategoria</h3>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 -mt-2 mb-3">
-            Recorte transversal (Recorrências) — uma transação já conta na categoria dela acima; isso não soma no total de despesas.
-          </p>
-          <div className={table}>
-            <table className="w-full text-sm">
-              <thead className={thead}>
-                <tr>
-                  <th className={`text-left px-4 py-2.5 ${th}`}>Subcategoria</th>
-                  <th className={`text-right px-4 py-2.5 ${th}`}>Valor</th>
-                  <th className={`text-right px-4 py-2.5 ${th}`}>% Despesas</th>
-                  {hasPlanned && <th className={`text-right px-4 py-2.5 ${th}`}>Planejado</th>}
-                </tr>
-              </thead>
-              <tbody className={tdiv}>
-                {bySubcategory.map(sub => (
-                  <tr key={sub.name} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-                    <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300 print:text-slate-700">
-                      <div className="flex items-center gap-2">
-                        <Tag className="h-3 w-3 text-slate-400 shrink-0" />
-                        {sub.name}
-                      </div>
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(sub.amount)}</td>
-                    <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{fmtPct(sub.pct)}</td>
-                    {hasPlanned && (
-                      <td className="px-4 py-2.5 text-right text-slate-400 dark:text-slate-500 print:text-slate-400">
-                        {categoryLimits[subKey(sub.name)] ? fmt(Number(categoryLimits[subKey(sub.name)])) : '—'}
-                      </td>
-                    )}
-                  </tr>
-                ))}
               </tbody>
             </table>
           </div>
