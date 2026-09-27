@@ -50,6 +50,14 @@ function posRow(pos: RICOPosition) {
 
 // Rendimentos/dividendos/JCP já provisionados, ainda não pagos — só existe
 // quando a corretora antecipa a informação no arquivo de posição.
+// A corretora manda o evento em caixa alta ("JUROS SOBRE CAPITAL PROPRIO"),
+// longo demais pra caber numa linha no celular.
+function eventLabel(event: string): string {
+  const e = (event ?? '').trim()
+  if (/juros\s+sobre\s+capital/i.test(e)) return 'JCP'
+  return e.charAt(0).toUpperCase() + e.slice(1).toLowerCase()
+}
+
 export function ProventosBreakdown({ proventos }: { proventos: RICOProvento[] }) {
   const sorted = [...proventos].sort((a, b) => a.paymentDate.localeCompare(b.paymentDate))
   const total = proventos.reduce((s, p) => s + p.netValue, 0)
@@ -60,9 +68,11 @@ export function ProventosBreakdown({ proventos }: { proventos: RICOProvento[] })
         {sorted.map((p, i) => (
           <div key={`${p.ticker}-${p.paymentDate}-${i}`} className="flex items-center gap-2 text-sm">
             <span className="font-mono font-semibold text-xs bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-2 py-0.5 rounded w-16 text-center shrink-0">{p.ticker}</span>
-            <span className="text-xs text-slate-400 shrink-0">{p.event}</span>
-            <span className="text-xs text-slate-400 shrink-0 ml-auto">{formatDateBR(p.paymentDate)}</span>
-            <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 shrink-0 w-20 text-right">{formatCurrency(p.netValue)}</span>
+            <div className="min-w-0 flex-1 leading-tight">
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{eventLabel(p.event)}</p>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500">{formatDateBR(p.paymentDate)}</p>
+            </div>
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 shrink-0 text-right">{formatCurrency(p.netValue)}</span>
           </div>
         ))}
       </div>
