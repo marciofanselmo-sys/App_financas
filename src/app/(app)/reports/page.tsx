@@ -205,7 +205,6 @@ function CategoryTable({ title, rows, total, valueLabel, months, limits }: {
                         {hasSubs
                           ? <ChevronRight className={`h-3.5 w-3.5 text-slate-400 shrink-0 transition-transform print:hidden ${isOpen ? 'rotate-90' : ''}`} />
                           : <span className="w-3.5 shrink-0 print:hidden" />}
-                        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
                         <span>
                           {cat.name}
                           {hasSubs && !isOpen && (
