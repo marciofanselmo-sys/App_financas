@@ -12,9 +12,10 @@ import { DisplayItem, buildDisplayItems } from '@/lib/recurring-groups'
 import { useSubcategoryNames } from '@/hooks/use-subcategory-names'
 import { TransactionType } from '@/types'
 import {
-  RefreshCw, CheckCircle, EyeOff, Eye, AlertCircle, Clock,
-  Layers, Tag, ChevronDown, CreditCard, ArrowRight,
+  RefreshCw, CheckCircle, EyeOff, Eye, AlertCircle, RotateCcw,
+  Tag, ChevronDown, ChevronRight, CreditCard, ArrowRight,
   TrendingDown, TrendingUp, } from 'lucide-react'
+import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/components/ui/button'
 import { InfoBox } from '@/components/ui/info-box'
@@ -28,135 +29,119 @@ function formatDate(d: string): string {
   return `${day}/${m}/${y}`
 }
 
-// ── Card de item ──────────────────────────────────────────────────────────────
-function ItemCard({
-  item, decision, categoryPath, categoryColor, onConfirm, onIgnore, onUndo,
+// ── Linha de item (pendente ou confirmado) ───────────────────────────────────
+// Uma subcategoria (item.isGroup) abre para mostrar as descrições do extrato
+// que caem nela; uma descrição solta não tem o que abrir.
+function ItemRow({
+  item, pending, label, sublabel, onConfirm, onIgnore, onUndo,
 }: {
   item: DisplayItem
-  decision: 'confirmed' | 'ignored' | null
-  /** "Moradia › Aluguel" — o caminho da categoria do item. */
-  categoryPath: (name: string) => string
-  categoryColor: (name: string) => string
+  pending: boolean
+  label: string
+  /** Caminho da categoria, mostrado só na lista de revisão. */
+  sublabel?: string
   onConfirm: () => void
   onIgnore: () => void
   onUndo: () => void
 }) {
-  const [expanded, setExpanded] = useState(false)
-  const isPending = decision === null
-  const borderCls = item.isGroup
-    ? 'border-violet-200 dark:border-violet-800/50'
-    : isPending
-      ? 'border-amber-200 dark:border-amber-800/40'
-      : 'border-emerald-200 dark:border-emerald-800/40'
-
+  const [open, setOpen] = useState(false)
+  const valueColor = item.type === 'receita' ? 'text-green-600 dark:text-green-400' : 'text-red-500'
   return (
-    <div
-      className={cn(
-        'bg-white dark:bg-slate-800 rounded-2xl border shadow-sm p-4 group',
-        item.isGroup && 'cursor-pointer',
-        borderCls
-      )}
-      onClick={item.isGroup ? () => setExpanded(v => !v) : undefined}
-    >
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="min-w-0 flex items-start gap-3 flex-1">
-          <div className={cn(
-            'h-8 w-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5',
-            item.isGroup
-              ? 'bg-violet-50 dark:bg-violet-900/30'
-              : isPending
-                ? 'bg-amber-50 dark:bg-amber-900/20'
-                : 'bg-emerald-50 dark:bg-emerald-900/30'
-          )}>
-            {item.isGroup
-              ? <Layers className="h-4 w-4 text-violet-500" />
-              : isPending
-                ? <Clock className="h-4 w-4 text-amber-500" />
-                : <CheckCircle className="h-4 w-4 text-emerald-500" />}
-          </div>
-
-          <div className="min-w-0 flex-1">
-            <p className="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">{item.name}</p>
-
-            {/* Caminho da categoria. O agrupamento agora vem da própria
-                subcategoria: para mudar, é só trocar a categoria do
-                lançamento em Contas e Cartões. */}
-            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-              <span className="inline-flex items-center gap-1 text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-full">
-                <Tag className="h-2.5 w-2.5" />
-                {categoryPath(item.isGroup ? (item.subcategory ?? item.category) : item.category)}
-              </span>
-              {item.isGroup && (
-                <span className="flex items-center gap-0.5 text-xs text-slate-400">
-                  · {item.descriptions.length} descrições
-                  <ChevronDown className={cn('h-3 w-3 transition-transform', expanded && 'rotate-180')} />
-                </span>
-              )}
-            </div>
-
-            {item.isGroup && expanded && (
-              <div className="mt-2 space-y-0.5">
-                {item.descriptions.map(d => (
-                  <p key={d} className="text-xs text-slate-400 dark:text-slate-500 truncate">• {d}</p>
-                ))}
-              </div>
+    <div className="group rounded-xl px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          disabled={!item.isGroup}
+          onClick={() => setOpen(v => !v)}
+          className="flex-1 min-w-0 text-left disabled:cursor-default"
+        >
+          <p className="text-sm text-slate-700 dark:text-slate-200 truncate flex items-center gap-1">
+            {label}
+            {item.isGroup && (
+              <ChevronRight className={cn('h-3.5 w-3.5 text-slate-400 shrink-0 transition-transform', open && 'rotate-90')} />
             )}
+          </p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate">
+            {sublabel && <>{sublabel} · </>}
+            {item.monthsCount}x · última {formatDate(item.lastDate)}
+            {item.isGroup && <> · {item.descriptions.length} descriç{item.descriptions.length === 1 ? 'ão' : 'ões'}</>}
+          </p>
+        </button>
 
-            <div className="flex items-center gap-3 mt-1.5">
-              <span className="flex items-center gap-1 text-xs text-slate-400">
-                <Clock className="h-3 w-3" />{item.monthsCount}x detectado
-              </span>
-              <span className="text-xs text-slate-400">última: {formatDate(item.lastDate)}</span>
-            </div>
-          </div>
-        </div>
+        <span className={cn('text-sm font-semibold tabular-nums shrink-0', valueColor)}>
+          {fmt(item.avgAmount)}
+        </span>
 
-        <div className="text-right shrink-0">
-          <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{fmt(item.avgAmount)}</p>
-          <p className="text-xs text-slate-400">média/mês</p>
-          {!isPending && item.isGroup && (
-            <button
-              type="button"
-              onClick={e => { e.stopPropagation(); onUndo() }}
-              title="Desfazer confirmação"
-              className="mt-1 inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <RefreshCw className="h-3 w-3" /> Desfazer
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100 dark:border-slate-700" onClick={e => e.stopPropagation()}>
-        {isPending ? (
-          <>
+        {pending ? (
+          <div className="flex items-center gap-1 shrink-0">
             <Button size="sm" variant="outline"
-              className="flex-1 h-8 text-xs gap-1.5 border-green-300 dark:border-green-700 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30"
+              className="h-7 text-xs gap-1 border-green-300 dark:border-green-700 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30"
               onClick={onConfirm}>
-              <CheckCircle className="h-3.5 w-3.5" /> Confirmar como fixo
+              <CheckCircle className="h-3.5 w-3.5" /> Confirmar
             </Button>
             <Button size="sm" variant="ghost"
-              className="h-8 text-xs gap-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-              onClick={onIgnore}>
-              <EyeOff className="h-3.5 w-3.5" /> Ignorar
+              className="h-7 w-7 p-0 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+              title="Ignorar" onClick={onIgnore}>
+              <EyeOff className="h-3.5 w-3.5" />
             </Button>
-          </>
-        ) : item.isGroup ? (
-          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300">
-            <span
-              className="h-1.5 w-1.5 rounded-full shrink-0"
-              style={{ backgroundColor: categoryColor(item.subcategory ?? item.category) }}
-            />
-            {categoryPath(item.subcategory ?? item.category)}
-          </span>
+          </div>
         ) : (
-          <Button size="sm" variant="ghost"
-            className="h-8 text-xs gap-1.5 text-slate-400 hover:text-slate-600"
-            onClick={onUndo}>
-            <RefreshCw className="h-3 w-3" /> Desfazer confirmação
-          </Button>
+          <button
+            type="button"
+            onClick={onUndo}
+            title="Desfazer confirmação"
+            className="shrink-0 h-7 w-7 flex items-center justify-center rounded-lg text-slate-300 hover:text-slate-600 dark:text-slate-600 dark:hover:text-slate-300 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
         )}
       </div>
+
+      {item.isGroup && open && (
+        <div className="mt-1.5 ml-1 space-y-0.5">
+          {item.descriptions.map(d => (
+            <p key={d} className="text-xs text-slate-400 dark:text-slate-500 truncate">• {d}</p>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Card de categoria (recolhido por padrão) ─────────────────────────────────
+function CategoryCard({
+  name, color, icon: Icon = Tag, summary, total, totalColor, children,
+}: {
+  name: string
+  color: string
+  icon?: React.ElementType
+  summary: string
+  total: number
+  totalColor: string
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors">
+      <button type="button" onClick={() => setOpen(v => !v)} className="w-full flex items-center gap-3 px-3 py-3 text-left">
+        {open ? <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" /> : <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />}
+        <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: color + '25' }}>
+          <Icon className="h-4 w-4" style={{ color }} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-sm text-slate-700 dark:text-slate-200 truncate">{name}</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{summary}</p>
+        </div>
+        <div className="text-right shrink-0">
+          <p className={cn('text-sm font-bold tabular-nums', totalColor)}>{fmt(total)}</p>
+          <p className="text-[11px] text-slate-400">por mês</p>
+        </div>
+      </button>
+      {open && (
+        <div className="pb-2 pl-10 pr-2">
+          <div className="border-l-2 border-slate-100 dark:border-white/[0.08] pl-2">{children}</div>
+        </div>
+      )}
     </div>
   )
 }
@@ -200,7 +185,7 @@ function FixosPage() {
     return mother ? `${mother.name} › ${cat!.name}` : name
   }
 
-  const [installmentsExpanded, setInstallmentsExpanded] = useState(false)
+  const mothers = useMemo(() => motherNameByCategory(categories), [categories])
 
 
   const [showIgnored, setShowIgnored] = useState<Set<TransactionType>>(new Set())
@@ -319,39 +304,51 @@ function FixosPage() {
     )
   }
 
-  const renderCards = (items: DisplayItem[], decision: 'confirmed' | 'ignored' | null) =>
-    items.map(item => (
-      <ItemCard
-        key={item.key}
-        item={item}
-        decision={decision}
-        categoryPath={categoryPath}
-        categoryColor={categoryColor}
-        onConfirm={() => handleConfirm(item)}
-        onIgnore={() => handleIgnore(item)}
-        onUndo={() => handleUndo(item)}
-      />
-    ))
+  const rowHandlers = (item: DisplayItem) => ({
+    onConfirm: () => handleConfirm(item),
+    onIgnore: () => handleIgnore(item),
+    onUndo: () => handleUndo(item),
+  })
+
+  // Confirmados organizados como na tela de Categorias: Categoria › Subcategoria.
+  // Uma subcategoria já chega como item agrupado; descrição solta fica sob a
+  // categoria-mãe em que está.
+  function byMother(items: DisplayItem[]) {
+    const map = new Map<string, DisplayItem[]>()
+    for (const item of items) {
+      const mother = motherOf(item.category, mothers, item.type)
+      const list = map.get(mother) ?? []
+      list.push(item)
+      map.set(mother, list)
+    }
+    return [...map.entries()]
+      .map(([name, list]) => ({
+        name,
+        items: list.sort((x, y) => y.avgAmount - x.avgAmount),
+        total: list.reduce((sum, i) => sum + i.avgAmount, 0),
+      }))
+      .sort((x, y) => y.total - x.total)
+  }
 
   const renderTypeSection = ({ type, label, icon: Icon, iconColor, iconBg, totalColor, help }: typeof TYPE_SECTIONS[number]) => {
-    const typePending   = pendingItems.filter(i => i.type === type)
     const typeConfirmed = confirmedItems.filter(i => i.type === type)
     const typeIgnored   = ignoredItems.filter(i => i.type === type)
     const showInstallments = type === 'despesa' && installments.length > 0
     const typeConfirmedTotal = typeConfirmed.reduce((s, i) => s + i.avgAmount, 0) + (type === 'despesa' ? installmentsMonthly : 0)
+    const groups = byMother(typeConfirmed)
 
-    if (typePending.length === 0 && typeConfirmed.length === 0 && typeIgnored.length === 0 && !showInstallments) {
+    if (typeConfirmed.length === 0 && typeIgnored.length === 0 && !showInstallments) {
       return null
     }
 
     return (
-      <section key={type} className="space-y-4">
+      <section key={type} className="space-y-3">
         <div>
           <div className="flex items-center gap-2">
             <div className={cn('h-7 w-7 rounded-lg flex items-center justify-center', iconBg)}>
               <Icon className={cn('h-4 w-4', iconColor)} />
             </div>
-            <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{label}</h2>
+            <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{label} fixas</h2>
             {typeConfirmedTotal > 0 && (
               <span className={cn('text-sm font-semibold ml-auto', totalColor)}>{fmt(typeConfirmedTotal)}/mês</span>
             )}
@@ -359,86 +356,65 @@ function FixosPage() {
           <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 ml-9">{help}</p>
         </div>
 
-        {/* Cartões & Parcelas — sempre conta como fixo, atualizado automaticamente */}
-        {showInstallments && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-emerald-500" />
-              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Cartões & Parcelas</p>
-              <span className="text-xs text-slate-400">(sempre fixo)</span>
-            </div>
+        {groups.length === 0 && !showInstallments && (
+          <p className="text-sm text-slate-400 dark:text-slate-500 ml-9">Nada confirmado ainda.</p>
+        )}
 
-            <div
-              className="bg-white dark:bg-slate-800 rounded-2xl border border-violet-200 dark:border-violet-800/50 shadow-sm p-4 cursor-pointer"
-              onClick={() => setInstallmentsExpanded(v => !v)}
+        <div className="space-y-2">
+          {groups.map(g => (
+            <CategoryCard
+              key={g.name}
+              name={g.name}
+              color={categoryColor(g.name)}
+              summary={`${g.items.length} fixo${g.items.length === 1 ? '' : 's'}`}
+              total={g.total}
+              totalColor={totalColor}
             >
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="min-w-0 flex items-start gap-3 flex-1">
-                  <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 bg-violet-50 dark:bg-violet-900/30">
-                    <CreditCard className="h-4 w-4 text-violet-500" />
+              {g.items.map(item => (
+                <ItemRow
+                  key={item.key}
+                  item={item}
+                  pending={false}
+                  label={item.name}
+                  {...rowHandlers(item)}
+                />
+              ))}
+            </CategoryCard>
+          ))}
+
+          {/* Cartões & Parcelas — sempre conta como fixo, sem confirmar */}
+          {showInstallments && (
+            <CategoryCard
+              name="Cartões & Parcelas"
+              color="#8b5cf6"
+              icon={CreditCard}
+              summary={`${installments.length} parcelamento${installments.length === 1 ? '' : 's'} ativo${installments.length === 1 ? '' : 's'} · sempre conta como fixo`}
+              total={installmentsMonthly}
+              totalColor={totalColor}
+            >
+              {installments.map(item => (
+                <div key={item.description} className="flex items-center gap-3 rounded-xl px-3 py-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-slate-700 dark:text-slate-200 truncate">{item.description}</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                      Parcela {item.currentInstallment}/{item.totalInstallments}
+                    </p>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-sm text-slate-800 dark:text-slate-100">Parcelamentos ativos este mês</p>
-                    {installmentsExpanded && (
-                      <div className="mt-2 space-y-0.5">
-                        {installments.map(item => (
-                          <p key={item.description} className="text-xs text-slate-400 dark:text-slate-500 truncate">
-                            • {item.description} ({item.currentInstallment}/{item.totalInstallments}) — {fmt(item.monthlyAmount)}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                    <div className="flex items-center gap-3 mt-1.5">
-                      <span className="flex items-center gap-1 text-xs text-slate-400">
-                        <Clock className="h-3 w-3" />{installments.length} ativo{installments.length !== 1 ? 's' : ''}
-                        <ChevronDown className={cn('h-3 w-3 transition-transform', installmentsExpanded && 'rotate-180')} />
-                      </span>
-                    </div>
-                  </div>
+                  <span className={cn('text-sm font-semibold tabular-nums shrink-0', totalColor)}>{fmt(item.monthlyAmount)}</span>
                 </div>
-
-                <div className="text-right shrink-0">
-                  <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{fmt(installmentsMonthly)}</p>
-                  <p className="text-xs text-slate-400">por mês</p>
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700" onClick={e => e.stopPropagation()}>
-                <Link
-                  href="/recurring"
-                  className="flex-1 h-8 text-xs gap-1.5 inline-flex items-center justify-center rounded-lg border border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/30 transition-colors"
-                >
-                  Ver em Cartões & Parcelas <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {typePending.length > 0 && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-amber-500" />
-              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Aguardando revisão</p>
-              <span className="text-xs text-slate-400">({typePending.length})</span>
-            </div>
-            {renderCards(typePending, null)}
-          </div>
-        )}
-
-        {typeConfirmed.length > 0 && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-emerald-500" />
-              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Confirmados como fixos</p>
-              <span className="text-xs text-slate-400">({typeConfirmed.length})</span>
-            </div>
-            {renderCards(typeConfirmed, 'confirmed')}
-          </div>
-        )}
+              ))}
+              <Link
+                href="/recurring"
+                className="ml-3 mt-1 inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 hover:underline"
+              >
+                Ver em Cartões & Parcelas <ArrowRight className="h-3 w-3" />
+              </Link>
+            </CategoryCard>
+          )}
+        </div>
 
         {typeIgnored.length > 0 && (
-          <div className="pt-2">
+          <div className="pt-1">
             <button
               onClick={() => toggleIgnored(type)}
               className="flex items-center gap-2 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
@@ -475,27 +451,29 @@ function FixosPage() {
         <div>
           <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Recorrências</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Receitas e despesas fixas detectadas nos últimos 12 meses — organizadas por tipo, cada uma com sua própria categoria
+            Receitas e despesas fixas detectadas nos últimos 12 meses, organizadas por categoria e subcategoria
           </p>
         </div>
         <Link
-          href="/settings/subcategories"
-          className="shrink-0 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium border border-violet-200 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+          href="/settings/categories"
+          className="shrink-0 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
         >
           <Tag className="h-4 w-4" />
-          Subcategorias
+          Categorias
         </Link>
       </div>
 
       {/* Explicação — essa tela tem bastante lógica não óbvia por trás */}
       <InfoBox id="fixos-como-funciona">
         <p className="text-blue-600 dark:text-blue-400">
-          O app detecta sozinho qualquer descrição que se repete em 2 ou mais meses seguidos e mostra como &ldquo;Aguardando revisão&rdquo;. Ao clicar em <strong>Confirmar como fixo</strong>, todas as transações passadas com essa descrição são marcadas como recorrentes — e futuras importações da mesma descrição já entram marcadas, sem precisar confirmar de novo. <strong>Ignorar</strong> só tira da lista de pendentes (dá pra restaurar depois); não apaga nem altera a transação além disso.
+          O app detecta sozinho qualquer descrição que se repete em 2 ou mais meses seguidos e mostra em &ldquo;Para revisar&rdquo;. Ao clicar em <strong>Confirmar</strong>, todas as transações passadas com essa descrição são marcadas como recorrentes — e futuras importações da mesma descrição já entram marcadas, sem precisar confirmar de novo. <strong>Ignorar</strong> só tira da lista de pendentes (dá pra restaurar depois); não apaga nem altera a transação além disso.
         </p>
         <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
-          <p className="font-semibold mb-1">Por que três seções?</p>
+          <p className="font-semibold mb-1">Como fica organizado</p>
           <p className="text-blue-600 dark:text-blue-400">
-            Receita e despesa têm naturezas diferentes, então cada uma tem sua própria lista de pendentes/confirmados/ignorados. Só o lado de <strong>Despesas</strong> entra no número &ldquo;Despesas fixas / mês&rdquo; aqui em cima e no campo &ldquo;Gastos Previstos&rdquo; do Planejamento — confirmar uma receita fixa não afeta esses totais, é só pra você identificar o padrão.
+            O que já é fixo aparece por categoria, igual à tela de Categorias: abra uma categoria para ver as subcategorias
+            e, clicando numa subcategoria, as descrições do extrato que entram nela. Só o lado de <strong>Despesas</strong> entra
+            em &ldquo;Despesa fixa / mês&rdquo; e no &ldquo;Gastos Previstos&rdquo; do Planejamento.
           </p>
         </div>
         <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
@@ -538,6 +516,30 @@ function FixosPage() {
           secondaryLabel="Como funciona"
           secondaryHref="/help"
         />
+      )}
+
+      {/* Para revisar — detectado, ainda sem decisão. Confirmar leva o item
+          para a árvore de categorias lá embaixo. */}
+      {pendingItems.length > 0 && (
+        <section className="bg-amber-50/60 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 rounded-xl p-3 space-y-1">
+          <div className="flex items-center gap-2 px-3 pt-1 pb-1">
+            <AlertCircle className="h-4 w-4 text-amber-500" />
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Para revisar</p>
+            <span className="text-xs text-slate-400">({pendingItems.length})</span>
+          </div>
+          {[...pendingItems]
+            .sort((x, y) => (x.type === y.type ? 0 : x.type === 'despesa' ? -1 : 1) || y.avgAmount - x.avgAmount)
+            .map(item => (
+              <ItemRow
+                key={item.key}
+                item={item}
+                pending
+                label={item.name}
+                sublabel={categoryPath(item.isGroup ? (item.subcategory ?? item.category) : item.category)}
+                {...rowHandlers(item)}
+              />
+            ))}
+        </section>
       )}
 
       {TYPE_SECTIONS.map(renderTypeSection)}
