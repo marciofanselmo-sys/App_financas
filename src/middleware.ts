@@ -30,8 +30,15 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   const isPublicRoute =
-    // Página do produto: é para onde os anúncios apontam.
+    // Página do produto: é para onde os anúncios apontam. Quando a landing
+    // externa estiver ligada (LP_ORIGIN), estes caminhos são servidos pelo
+    // projeto do time de aquisição, mas continuam sendo públicos aqui.
     pathname === '/' ||
+    pathname.startsWith('/lp') ||
+    pathname.startsWith('/quiz') ||
+    // Páginas de marketing servidas pelo projeto de aquisição.
+    pathname.startsWith('/lp') ||
+    pathname.startsWith('/quiz') ||
     // Retorno do checkout: quem comprou pelo anúncio ainda não tem sessão.
     pathname === '/obrigado' ||
     pathname === '/primeiro-acesso' ||
@@ -46,6 +53,14 @@ export async function middleware(request: NextRequest) {
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone()
     url.pathname = '/auth/login'
+    return NextResponse.redirect(url)
+  }
+
+  // Quem já está logado não precisa ver página de vendas na raiz — e esse
+  // desvio acontece antes do repasse para a landing externa.
+  if (user && pathname === '/') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/dashboard'
     return NextResponse.redirect(url)
   }
 
