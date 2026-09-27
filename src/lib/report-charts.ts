@@ -23,7 +23,7 @@ export function aggregateYearMonths(transactions: Transaction[]): YearMonthPoint
     const m = new Date(`${t.date}T12:00:00`).getMonth()
     const amt = Number(t.amount)
     if (t.type === 'receita') map[m].receita += amt
-    else map[m].despesa += amt
+    else if (t.type === 'despesa') map[m].despesa += amt
   }
 
   map.forEach(m => { m.saldo = m.receita - m.despesa })
