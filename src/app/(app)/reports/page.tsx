@@ -1,6 +1,7 @@
 'use client'
 
 import { withPlan } from '@/components/plan/with-plan'
+import type { Category, Transaction } from '@/types'
 
 import { useState, useMemo, Fragment } from 'react'
 import { useTransactions } from '@/hooks/use-transactions'
@@ -15,7 +16,7 @@ import { subKey } from '@/lib/plan-keys'
 import { calcHealthScore, scoreConfig } from '@/components/dashboard/summary-cards'
 import {
   Printer, CalendarDays, BarChart2, CreditCard, RefreshCw, CheckCircle,
-  ChevronLeft, ChevronRight, TrendingUp, Tag,
+  ChevronLeft, ChevronRight, ChevronsUpDown, TrendingUp, Tag,
 } from 'lucide-react'
 import { CategorySummary, PositionsBreakdown, ProventosBreakdown } from '@/components/investments/rico-position-summary'
 import { BoardIcon } from '@/components/transactions/board-icon'
@@ -82,6 +83,182 @@ function ReportHeader({ title, subtitle }: { title: string; subtitle: string }) 
 }
 
 // ── Relatório Mensal ──────────────────────────────────────────────────────────
+// ── Despesas por categoria (Mensal e Anual) ─────────────────────────────────
+interface CategoryRow {
+  name: string
+  amount: number
+  color: string
+  subs: { name: string; amount: number }[]
+}
+
+// Soma pela categoria-mãe (lançamento em "Mercado" conta em "Alimentação")
+// e guarda o detalhe por subcategoria dentro dela — mesma lógica da Análise.
+function groupByMother(transactions: Transaction[], categories: Category[]): CategoryRow[] {
+  const mothers = motherNameByCategory(categories)
+  const map: Record<string, { total: number; subs: Record<string, number> }> = {}
+  transactions.filter(t => t.type === 'despesa').forEach(t => {
+    const amt = Number(t.amount)
+    const mother = motherOf(t.category, mothers, t.type)
+    const bucket = map[mother] ?? (map[mother] = { total: 0, subs: {} })
+    bucket.total += amt
+    if (t.category !== mother) bucket.subs[t.category] = (bucket.subs[t.category] ?? 0) + amt
+  })
+  return Object.entries(map)
+    .map(([name, b]) => ({
+      name,
+      amount: b.total,
+      color: categories.find(c => c.name === name)?.color ?? '#6b7280',
+      subs: Object.entries(b.subs)
+        .sort((x, y) => y[1] - x[1])
+        .map(([sub, amount]) => ({ name: sub, amount })),
+    }))
+    .sort((a, b) => b.amount - a.amount)
+}
+
+/**
+ * Tabela de despesas por categoria com as subcategorias recolhíveis (fechadas
+ * por padrão). `months` liga a coluna Média/mês (Anual); `limits` liga a
+ * coluna Planejado (Mensal). No celular só cabem Categoria e Valor — o resto
+ * vai numa linha pequena embaixo do valor.
+ */
+function CategoryTable({ title, rows, total, valueLabel, months, limits }: {
+  title: string
+  rows: CategoryRow[]
+  total: number
+  valueLabel: string
+  months?: number
+  limits?: Record<string, number>
+}) {
+  const [open, setOpen] = useState<Set<string>>(new Set())
+  const withSubs = rows.filter(r => r.subs.length > 0)
+  const allOpen = withSubs.length > 0 && withSubs.every(r => open.has(r.name))
+  const pct = (v: number) => (total > 0 ? fmtPct(v / total) : '—')
+  const limitOf = (key: string) => (limits?.[key] ? fmt(Number(limits[key])) : '—')
+
+  function toggle(name: string) {
+    setOpen(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
+
+  const H = 'hidden sm:table-cell print:table-cell'
+  const P = 'px-2.5 sm:px-4'
+
+  function mobileExtra(amount: number, limitKey?: string) {
+    const parts = [
+      months ? `${fmt(amount / months)}/mês` : null,
+      pct(amount),
+      limits && limitKey && limits[limitKey] ? `plan. ${limitOf(limitKey)}` : null,
+    ].filter(Boolean)
+    return (
+      <span className="block sm:hidden print:hidden text-[11px] font-normal text-slate-400 dark:text-slate-500">
+        {parts.join(' · ')}
+      </span>
+    )
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h3 className={secTitle.replace("mb-3", "mb-0")}>{title}</h3>
+        {withSubs.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setOpen(allOpen ? new Set() : new Set(withSubs.map(r => r.name)))}
+            className="print:hidden shrink-0 flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            <ChevronsUpDown className="h-3.5 w-3.5" />
+            {allOpen ? 'Ocultar subcategorias' : 'Mostrar subcategorias'}
+          </button>
+        )}
+      </div>
+      <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 mb-3">
+        Toque numa categoria para ver as subcategorias — elas já estão somadas no total dela.
+        {months ? ` Média calculada sobre ${months} ${months === 1 ? 'mês' : 'meses'} com movimento.` : ''}
+      </p>
+      <div className={table}>
+        <table className="w-full text-sm">
+          <thead className={thead}>
+            <tr>
+              <th className={`text-left ${P} py-2.5 ${th}`}>Categoria</th>
+              <th className={`text-right ${P} py-2.5 ${th}`}>{valueLabel}</th>
+              {months && <th className={`${H} text-right ${P} py-2.5 ${th}`}>Média/mês</th>}
+              <th className={`${H} text-right ${P} py-2.5 ${th}`}>% Total</th>
+              {limits && <th className={`${H} text-right ${P} py-2.5 ${th}`}>Planejado</th>}
+            </tr>
+          </thead>
+          <tbody className={tdiv}>
+            {rows.map(cat => {
+              const hasSubs = cat.subs.length > 0
+              const isOpen = open.has(cat.name)
+              return (
+                <Fragment key={cat.name}>
+                  <tr
+                    onClick={hasSubs ? () => toggle(cat.name) : undefined}
+                    className={`hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors ${hasSubs ? 'cursor-pointer select-none' : ''}`}
+                  >
+                    <td className={`${P} py-2.5 font-medium text-slate-700 dark:text-slate-300 print:text-slate-700`}>
+                      <div className="flex items-center gap-2">
+                        {hasSubs
+                          ? <ChevronRight className={`h-3.5 w-3.5 text-slate-400 shrink-0 transition-transform print:hidden ${isOpen ? 'rotate-90' : ''}`} />
+                          : <span className="w-3.5 shrink-0 print:hidden" />}
+                        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                        <span>
+                          {cat.name}
+                          {hasSubs && !isOpen && (
+                            <span className="ml-1.5 text-[11px] font-normal text-slate-400 dark:text-slate-500">({cat.subs.length})</span>
+                          )}
+                        </span>
+                      </div>
+                    </td>
+                    <td className={`${P} py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700`}>
+                      {fmt(cat.amount)}
+                      {mobileExtra(cat.amount, cat.name)}
+                    </td>
+                    {months && <td className={`${H} ${P} py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500`}>{fmt(cat.amount / months)}</td>}
+                    <td className={`${H} ${P} py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500`}>{pct(cat.amount)}</td>
+                    {limits && <td className={`${H} ${P} py-2.5 text-right text-slate-400 dark:text-slate-500 print:text-slate-400`}>{limitOf(cat.name)}</td>}
+                  </tr>
+                  {isOpen && cat.subs.map(sub => (
+                    <tr key={`${cat.name}|${sub.name}`} className="bg-slate-50/50 dark:bg-slate-800/30 print:bg-white">
+                      <td className="pl-12 sm:pl-14 pr-2.5 sm:pr-4 py-2 text-xs text-slate-500 dark:text-slate-400 print:text-slate-500">
+                        <div className="flex items-center gap-2">
+                          <Tag className="h-3 w-3 text-slate-400 shrink-0" />
+                          {sub.name}
+                        </div>
+                      </td>
+                      <td className={`${P} py-2 text-right text-xs text-slate-500 dark:text-slate-400 print:text-slate-500`}>
+                        {fmt(sub.amount)}
+                        {mobileExtra(sub.amount, subKey(sub.name))}
+                      </td>
+                      {months && <td className={`${H} ${P} py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400`}>{fmt(sub.amount / months)}</td>}
+                      <td className={`${H} ${P} py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400`}>{pct(sub.amount)}</td>
+                      {limits && <td className={`${H} ${P} py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400`}>{limitOf(subKey(sub.name))}</td>}
+                    </tr>
+                  ))}
+                </Fragment>
+              )
+            })}
+            <tr className={tfoot}>
+              <td className={`${P} py-2.5 text-slate-700 dark:text-slate-200 print:text-slate-700`}>Total</td>
+              <td className={`${P} py-2.5 text-right text-red-500`}>
+                {fmt(total)}
+                {mobileExtra(total)}
+              </td>
+              {months && <td className={`${H} ${P} py-2.5 text-right text-red-500`}>{fmt(total / months)}</td>}
+              <td className={`${H} ${P} py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500`}>{pct(total)}</td>
+              {limits && <td className={H} />}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: number; year: number; boardId: string; excludeBoardIds: string[] }) {
   const { transactions: allTransactions, loading } = useTransactions({
     month,
@@ -103,30 +280,10 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
   const score    = calcHealthScore(income, expenses)
   const { label: scoreLabel } = scoreConfig(score ?? 0)
 
-  // Soma pela categoria-mãe (lançamento em "Mercado" conta em "Alimentação")
-  // e guarda o detalhe por subcategoria dentro dela — mesma lógica da Análise.
-  const byCategory = useMemo(() => {
-    const mothers = motherNameByCategory(categories)
-    const map: Record<string, { total: number; subs: Record<string, number> }> = {}
-    transactions.filter(t => t.type === 'despesa').forEach(t => {
-      const amt = Number(t.amount)
-      const mother = motherOf(t.category, mothers, t.type)
-      const bucket = map[mother] ?? (map[mother] = { total: 0, subs: {} })
-      bucket.total += amt
-      if (t.category !== mother) bucket.subs[t.category] = (bucket.subs[t.category] ?? 0) + amt
-    })
-    return Object.entries(map)
-      .sort((a, b) => b[1].total - a[1].total)
-      .map(([name, b]) => ({
-        name,
-        amount: b.total,
-        pct: expenses > 0 ? b.total / expenses : 0,
-        color: categories.find(c => c.name === name)?.color ?? '#6b7280',
-        subs: Object.entries(b.subs)
-          .sort((x, y) => y[1] - x[1])
-          .map(([sub, amount]) => ({ name: sub, amount, pct: expenses > 0 ? amount / expenses : 0 })),
-      }))
-  }, [transactions, expenses, categories])
+  const byCategory = useMemo(
+    () => groupByMother(transactions, categories).map(c => ({ ...c, pct: expenses > 0 ? c.amount / expenses : 0 })),
+    [transactions, expenses, categories],
+  )
 
   const categoryLimits = plan?.category_limits ?? {}
   const hasPlanned = Object.keys(categoryLimits).some(k => (categoryLimits[k] ?? 0) > 0)
@@ -171,70 +328,14 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
         </p>
       )}
 
-      {/* Gastos por categoria */}
       {byCategory.length > 0 && (
-        <div>
-          <h3 className={secTitle}>Gastos por Categoria</h3>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 -mt-2 mb-3">
-            Subcategorias aparecem dentro da categoria e já estão somadas no total dela.
-          </p>
-          <div className={table}>
-            <table className="w-full text-sm">
-              <thead className={thead}>
-                <tr>
-                  <th className={`text-left px-4 py-2.5 ${th}`}>Categoria</th>
-                  <th className={`text-right px-4 py-2.5 ${th}`}>Valor</th>
-                  <th className={`text-right px-4 py-2.5 ${th}`}>% Total</th>
-                  {hasPlanned && <th className={`text-right px-4 py-2.5 ${th}`}>Planejado</th>}
-                </tr>
-              </thead>
-              <tbody className={tdiv}>
-                {byCategory.map(cat => (
-                  <Fragment key={cat.name}>
-                    <tr className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-                      <td className="px-4 py-2.5 font-medium text-slate-700 dark:text-slate-300 print:text-slate-700">
-                        <div className="flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                          {cat.name}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(cat.amount)}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{fmtPct(cat.pct)}</td>
-                      {hasPlanned && (
-                        <td className="px-4 py-2.5 text-right text-slate-400 dark:text-slate-500 print:text-slate-400">
-                          {categoryLimits[cat.name] ? fmt(Number(categoryLimits[cat.name])) : '—'}
-                        </td>
-                      )}
-                    </tr>
-                    {cat.subs.map(sub => (
-                      <tr key={`${cat.name}|${sub.name}`} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-                        <td className="pl-9 pr-4 py-2 text-xs text-slate-500 dark:text-slate-400 print:text-slate-500">
-                          <div className="flex items-center gap-2">
-                            <Tag className="h-3 w-3 text-slate-400 shrink-0" />
-                            {sub.name}
-                          </div>
-                        </td>
-                        <td className="px-4 py-2 text-right text-xs text-slate-500 dark:text-slate-400 print:text-slate-500">{fmt(sub.amount)}</td>
-                        <td className="px-4 py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">{fmtPct(sub.pct)}</td>
-                        {hasPlanned && (
-                          <td className="px-4 py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">
-                            {categoryLimits[subKey(sub.name)] ? fmt(Number(categoryLimits[subKey(sub.name)])) : '—'}
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </Fragment>
-                ))}
-                <tr className={tfoot}>
-                  <td className="px-4 py-2.5 text-slate-700 dark:text-slate-200 print:text-slate-700">Total</td>
-                  <td className="px-4 py-2.5 text-right text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(expenses)}</td>
-                  <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">100%</td>
-                  {hasPlanned && <td />}
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <CategoryTable
+          title="Gastos por Categoria"
+          rows={byCategory}
+          total={expenses}
+          valueLabel="Valor"
+          limits={hasPlanned ? categoryLimits : undefined}
+        />
       )}
 
       {/* Barras visuais */}
@@ -314,16 +415,6 @@ function Money({ v }: { v: number }) {
   )
 }
 
-// No celular não cabem Média/mês e % Total como colunas: vão numa linha
-// pequena embaixo do total.
-function MobileAvgPct({ amount, months, total }: { amount: number; months: number; total: number }) {
-  return (
-    <span className="block sm:hidden print:hidden text-[11px] font-normal text-slate-400 dark:text-slate-500">
-      {fmt(amount / months)}/mês · {total > 0 ? fmtPct(amount / total) : '—'}
-    </span>
-  )
-}
-
 function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardId: string; excludeBoardIds: string[] }) {
   const txFilters = {
     board_id: boardId !== 'all' ? boardId : undefined,
@@ -360,26 +451,7 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
     }))
   }, [chartMonths])
 
-  // Soma pela categoria-mãe (lançamento em "Mercado" conta em "Alimentação")
-  // e guarda o detalhe por subcategoria dentro dela — mesma lógica da Análise.
-  const byCategory = useMemo(() => {
-    const mothers = motherNameByCategory(categories)
-    const map: Record<string, { total: number; subs: Record<string, number> }> = {}
-    transactions.filter(t => t.type === 'despesa').forEach(t => {
-      const amt = Number(t.amount)
-      const mother = motherOf(t.category, mothers, t.type)
-      const bucket = map[mother] ?? (map[mother] = { total: 0, subs: {} })
-      bucket.total += amt
-      if (t.category !== mother) bucket.subs[t.category] = (bucket.subs[t.category] ?? 0) + amt
-    })
-    return Object.entries(map)
-      .map(([name, b]) => ({
-        name,
-        amount: b.total,
-        subs: Object.entries(b.subs).sort((x, y) => y[1] - x[1]),
-      }))
-      .sort((a, b) => b.amount - a.amount)
-  }, [transactions, categories])
+  const byCategory = useMemo(() => groupByMother(transactions, categories), [transactions, categories])
 
   const totalIncome   = monthly.reduce((s, m) => s + m.income, 0)
   const totalExpenses = monthly.reduce((s, m) => s + m.expenses, 0)
@@ -484,68 +556,13 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
       </div>
 
       {byCategory.length > 0 && (
-        <div>
-          <h3 className={secTitle}>Despesas por Categoria no Ano</h3>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 -mt-2 mb-3">
-            Subcategorias aparecem dentro da categoria e já estão somadas no total dela. Média calculada sobre {monthsForAvg} {monthsForAvg === 1 ? 'mês' : 'meses'} com movimento.
-          </p>
-          <div className={table}>
-            <table className="w-full text-sm">
-              <thead className={thead}>
-                <tr>
-                  <th className={`text-left px-2.5 sm:px-4 py-2.5 ${th}`}>Categoria</th>
-                  <th className={`text-right px-2.5 sm:px-4 py-2.5 ${th}`}>Total</th>
-                  <th className={`hidden sm:table-cell print:table-cell text-right px-2.5 sm:px-4 py-2.5 ${th}`}>Média/mês</th>
-                  <th className={`hidden sm:table-cell print:table-cell text-right px-2.5 sm:px-4 py-2.5 ${th}`}>% Total</th>
-                </tr>
-              </thead>
-              <tbody className={tdiv}>
-                {byCategory.map(cat => (
-                  <Fragment key={cat.name}>
-                    <tr className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-                      <td className="px-2.5 sm:px-4 py-2.5 font-medium text-slate-700 dark:text-slate-300 print:text-slate-700">{cat.name}</td>
-                      <td className="px-2.5 sm:px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">
-                        {fmt(cat.amount)}
-                        <MobileAvgPct amount={cat.amount} months={monthsForAvg} total={totalExpenses} />
-                      </td>
-                      <td className="hidden sm:table-cell print:table-cell px-2.5 sm:px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{fmt(cat.amount / monthsForAvg)}</td>
-                      <td className="hidden sm:table-cell print:table-cell px-2.5 sm:px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">
-                        {totalExpenses > 0 ? fmtPct(cat.amount / totalExpenses) : '—'}
-                      </td>
-                    </tr>
-                    {cat.subs.map(([sub, amount]) => (
-                      <tr key={`${cat.name}|${sub}`} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-                        <td className="pl-7 sm:pl-9 pr-2.5 sm:pr-4 py-2 text-xs text-slate-500 dark:text-slate-400 print:text-slate-500">
-                          <div className="flex items-center gap-2">
-                            <Tag className="h-3 w-3 text-slate-400 shrink-0" />
-                            {sub}
-                          </div>
-                        </td>
-                        <td className="px-2.5 sm:px-4 py-2 text-right text-xs text-slate-500 dark:text-slate-400 print:text-slate-500">
-                          {fmt(amount)}
-                          <MobileAvgPct amount={amount} months={monthsForAvg} total={totalExpenses} />
-                        </td>
-                        <td className="hidden sm:table-cell print:table-cell px-2.5 sm:px-4 py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">{fmt(amount / monthsForAvg)}</td>
-                        <td className="hidden sm:table-cell print:table-cell px-2.5 sm:px-4 py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">
-                          {totalExpenses > 0 ? fmtPct(amount / totalExpenses) : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </Fragment>
-                ))}
-                <tr className={tfoot}>
-                  <td className="px-2.5 sm:px-4 py-2.5 text-slate-700 dark:text-slate-200 print:text-slate-700">Total</td>
-                  <td className="px-2.5 sm:px-4 py-2.5 text-right text-red-500">
-                    {fmt(totalExpenses)}
-                    <MobileAvgPct amount={totalExpenses} months={monthsForAvg} total={totalExpenses} />
-                  </td>
-                  <td className="hidden sm:table-cell print:table-cell px-2.5 sm:px-4 py-2.5 text-right text-red-500">{fmt(totalExpenses / monthsForAvg)}</td>
-                  <td className="hidden sm:table-cell print:table-cell px-2.5 sm:px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{totalExpenses > 0 ? fmtPct(1) : '—'}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <CategoryTable
+          title="Despesas por Categoria no Ano"
+          rows={byCategory}
+          total={totalExpenses}
+          valueLabel="Total"
+          months={monthsForAvg}
+        />
       )}
     </div>
   )
