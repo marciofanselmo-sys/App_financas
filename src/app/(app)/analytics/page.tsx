@@ -171,29 +171,33 @@ export default function AnalyticsPage() {
 
   // Lançamentos da categoria aberta, direto na lista — sem pop-up.
   // Cada linha deixa trocar a categoria ali mesmo (regra automática propaga).
-  function renderTxList(txs: Transaction[], mother: string) {
+  function renderTxList(txs: Transaction[]) {
     return (
-      <div className="mt-2 ml-4 pl-3 border-l-2 border-slate-100 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700/60">
+      <div className="mt-2 ml-1.5 pl-3 border-l-2 border-slate-100 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700/60">
         {txs.map(tx => {
           const usable = categoriesForDate(categories, tx.date).filter(c => c.type === tx.type || c.type === 'ambos')
           return (
-            <div key={tx.id} className="py-2 flex items-center gap-3">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-slate-700 dark:text-slate-200 truncate">{tx.description}</p>
-                <p className="text-xs text-slate-400 mt-0.5">
+            // Duas linhas compactas: descrição + valor em cima; data/parcela +
+            // seletor de categoria embaixo — cabe no celular sem espremer.
+            <div key={tx.id} className="py-2">
+              <div className="flex items-baseline gap-2">
+                <p className="flex-1 min-w-0 text-[13px] text-slate-700 dark:text-slate-200 truncate">{tx.description}</p>
+                <span className={`text-[13px] font-medium tabular-nums shrink-0 ${tx.type === 'receita' ? 'text-green-600' : 'text-red-500'}`}>
+                  {fmt(Number(tx.amount))}
+                </span>
+              </div>
+              <div className="mt-1 flex items-center gap-2">
+                <p className="flex-1 min-w-0 text-[11px] text-slate-400 truncate">
                   {format(new Date(tx.date + 'T00:00:00'), "dd 'de' MMM", { locale: ptBR })}
-                  {tx.category !== mother && ` · ${tx.category}`}
                   {installmentLabel(tx) && ` · Parcela ${installmentLabel(tx)}`}
                 </p>
-              </div>
-              <div className="shrink-0 flex items-center gap-1.5">
-                {savingTxId === tx.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+                {savingTxId === tx.id && <Loader2 className="h-3 w-3 animate-spin text-slate-400 shrink-0" />}
                 <Select
                   value={tx.category}
                   onValueChange={v => v && v !== tx.category && handleRecategorize(tx.id, v)}
                   disabled={savingTxId === tx.id}
                 >
-                  <SelectTrigger className="h-7 text-xs px-2 w-auto min-w-[120px] border-dashed">
+                  <SelectTrigger className="h-6 text-[11px] px-2 w-auto max-w-[150px] shrink-0 border-dashed">
                     <SelectValue placeholder="Categoria" />
                   </SelectTrigger>
                   <SelectContent>
@@ -201,9 +205,6 @@ export default function AnalyticsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <span className={`text-sm font-medium tabular-nums shrink-0 w-24 text-right ${tx.type === 'receita' ? 'text-green-600' : 'text-red-500'}`}>
-                {fmt(Number(tx.amount))}
-              </span>
             </div>
           )
         })}
@@ -415,7 +416,7 @@ export default function AnalyticsPage() {
                                 ))}
                               </div>
                             )}
-                            {renderTxList(txs, cat)}
+                            {renderTxList(txs)}
                           </>
                         )}
                       </div>
@@ -471,7 +472,7 @@ export default function AnalyticsPage() {
                           />
                         </div>
                       </button>
-                      {open && renderTxList(txs, cat)}
+                      {open && renderTxList(txs)}
                       </div>
                     )
                   })}
