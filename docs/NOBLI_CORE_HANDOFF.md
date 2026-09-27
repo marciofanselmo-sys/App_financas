@@ -194,7 +194,56 @@ promessa sem lastro.
 Nenhum plano corta histórico. Recurso bloqueado **abre a tela** explicando o que
 faria, com botão de assinar (não some do menu).
 
-## M. Landing atual — classificação para substituição
+## M-1. Landing externa — JÁ LIGADA (27/09/2026)
+
+A página de vendas passou a ser servida pelo projeto do time de aquisição,
+**no mesmo domínio**, por repasse de caminhos (`rewrites`):
+
+| Caminho em noblifinance.com.br | Servido por |
+|---|---|
+| `/`, `/landing-page`, `/quiz`, `/assets/*` | projeto do time de aquisição (`LP_ORIGIN`) |
+| `/dashboard`, `/auth/*`, `/api/*`, `/obrigado`, `/assinar/*`, `/terms`, `/privacy` | core |
+
+Consequências práticas:
+- O time de aquisição **publica quando quiser**, na conta Vercel dele, sem
+  acesso a este repositório, às variáveis de ambiente ou ao banco.
+- Caminho novo (ex.: `/lp/black-friday`) precisa ser liberado aqui — hoje só
+  os quatro acima passam. É um pedido de um minuto.
+- Quem está logado e abre `/` é mandado para `/dashboard` — cliente pagante
+  não vê página de vendas.
+- Se o projeto da landing cair, a raiz do domínio cai junto; o app continua
+  de pé em `/dashboard`.
+
+**Política de segurança separada.** A CSP do app bloqueava CSS, fontes e
+bibliotecas de CDN, e a landing aparecia sem estilo nenhum ao ser servida
+pelo nosso domínio. Hoje os caminhos de marketing têm CSP própria, que libera
+`cdn.tailwindcss.com`, `cdn.jsdelivr.net`, Google Fonts e `pay.cakto.com.br`
+como destino de formulário. **Domínio novo que a landing precise carregar tem
+que ser pedido ao core** — senão o recurso é bloqueado em silêncio.
+
+Recomendações já passadas ao time de aquisição: tirar o Tailwind do CDN
+(gerar CSS no build), hospedar as fontes e substituir as imagens de
+`placehold.co`.
+
+## M-2. Links curtos de assinatura — USAR ESTES
+
+```
+https://noblifinance.com.br/assinar/essencial         R$ 29,90/mês
+https://noblifinance.com.br/assinar/essencial-anual   R$ 297,00
+https://noblifinance.com.br/assinar/completo          R$ 49,90/mês
+https://noblifinance.com.br/assinar/completo-anual    R$ 497,00
+https://noblifinance.com.br/assinar                   (padrão: Completo mensal)
+```
+
+Eles redirecionam para o checkout da Cakto **repassando `utm_*`, `sck` e
+`callback`**. Prefira-os aos links crus `pay.cakto.com.br/<id>`: se a oferta
+mudar de id, troca-se uma variável no core e **os anúncios já publicados
+continuam funcionando**.
+
+Não repassamos a página de pagamento para dentro do domínio, de propósito:
+ela tem antifraude, 3DS e cookies próprios da Cakto.
+
+## M-3. Landing antiga do core — classificação para substituição
 
 A página em `/` é do core, mas é descartável. Componentes:
 
@@ -326,6 +375,7 @@ específico, com escopo mínimo — nunca a chave de serviço.
 
 - [ ] Conta Cakto do segundo sócio ativa/aprovada — **não verificado** (não há API)
 - [x] Produto NOBLI localizado — dois produtos criados e ativos
+- [x] Convite enviado nos DOIS produtos (Essencial e Completo) — 27/09/2026
 - [ ] Área de Coprodução localizada — só existe no painel; não verificável por API
 - [ ] E-mail Cakto do segundo sócio confirmado — **não informado**
 - [ ] Percentual definido pelos sócios — **AÇÃO HUMANA NECESSÁRIA**
@@ -337,9 +387,16 @@ específico, com escopo mínimo — nunca a chave de serviço.
 - [ ] Venda de teste/validação planejada — planejada, ainda não executada
 - [ ] Split validado após transação válida
 
-**Registro da configuração** (a preencher quando existir):
-`COPRODUÇÃO STATUS: Não configurada · PRODUTOR: conta Cakto do sócio técnico ·
-COPRODUTOR: — · PERCENTUAL: — · DATA DE ATIVAÇÃO: — · CONDIÇÃO: —`
+**Registro da configuração** (27/09/2026):
+`COPRODUÇÃO STATUS: convites enviados, aguardando aceite · PRODUTOR: conta
+Cakto do sócio técnico · COPRODUTOR: fariafelipesouza@gmail.com · PERCENTUAL:
+a confirmar pelos sócios · DATA DE ATIVAÇÃO: — · CONDIÇÃO: duração eterna,
+comissões sobre vendas do produtor`
+
+**Coprodução não dá acesso de edição** ao produto na Cakto — foi verificado na
+prática. O coprodutor vê vendas e comissões, mas não edita produto, preço,
+checkout nem pixel. Para o que ele precisa (pixel e visual do checkout), o
+produtor aplica; para preço e oferta, o core faz pela API.
 
 ---
 
