@@ -73,9 +73,13 @@ function CurrencyInput({
     if (parseNum(v) !== parseNum(value)) onChange(v)
   }
 
+  // `key` diferente nos dois modos: sem isso o React reaproveita a mesma caixa,
+  // o texto formatado ("1.420,00") não é número válido para type="number" e a
+  // caixa abria vazia — ao sair, o vazio era gravado como zero.
   if (editing) {
     return (
       <Input
+        key="edit"
         type="number"
         autoFocus
         defaultValue={!isNaN(num) && num > 0 ? num : ''}
@@ -91,6 +95,7 @@ function CurrencyInput({
 
   return (
     <Input
+      key="view"
       type="text"
       value={formatted}
       placeholder={placeholder}
