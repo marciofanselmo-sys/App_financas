@@ -580,7 +580,7 @@ export default function BoardDetailPage() {
       <Dialog open={exportLocked} onOpenChange={setExportLocked}>
         <DialogContent className="sm:max-w-lg p-0 border-0 bg-transparent shadow-none">
           <DialogHeader className="sr-only"><DialogTitle>Exportar em CSV</DialogTitle></DialogHeader>
-          <UpgradeCard feature="export" pitch="Leve seus lançamentos para a planilha em CSV e salve os relatórios em PDF." />
+          <UpgradeCard feature="export" pitch="Leve seus lançamentos para a planilha em CSV." />
         </DialogContent>
       </Dialog>
 

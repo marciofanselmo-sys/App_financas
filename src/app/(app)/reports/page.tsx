@@ -889,7 +889,7 @@ function ReportsPage() {
   // Relatórios além do mensal e o PDF dependem do plano; enquanto o plano
   // carrega, libera — o bloqueio nunca pisca.
   const podeVer = planLoading || type === 'mensal' || can('reportsFull')
-  const podeExportar = planLoading || can('export')
+  const podeExportar = planLoading || can('exportPdf')
   // Conta de investimento nunca entra nos agregados de Mensal/Anual/Parcelas/
   // Fixos (aporte não é gasto) — ela tem a aba própria "Investimentos", onde o
   // alfinete de /investments controla quem aparece.
@@ -916,7 +916,7 @@ function ReportsPage() {
         ) : (
           <Link
             href="/settings/assinatura"
-            title="Exportar em PDF está nos planos Mensal e Anual"
+            title="Salvar relatórios em PDF está no plano Anual"
             className="inline-flex items-center gap-2 shrink-0 rounded-xl border border-slate-200 dark:border-white/[0.08] px-4 h-10 text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-blue-600 hover:border-blue-300 transition-colors"
           >
             <Lock className="h-4 w-4" />

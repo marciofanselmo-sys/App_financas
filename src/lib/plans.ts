@@ -5,7 +5,7 @@ import type { SubscriptionStatus } from '@/hooks/use-subscription'
  * pelo período de cobrança — Mensal, Trimestral e Anual. Quanto maior o
  * compromisso, mais o plano libera:
  *
- *  - Mensal     → o essencial do dia a dia (até 5 contas, relatório mensal)
+ *  - Mensal     → o essencial do dia a dia (até 5 contas, relatório mensal, CSV)
  *  - Trimestral → + contas ilimitadas e todos os relatórios, mas sem exportar
  *  - Anual      → tudo, inclusive investimentos e exportação
  *
@@ -26,7 +26,8 @@ export type Feature =
   | 'planning'      // planejamento mensal e 50/30/20
   | 'reports'       // relatórios
   | 'reportsFull'   // além do mensal: anual, parcelas, fixos, investimentos
-  | 'export'        // exportar CSV e salvar relatórios em PDF
+  | 'export'        // exportar lançamentos em CSV
+  | 'exportPdf'     // salvar relatórios em PDF
   | 'investments'   // carteira e proventos
   | 'goals'         // metas
 
@@ -55,7 +56,7 @@ export interface PlanDefinition {
 
 const NENHUMA: Record<Feature, boolean> = {
   import: false, rules: false, recurring: false, planning: false,
-  reports: false, reportsFull: false, export: false, investments: false, goals: false,
+  reports: false, reportsFull: false, export: false, exportPdf: false, investments: false, goals: false,
 }
 
 export const PLANS: Record<PlanTier, PlanDefinition> = {
@@ -99,7 +100,7 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
     importsPerMonth: null,
     features: {
       import: true, rules: true, recurring: true, planning: true,
-      reports: true, reportsFull: true, export: true, investments: true, goals: true,
+      reports: true, reportsFull: true, export: true, exportPdf: true, investments: true, goals: true,
     },
   },
 }
@@ -141,7 +142,8 @@ export const FEATURE_LABEL: Record<Feature, string> = {
   planning: 'Planejamento mensal',
   reports: 'Relatórios',
   reportsFull: 'Relatórios anual, parcelas, fixos e investimentos',
-  export: 'Exportar em CSV e PDF',
+  export: 'Exportar em CSV',
+  exportPdf: 'Salvar relatórios em PDF',
   investments: 'Investimentos',
   goals: 'Metas',
 }
@@ -217,7 +219,7 @@ export const PLAN_ITEMS: Record<PlanTier, string[]> = {
     'Regras que categorizam sozinhas',
     'Recorrências, parcelas e planejamento mensal',
     'Relatório mensal e metas',
-    'Exportação em CSV e PDF',
+    'Exportação dos lançamentos em CSV',
   ],
   trimestral: [
     'Contas e cartões ilimitados',
