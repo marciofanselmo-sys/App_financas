@@ -1,9 +1,9 @@
 'use client'
 
 import { useSubscription, checkoutUrl } from '@/hooks/use-subscription'
-import { PAID_TIERS, PLANS, PLAN_ITEMS, FEATURE_LABEL, Feature, PlanTier, moeda, periodicidade, precoDe } from '@/lib/plans'
+import { PAID_TIERS, PLANS, FEATURE_LABEL, Feature, PlanTier, moeda, periodicidade, precoDe } from '@/lib/plans'
 import { Badge } from '@/components/ui/badge'
-import { Check, Minus, Sparkles, AlertTriangle, Crown } from 'lucide-react'
+import { Check, Sparkles, AlertTriangle, Crown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /**
@@ -25,13 +25,17 @@ const STATUS_TEXTO: Record<string, { texto: string; cor: string }> = {
 
 const dataBR = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/')
 
-// Linhas da comparação, lidas direto de PLANS — a tabela nunca promete
-// algo diferente do que o app libera de verdade.
+// Todos os cartões listam as mesmas funcionalidades, na mesma ordem, lidas
+// direto de PLANS — o cartão nunca promete algo que o app não libera.
 const COMPARE_FEATURES: Feature[] = [
   'rules', 'recurring', 'planning', 'goals', 'reports', 'reportsFull', 'export', 'exportPdf', 'investments',
 ]
-const contas = (t: PlanTier) => PLANS[t].maxBoards === null ? 'Ilimitadas' : `Até ${PLANS[t].maxBoards}`
-const importacoes = (t: PlanTier) => PLANS[t].importsPerMonth === null ? 'Sem limite' : `${PLANS[t].importsPerMonth} por mês`
+const contas = (t: PlanTier) =>
+  PLANS[t].maxBoards === null ? 'Contas e cartões ilimitados' : `Até ${PLANS[t].maxBoards} contas e cartões`
+const importacoes = (t: PlanTier) =>
+  PLANS[t].importsPerMonth === null
+    ? 'Importação de extrato sem limite'
+    : `${PLANS[t].importsPerMonth} importação de extrato por mês`
 
 export default function AssinaturaPage() {
   const { subscription, status, tier, userId, loading } = useSubscription()
@@ -140,12 +144,29 @@ export default function AssinaturaPage() {
               </div>
 
               <ul className="space-y-2 flex-1 border-t border-slate-100 dark:border-white/[0.06] pt-4 mt-3">
-                {PLAN_ITEMS[t].map(item => (
+                {[contas(t), importacoes(t)].map(item => (
                   <li key={item} className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300 leading-snug">
                     <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
                     {item}
                   </li>
                 ))}
+                {COMPARE_FEATURES.map(f => {
+                  const tem = PLANS[t].features[f]
+                  return (
+                    <li
+                      key={f}
+                      className={cn(
+                        'flex items-start gap-2 text-xs leading-snug',
+                        tem ? 'text-slate-600 dark:text-slate-300' : 'text-slate-300 dark:text-slate-600',
+                      )}
+                    >
+                      {tem
+                        ? <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                        : <span className="h-3.5 w-3.5 shrink-0" />}
+                      {FEATURE_LABEL[f]}
+                    </li>
+                  )
+                })}
               </ul>
 
               <div className="mt-5">
@@ -173,52 +194,6 @@ export default function AssinaturaPage() {
             </div>
           )
         })}
-      </div>
-
-      {/* Comparação lado a lado */}
-      <div className="nobli-card overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 dark:border-white/[0.06]">
-          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Compare os planos</p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-slate-100 dark:border-white/[0.06]">
-                <th className="text-left font-medium text-slate-400 dark:text-slate-500 px-5 py-2.5 min-w-[180px]">Recurso</th>
-                {ORDEM.map(t => (
-                  <th key={t} className={cn(
-                    'text-center font-semibold px-3 py-2.5 min-w-[90px]',
-                    t === tier ? 'text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300',
-                  )}>
-                    {PLANS[t].label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
-              <tr>
-                <td className="px-5 py-2.5 text-slate-600 dark:text-slate-300">Contas e cartões</td>
-                {ORDEM.map(t => <td key={t} className="text-center px-3 py-2.5 text-slate-600 dark:text-slate-300">{contas(t)}</td>)}
-              </tr>
-              <tr>
-                <td className="px-5 py-2.5 text-slate-600 dark:text-slate-300">Importação de extrato</td>
-                {ORDEM.map(t => <td key={t} className="text-center px-3 py-2.5 text-slate-600 dark:text-slate-300">{importacoes(t)}</td>)}
-              </tr>
-              {COMPARE_FEATURES.map(f => (
-                <tr key={f}>
-                  <td className="px-5 py-2.5 text-slate-600 dark:text-slate-300">{FEATURE_LABEL[f]}</td>
-                  {ORDEM.map(t => (
-                    <td key={t} className="text-center px-3 py-2.5">
-                      {PLANS[t].features[f]
-                        ? <Check className="h-4 w-4 text-emerald-500 inline" />
-                        : <Minus className="h-4 w-4 text-slate-300 dark:text-slate-600 inline" />}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </div>
 
       <p className="text-xs text-slate-400 dark:text-slate-500">
