@@ -2,7 +2,7 @@
 
 import { withPlan } from '@/components/plan/with-plan'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { sumInvestmentContributions } from '@/lib/investment-contributions'
@@ -10,15 +10,19 @@ import { useCategories } from '@/hooks/use-categories'
 import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 import { realMovements, internalTotals } from '@/lib/internal-movement'
 import { useBudgetPlan } from '@/hooks/use-budget-plan'
-import { useRecurringMonthlyTotal } from '@/hooks/use-recurring-monthly-total'
+import { useRecurring } from '@/hooks/use-recurring'
+import { useRecurringDecisions } from '@/hooks/use-recurring-decisions'
+import { useSubcategoryNames } from '@/hooks/use-subcategory-names'
+import { buildDisplayItems } from '@/lib/recurring-groups'
+import { cn } from '@/lib/utils'
+import { Transaction } from '@/types'
 import { categoriesForDate } from '@/lib/special-category-filter'
 import { subKey, isSubKey, subName } from '@/lib/plan-keys'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { CheckCircle, AlertTriangle, XCircle, TrendingUp, PiggyBank, Save, ClipboardList, Plus, X, Sparkles, RefreshCw, Tag } from 'lucide-react'
+import { CheckCircle, AlertTriangle, XCircle, TrendingUp, PiggyBank, ClipboardList, Sparkles, ChevronDown, ChevronRight } from 'lucide-react'
 
 interface PlanTemplate {
   id: string
@@ -92,17 +96,21 @@ function CurrencyInput({
   )
 }
 
-function StatusBadge({ planned, actual, higherIsBetter = false }: { planned: number; actual: number; higherIsBetter?: boolean }) {
-  if (planned === 0) return null
-  const pct = (actual / planned) * 100
-  if (higherIsBetter) {
-    if (pct >= 100) return <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400"><CheckCircle className="h-3 w-3" /> Atingido</span>
-    if (pct >= 80)  return <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-500"><AlertTriangle className="h-3 w-3" /> Quase</span>
-    return <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-500"><XCircle className="h-3 w-3" /> Abaixo</span>
-  }
-  if (pct <= 90)  return <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400"><CheckCircle className="h-3 w-3" /> OK</span>
-  if (pct <= 100) return <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-500"><AlertTriangle className="h-3 w-3" /> Atenção</span>
-  return <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-500"><XCircle className="h-3 w-3" /> Estourado</span>
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
+
+function SaveIndicator({ status, error }: { status: SaveStatus; error: string | null }) {
+  if (status === 'saving') return <span className="text-xs text-slate-400">Salvando...</span>
+  if (status === 'saved') return (
+    <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+      <CheckCircle className="h-3.5 w-3.5" /> Salvo
+    </span>
+  )
+  if (status === 'error') return (
+    <span className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1" title={error ?? undefined}>
+      <XCircle className="h-3.5 w-3.5 shrink-0" /> Não foi possível salvar
+    </span>
+  )
+  return null
 }
 
 function parseNum(v: string) {
@@ -110,24 +118,37 @@ function parseNum(v: string) {
   return isNaN(n) || n <= 0 ? 0 : n
 }
 
+// Mês anterior a (month, year), n vezes para trás.
+function monthsBack(month: number, year: number, n: number) {
+  const d = new Date(year, month - 1 - n, 1)
+  return { month: d.getMonth() + 1, year: d.getFullYear() }
+}
+
+// Cor da barra de progresso: dentro, perto do limite ou estourado.
+function progressColor(pct: number) {
+  if (pct > 100) return 'bg-red-500'
+  if (pct > 90) return 'bg-amber-500'
+  return 'bg-emerald-500'
+}
+
+function ProgressBar({ actual, planned }: { actual: number; planned: number }) {
+  const pct = planned > 0 ? (actual / planned) * 100 : 0
+  return (
+    <div className="h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+      <div className={`h-full rounded-full transition-all ${progressColor(pct)}`} style={{ width: `${Math.min(100, pct)}%` }} />
+    </div>
+  )
+}
+
 function PlanningPage() {
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [addingCategory, setAddingCategory] = useState(false)
-  const [addingSubcategory, setAddingSubcategory] = useState(false)
   const [templateOpen, setTemplateOpen] = useState(false)
-
-  function applyTemplate(tpl: PlanTemplate) {
-    const income = parseNum(expectedIncome)
-    if (income > 0 && tpl.investPct > 0) {
-      setInvestmentTarget(String(Math.round(income * tpl.investPct)))
-    }
-    setTemplateOpen(false)
-  }
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [showQuiet, setShowQuiet] = useState(false)
 
   const { boards } = useTransactionBoards()
   // "Realizado" precisa da mesma exclusão do dashboard: conta desafixada e
@@ -138,47 +159,126 @@ function PlanningPage() {
     () => boards.filter(b => !b.show_on_dashboard || b.is_investment).map(b => b.id),
     [boards],
   )
-  const { transactions } = useTransactions({
-    month,
-    year,
-    exclude_board_ids: excludedBoardIds.length > 0 ? excludedBoardIds : undefined,
-  })
-  const { categories } = useCategories()
-  // Subcategorias agora são as categorias de segundo nível (Aluguel, Mercado),
-  // não mais os grupos antigos guardados no perfil.
-  const subcategories = useMemo(
-    () => categories.filter(c => c.parent_id && (c.type === 'despesa' || c.type === 'ambos')),
-    [categories],
-  )
-  const motherNames = useMemo(() => motherNameByCategory(categories), [categories])
-  const childrenByMother = useMemo(() => {
-    const map = new Map<string, string[]>()
-    for (const c of categories) {
-      if (!c.parent_id) continue
-      const mother = categories.find(m => m.id === c.parent_id)
-      if (!mother) continue
-      map.set(mother.name, [...(map.get(mother.name) ?? []), c.name])
-    }
-    return map
-  }, [categories])
-  const { plan, loading, savePlan } = useBudgetPlan(month, year)
-  const { total: recurringMonthlyTotal, loading: recurringLoading } = useRecurringMonthlyTotal()
+  const exclude = excludedBoardIds.length > 0 ? excludedBoardIds : undefined
+  const { transactions } = useTransactions({ month, year, exclude_board_ids: exclude })
 
-  // "Gastos Previstos" trava (snapshot) no valor do momento do save — não
-  // recalcula sozinho depois. Antes do primeiro save do mês, mostra uma
-  // prévia ao vivo do total de recorrências confirmadas + parcelas ativas.
+  // Os três meses anteriores, para a média de cada categoria.
+  const p1 = monthsBack(month, year, 1)
+  const p2 = monthsBack(month, year, 2)
+  const p3 = monthsBack(month, year, 3)
+  const { transactions: prev1 } = useTransactions({ ...p1, exclude_board_ids: exclude })
+  const { transactions: prev2 } = useTransactions({ ...p2, exclude_board_ids: exclude })
+  const { transactions: prev3 } = useTransactions({ ...p3, exclude_board_ids: exclude })
+
+  const { categories } = useCategories()
+  const motherNames = useMemo(() => motherNameByCategory(categories), [categories])
+
+  const { plan, loading, loadedKey, savePlan } = useBudgetPlan(month, year)
+
+  // Fixos (Recorrências confirmadas + parcelas ativas), por categoria — o
+  // mesmo cálculo de useRecurringMonthlyTotal, mas guardando onde cada um cai.
+  const { recurring, installments, loading: recurringLoading } = useRecurring()
+  const { decisions, loading: decisionsLoading } = useRecurringDecisions()
+  const subcategoryNames = useSubcategoryNames()
+  const fixed = useMemo(() => {
+    const byCategory: Record<string, number> = {}
+    const byMother: Record<string, number> = {}
+    let total = 0
+    const add = (category: string, amount: number) => {
+      byCategory[category] = (byCategory[category] ?? 0) + amount
+      const mother = motherOf(category, motherNames, 'despesa')
+      byMother[mother] = (byMother[mother] ?? 0) + amount
+      total += amount
+    }
+    for (const item of buildDisplayItems(recurring, new Map(), subcategoryNames)) {
+      if (item.type === 'despesa' && decisions.get(item.key) === 'confirmed') add(item.category, item.avgAmount)
+    }
+    for (const inst of installments) add(inst.category, inst.monthlyAmount)
+    return { byCategory, byMother, total }
+  }, [recurring, installments, decisions, subcategoryNames, motherNames])
+
+  // "Gastos Previstos" trava (snapshot) no valor do momento do primeiro save
+  // do mês — não recalcula sozinho depois. Antes disso, é o total ao vivo.
   const hasExpensesSnapshot = !!plan && plan.expenses_target > 0
-  const expensesTargetDisplay = hasExpensesSnapshot ? plan!.expenses_target : recurringMonthlyTotal
+  const expensesTargetDisplay = hasExpensesSnapshot ? plan!.expenses_target : fixed.total
 
   const [expectedIncome, setExpectedIncome] = useState('')
   const [investmentTarget, setInvestmentTarget] = useState('')
   const [categoryLimits, setCategoryLimits] = useState<Record<string, string>>({})
 
+  // ── Salvamento automático ────────────────────────────────────────────────
+  // Só o que o usuário digitou marca "sujo" — carregar o mês (ou herdar o
+  // plano do mês anterior) não grava nada sozinho.
+  const dirty = useRef(false)
+  const latest = useRef({ month, year, expectedIncome, investmentTarget, categoryLimits, expensesTargetDisplay })
+
+  async function saveNow() {
+    if (!dirty.current) return
+    dirty.current = false
+    const s = latest.current
+    const limits: Record<string, number> = {}
+    for (const [cat, val] of Object.entries(s.categoryLimits)) {
+      const n = parseNum(val)
+      if (n > 0) limits[cat] = n
+    }
+    setSaveStatus('saving')
+    setSaveError(null)
+    const { error } = await savePlan({
+      month: s.month, year: s.year,
+      expected_income: parseNum(s.expectedIncome),
+      expenses_target: s.expensesTargetDisplay,
+      investment_target: parseNum(s.investmentTarget),
+      // Reserva removida da UI (2026-07-09): já é coberta pelo Investimento.
+      reserve_target: 0,
+      category_limits: limits,
+    })
+    if (error) {
+      setSaveStatus('error')
+      setSaveError(typeof error === 'string' ? error : (error as { message?: string })?.message || 'Erro ao salvar o planejamento.')
+      return
+    }
+    setSaveStatus('saved')
+  }
+  const saveRef = useRef(saveNow)
+  // Refs atualizados depois de cada render: o save lê sempre o último valor.
+  useEffect(() => {
+    latest.current = { month, year, expectedIncome, investmentTarget, categoryLimits, expensesTargetDisplay }
+    saveRef.current = saveNow
+  })
+
+  useEffect(() => {
+    if (!dirty.current) return
+    const t = setTimeout(() => saveRef.current(), 1200)
+    return () => clearTimeout(t)
+  }, [expectedIncome, investmentTarget, categoryLimits])
+
+  // Saiu da tela com algo pendente: grava antes de ir.
+  useEffect(() => () => { saveRef.current() }, [])
+
+  function edit<T>(setter: (fn: (prev: T) => T) => void) {
+    return (fn: (prev: T) => T) => {
+      dirty.current = true
+      setSaveStatus('idle')
+      setter(fn)
+    }
+  }
+  const editLimits = edit<Record<string, string>>(setCategoryLimits)
+  const setLimit = (key: string, v: string) => editLimits(prev => ({ ...prev, [key]: v }))
+  const editIncome = (v: string) => { dirty.current = true; setSaveStatus('idle'); setExpectedIncome(v) }
+  const editInvest = (v: string) => { dirty.current = true; setSaveStatus('idle'); setInvestmentTarget(v) }
+
+  // Trocar de mês grava o que ficou pendente no mês que está sendo deixado.
+  function changeMonth(m: number) { saveRef.current(); setMonth(m) }
+  function changeYear(y: number) { saveRef.current(); setYear(y) }
+
+  function applyTemplate(tpl: PlanTemplate) {
+    const income = parseNum(expectedIncome)
+    if (income > 0 && tpl.investPct > 0) editInvest(String(Math.round(income * tpl.investPct)))
+    setTemplateOpen(false)
+  }
+
   // Planos salvos antes da conversão guardam "sub:Moradia" — e Moradia virou
-  // categoria PRINCIPAL. Sem reescrever a chave, o limite aparecia na coluna de
-  // subcategoria mas ficava fora da tabela Planejado × Realizado, como se o
-  // valor não existisse. Chave que não corresponde a nenhuma categoria (grupo
-  // que deixou de existir) é descartada.
+  // categoria PRINCIPAL. Reescreve a chave; chave sem categoria é descartada.
   useEffect(() => {
     if (categories.length === 0) return
     setCategoryLimits(prev => {
@@ -188,201 +288,125 @@ function PlanningPage() {
         const name = isSubKey(key) ? subName(key) : key
         const cat = categories.find(c => c.name === name)
         if (!cat) { changed = true; continue }
-        const fixed = cat.parent_id ? subKey(name) : name
-        if (fixed !== key) changed = true
-        next[fixed] = value
+        const fixedKey = cat.parent_id ? subKey(name) : name
+        if (fixedKey !== key) changed = true
+        next[fixedKey] = value
       }
       return changed ? next : prev
     })
   }, [categories])
 
+  // Carrega o plano uma vez por mês. Depois do save automático o hook devolve
+  // o plano salvo, mas recarregar o formulário ali apagaria o que a pessoa
+  // continua digitando — por isso a chave do mês.
+  const hydratedFor = useRef<string | null>(null)
   useEffect(() => {
-    if (plan) {
-      setExpectedIncome(plan.expected_income > 0 ? String(plan.expected_income) : '')
-      setInvestmentTarget(plan.investment_target > 0 ? String(plan.investment_target) : '')
-      const lim: Record<string, string> = {}
-      for (const [cat, val] of Object.entries(plan.category_limits ?? {})) {
-        lim[cat] = String(val)
-      }
-      setCategoryLimits(lim)
-    } else {
-      setExpectedIncome('')
-      setInvestmentTarget('')
-      setCategoryLimits({})
-    }
-    setSaved(false)
-  }, [plan, month, year])
+    const k = `${year}-${month}`
+    if (loading || loadedKey !== k) return
+    if (hydratedFor.current === k) return
+    hydratedFor.current = k
+    dirty.current = false
+    setSaveStatus('idle')
+    setExpectedIncome(plan && plan.expected_income > 0 ? String(plan.expected_income) : '')
+    setInvestmentTarget(plan && plan.investment_target > 0 ? String(plan.investment_target) : '')
+    const lim: Record<string, string> = {}
+    for (const [cat, val] of Object.entries(plan?.category_limits ?? {})) lim[cat] = String(val)
+    setCategoryLimits(lim)
+  }, [plan, loading, loadedKey, month, year])
 
-  // Categoria especial só entra na lista se for válida no mês/ano do plano
-  // sendo editado — mesmo filtro usado no resto do app pra seleção de categoria.
+  // ── Árvore de categorias de despesa ──────────────────────────────────────
   const planDateStr = `${year}-${String(month).padStart(2, '0')}-01`
-  // Só categorias principais: a lista de subcategorias é a de baixo.
-  const expenseCategories = categoriesForDate(categories, planDateStr)
-    .filter(c => (c.type === 'despesa' || c.type === 'ambos') && !c.parent_id)
+  const usable = categoriesForDate(categories, planDateStr).filter(c => c.type === 'despesa' || c.type === 'ambos')
+  const mothers = usable.filter(c => !c.parent_id)
+  const kidsOf = (id: string) => usable.filter(c => c.parent_id === id)
 
-  // Categorias e subcategorias já no plano (aparecem no form) — subcategorias
-  // ficam misturadas no mesmo mapa com a chave "sub:Nome".
-  const activeKeys = Object.keys(categoryLimits)
-  const activeCategoryNames = activeKeys.filter(k => !isSubKey(k))
-  const activeSubcategoryNames = activeKeys.filter(isSubKey).map(subName)
-
-  // Categorias já cobertas por uma subcategoria ativa no plano — uma
-  // categoria vinculada a uma subcategoria conta as mesmas transações
-  // (group_label) que a categoria conta sozinha (category), então oferecer
-  // as duas ao mesmo tempo duplicaria o "Realizado" na tabela Planejado ×
-  // Realizado pra um único gasto real.
-  // Mãe com alguma subcategoria já no plano não pode entrar também: as duas
-  // contariam o mesmo gasto e o "Realizado" dobraria.
-  const categoriesCoveredByActiveSubcategories = new Set(
-    [...childrenByMother.entries()]
-      .filter(([, kids]) => kids.some(k => activeSubcategoryNames.includes(k)))
-      .map(([mother]) => mother)
-  )
-
-  // Categorias disponíveis para adicionar — normais e isoladas em seletores
-  // separados, mesmo padrão do resto do app.
-  const availableToAddAll = expenseCategories.filter(c =>
-    !activeCategoryNames.includes(c.name) && !categoriesCoveredByActiveSubcategories.has(c.name)
-  )
-  const availableToAddNormal = availableToAddAll.filter(c => !c.special_dates || c.special_dates.length === 0)
-  const availableToAddSpecial = availableToAddAll.filter(c => (c.special_dates?.length ?? 0) > 0)
-
-  // Subcategorias disponíveis — só as de tipo despesa (planejamento só cobre gastos)
-  // Subcategoria cuja mãe já tem limite fica de fora, pelo mesmo motivo.
-  const availableSubcategories = subcategories.filter(s =>
-    !activeSubcategoryNames.includes(s.name) &&
-    !activeCategoryNames.includes(motherOf(s.name, motherNames))
-  )
-
-  // Valores realizados — movimentação entre contas do próprio usuário não é
-  // gasto nem ganho, então não entra no realizado do plano.
+  // Movimentação entre contas do próprio usuário não é gasto nem ganho.
   const realTransactions = realMovements(transactions)
   const internal = internalTotals(transactions)
   const actualIncome = realTransactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
 
-  const actualByCategory: Record<string, number> = {}
-  realTransactions.filter(t => t.type === 'despesa').forEach(t => {
-    actualByCategory[t.category] = (actualByCategory[t.category] || 0) + Number(t.amount)
-  })
-  // Inclui receitas também (para Investimento que pode ser saída ou entrada)
-  const actualByCategoryAll: Record<string, number> = {}
-  realTransactions.forEach(t => {
-    actualByCategoryAll[t.category] = (actualByCategoryAll[t.category] || 0) + Number(t.amount)
-  })
-  // Realizado da categoria principal: ela mesma mais as subcategorias dentro
-  // dela (o lançamento fica na subcategoria, mas o limite é da mãe).
-  const actualByMother: Record<string, number> = {}
-  realTransactions.filter(t => t.type === 'despesa').forEach(t => {
-    const mother = motherOf(t.category, motherNames, t.type)
-    actualByMother[mother] = (actualByMother[mother] || 0) + Number(t.amount)
-  })
-
-  function addCategory(name: string | null) {
-    if (!name) return
-    setCategoryLimits(prev => ({ ...prev, [name]: '' }))
-    setAddingCategory(false)
+  function sumDespesa(txs: Transaction[]) {
+    const byCategory: Record<string, number> = {}
+    const byMother: Record<string, number> = {}
+    let total = 0
+    for (const t of txs) {
+      if (t.type !== 'despesa') continue
+      const amt = Number(t.amount)
+      byCategory[t.category] = (byCategory[t.category] ?? 0) + amt
+      const mother = motherOf(t.category, motherNames, t.type)
+      byMother[mother] = (byMother[mother] ?? 0) + amt
+      total += amt
+    }
+    return { byCategory, byMother, total }
   }
+  const actual = sumDespesa(realTransactions)
 
-  function addSubcategory(name: string | null) {
-    if (!name) return
-    setCategoryLimits(prev => ({ ...prev, [subKey(name)]: '' }))
-    setAddingSubcategory(false)
-  }
+  // Média dos meses anteriores que têm algum gasto — mês ainda sem extrato
+  // importado não puxa a média para baixo.
+  const average = useMemo(() => {
+    const months = [prev1, prev2, prev3].map(realMovements).map(sumDespesa).filter(m => m.total > 0)
+    const byCategory: Record<string, number> = {}
+    const byMother: Record<string, number> = {}
+    for (const m of months) {
+      for (const [k, v] of Object.entries(m.byCategory)) byCategory[k] = (byCategory[k] ?? 0) + v / months.length
+      for (const [k, v] of Object.entries(m.byMother)) byMother[k] = (byMother[k] ?? 0) + v / months.length
+    }
+    return { byCategory, byMother, months: months.length }
+  }, [prev1, prev2, prev3, motherNames]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function removeCategory(name: string) {
-    setCategoryLimits(prev => {
+  // Limite efetivo da categoria: o dela, ou a soma das subcategorias quando
+  // só elas têm limite. Nunca soma os dois — contaria o mesmo gasto duas vezes.
+  const rows = mothers.map(m => {
+    const kids = kidsOf(m.id)
+    const own = parseNum(categoryLimits[m.name] ?? '')
+    const kidsSum = kids.reduce((s, k) => s + parseNum(categoryLimits[subKey(k.name)] ?? ''), 0)
+    return {
+      cat: m,
+      kids,
+      own,
+      kidsSum,
+      planned: own > 0 ? own : kidsSum,
+      actual: actual.byMother[m.name] ?? 0,
+      avg: average.byMother[m.name] ?? 0,
+      fixed: fixed.byMother[m.name] ?? 0,
+    }
+  })
+  const isActive = (r: typeof rows[number]) => r.planned > 0 || r.actual > 0 || r.avg > 0 || r.fixed > 0
+  const activeRows = rows.filter(isActive)
+    .sort((a, b) => Math.max(b.planned, b.avg, b.actual) - Math.max(a.planned, a.avg, a.actual))
+  const quietRows = rows.filter(r => !isActive(r)).sort((a, b) => a.cat.name.localeCompare(b.cat.name, 'pt-BR'))
+
+  const incomeNum = parseNum(expectedIncome)
+  const investNum = parseNum(investmentTarget)
+  const totalPlanned = rows.reduce((s, r) => s + r.planned, 0)
+  const free = incomeNum - investNum - totalPlanned
+  // Realizado só das categorias com limite, para bater com o planejado.
+  const actualPlanned = rows.filter(r => r.planned > 0).reduce((s, r) => s + r.actual, 0)
+  const untracked = Math.max(0, actual.total - actualPlanned)
+  const emptyToFill = rows.filter(r => r.planned === 0 && Math.max(r.avg, r.fixed) > 0)
+
+  // Preenche só o que está vazio: o maior entre a média e o que já é fixo,
+  // arredondado para cima de 10 em 10.
+  function fillFromAverage() {
+    editLimits(prev => {
       const next = { ...prev }
-      delete next[name]
+      for (const r of emptyToFill) next[r.cat.name] = String(Math.ceil(Math.max(r.avg, r.fixed) / 10) * 10)
       return next
     })
   }
 
-  function removeSubcategory(name: string) {
-    removeCategory(subKey(name))
-  }
-
-  async function handleSave() {
-    setSaving(true)
-    setSaveError(null)
-    const limits: Record<string, number> = {}
-    for (const [cat, val] of Object.entries(categoryLimits)) {
-      const n = parseNum(val)
-      if (n > 0) limits[cat] = n
-    }
-    const { error } = await savePlan({
-      month, year,
-      expected_income: parseNum(expectedIncome),
-      expenses_target: expensesTargetDisplay,
-      investment_target: parseNum(investmentTarget),
-      // Reserva removida da UI (2026-07-09): já é coberta pelo Investimento
-      // previsto, não faz sentido ter um alvo manual separado. Mantém a
-      // coluna gravando 0 pra não precisar migrar o schema/hook.
-      reserve_target: 0,
-      category_limits: limits,
-    })
-    setSaving(false)
-    // Antes disso, o "Salvo com sucesso!" aparecia mesmo quando o save falhava
-    // (ex: tabela budget_plans ausente num Supabase novo) — o erro do Supabase
-    // era descartado em silêncio e a tela dava falso positivo.
-    if (error) {
-      setSaveError(typeof error === 'string' ? error : (error as { message?: string })?.message || 'Erro ao salvar o planejamento.')
-      return
-    }
-    setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
-  }
-
-  const incomeNum = parseNum(expectedIncome)
-  const investNum = parseNum(investmentTarget)
-
-  // Tabela: só categorias/subcategorias com limite > 0
-  const tableCategories = expenseCategories.filter(c => parseNum(categoryLimits[c.name] ?? '') > 0)
-  const tableSubcategories = subcategories.filter(s => parseNum(categoryLimits[subKey(s.name)] ?? '') > 0)
-
-  // Total Despesas soma categoria + subcategoria — uma categoria não pode mais
-  // ser adicionada em "Limite por categoria" se já pertence a uma subcategoria
-  // ativa neste plano (ver availableToAddAll acima), então as duas listas
-  // nunca se sobrepõem: cada despesa planejada aparece numa delas, nunca nas
-  // duas ao mesmo tempo. Antes disso, o total só somava categoria — um plano
-  // feito inteiramente por subcategoria (comum: cobre o mesmo gasto com um
-  // recorte mais fino) aparecia com "Total Despesas" vazio.
-  const totalPlanned =
-    tableCategories.reduce((s, c) => s + parseNum(categoryLimits[c.name] ?? ''), 0) +
-    tableSubcategories.reduce((s, sub) => s + parseNum(categoryLimits[subKey(sub.name)] ?? ''), 0)
-
-  // Realizado do Total Despesas soma só as mesmas linhas que aparecem na
-  // tabela acima (categorias/subcategorias com limite > 0), não o gasto total
-  // do período — senão a linha "Total Despesas" não batia com a soma visível
-  // das linhas mostradas (categoria fora do plano empurrava o total pra cima
-  // sem aparecer em lugar nenhum da tabela, parecendo conta errada).
-  const actualExpenses =
-    tableCategories.reduce((s, c) => s + (actualByMother[c.name] ?? 0), 0) +
-    tableSubcategories.reduce((s, sub) => s + (actualByCategory[sub.name] ?? 0), 0)
-
-  // Gasto real do período inteiro, rastreado ou não no plano — só contexto,
-  // nunca comparado direto contra totalPlanned (isso quebraria de novo o
-  // "Total Despesas" bater com a soma das linhas da tabela). Mostrado como
-  // nota abaixo da tabela quando existe gasto fora do que foi planejado, pra
-  // não parecer que o app "esqueceu" parte das despesas.
-  const totalDespesasPeriodo = realTransactions.filter(t => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0)
-  const untrackedExpenses = Math.max(0, totalDespesasPeriodo - actualExpenses)
-
-  // Investimento linkado à categoria de mesmo nome
   const investActual = useMemo(
     () => sumInvestmentContributions(transactions, boards),
     [transactions, boards],
   )
 
   // 50/30/20: cada gasto entra no balde da sua categoria (a subcategoria pode
-  // ter etiqueta própria — Restaurante "estilo de vida" dentro de Alimentação
-  // "essencial"). Só sugestão: a etiqueta é editável em Categorias.
+  // ter etiqueta própria). Só sugestão: a etiqueta é editável em Categorias.
   const bucketSummary = useMemo(() => {
     const byName = new Map(categories.map(c => [c.name.trim().toLowerCase(), c]))
-    const totals: Record<'essencial' | 'estilo' | 'futuro' | 'sem', number> = {
-      essencial: 0, estilo: 0, futuro: 0, sem: 0,
-    }
+    const totals: Record<'essencial' | 'estilo' | 'futuro' | 'sem', number> = { essencial: 0, estilo: 0, futuro: 0, sem: 0 }
     let total = 0
-    for (const t of realTransactions) {
+    for (const t of realMovements(transactions)) {
       if (t.type !== 'despesa') continue
       const cat = byName.get(t.category.trim().toLowerCase())
       const mother = cat?.parent_id ? categories.find(m => m.id === cat.parent_id) : null
@@ -391,9 +415,113 @@ function PlanningPage() {
       total += Number(t.amount)
     }
     return { totals, total }
-  }, [realTransactions, categories])
+  }, [transactions, categories])
 
-  const hasTable = tableCategories.length > 0 || tableSubcategories.length > 0 || incomeNum > 0 || investNum > 0
+  function toggle(id: string) {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  function renderRow(r: typeof rows[number]) {
+    const open = expanded.has(r.cat.id)
+    const over = r.planned > 0 && r.actual > r.planned
+    return (
+      <div key={r.cat.id} className="py-3">
+        <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+          <button
+            type="button"
+            onClick={() => r.kids.length > 0 && toggle(r.cat.id)}
+            className={cn('flex items-center gap-2 flex-1 min-w-[180px] text-left', r.kids.length === 0 && 'cursor-default')}
+          >
+            {r.kids.length > 0
+              ? (open ? <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" /> : <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />)
+              : <span className="w-4 shrink-0" />}
+            <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: r.cat.color }} />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{r.cat.name}</p>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate">
+                {r.fixed > 0 && <>fixo {fmt(r.fixed)} · </>}
+                {average.months > 0 ? <>média {fmt(r.avg)}</> : 'sem histórico'}
+              </p>
+            </div>
+          </button>
+
+          <div className="w-32 shrink-0">
+            {r.own === 0 && r.kidsSum > 0 ? (
+              <div className="h-9 flex items-center justify-end px-3 text-sm text-slate-500 dark:text-slate-400" title="Soma dos limites das subcategorias">
+                {fmt(r.kidsSum)}
+              </div>
+            ) : (
+              <CurrencyInput
+                value={categoryLimits[r.cat.name] ?? ''}
+                onChange={v => setLimit(r.cat.name, v)}
+                placeholder={r.avg > 0 ? new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(r.avg) : '0,00'}
+                className="h-9 text-sm text-right"
+              />
+            )}
+          </div>
+
+          <div className="w-full sm:w-44 shrink-0 space-y-1">
+            <p className={cn('text-xs tabular-nums text-right', over ? 'text-red-500 font-semibold' : 'text-slate-500 dark:text-slate-400')}>
+              {fmt(r.actual)}
+              {r.planned > 0 && <span className="text-slate-400 dark:text-slate-500 font-normal"> de {fmt(r.planned)}</span>}
+            </p>
+            {r.planned > 0 && <ProgressBar actual={r.actual} planned={r.planned} />}
+          </div>
+        </div>
+
+        {r.own > 0 && r.kidsSum > r.own && (
+          <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 ml-10">
+            As subcategorias somam {fmt(r.kidsSum)}, mais que o limite da categoria.
+          </p>
+        )}
+        {r.fixed > 0 && r.planned > 0 && r.planned < r.fixed && (
+          <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 ml-10">
+            Só os gastos fixos daqui já somam {fmt(r.fixed)}.
+          </p>
+        )}
+
+        {open && (
+          <div className="mt-2 ml-10 pl-3 border-l-2 border-slate-100 dark:border-white/[0.08] space-y-2">
+            {r.kids.map(k => {
+              const kPlanned = parseNum(categoryLimits[subKey(k.name)] ?? '')
+              const kActual = actual.byCategory[k.name] ?? 0
+              const kAvg = average.byCategory[k.name] ?? 0
+              const kFixed = fixed.byCategory[k.name] ?? 0
+              return (
+                <div key={k.id} className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+                  <div className="flex-1 min-w-[160px]">
+                    <p className="text-sm text-slate-600 dark:text-slate-300 truncate">{k.name}</p>
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate">
+                      {kFixed > 0 && <>fixo {fmt(kFixed)} · </>}
+                      média {fmt(kAvg)}
+                    </p>
+                  </div>
+                  <div className="w-32 shrink-0">
+                    <CurrencyInput
+                      value={categoryLimits[subKey(k.name)] ?? ''}
+                      onChange={v => setLimit(subKey(k.name), v)}
+                      placeholder="opcional"
+                      className="h-8 text-xs text-right"
+                    />
+                  </div>
+                  <div className="w-full sm:w-44 shrink-0 space-y-1">
+                    <p className={cn('text-[11px] tabular-nums text-right', kPlanned > 0 && kActual > kPlanned ? 'text-red-500 font-semibold' : 'text-slate-400 dark:text-slate-500')}>
+                      {fmt(kActual)}{kPlanned > 0 && <> de {fmt(kPlanned)}</>}
+                    </p>
+                    {kPlanned > 0 && <ProgressBar actual={kActual} planned={kPlanned} />}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -401,12 +529,12 @@ function PlanningPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Planejamento Mensal</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Defina metas e acompanhe Planejado × Realizado</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Decida para onde vai o dinheiro do mês e acompanhe enquanto gasta</p>
         </div>
-        <PeriodFilter month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
+        <PeriodFilter month={month} year={year} onMonthChange={changeMonth} onYearChange={changeYear} />
       </div>
 
-      {loading ? (
+      {loading || recurringLoading || decisionsLoading ? (
         <div className="space-y-4">
           {[1, 2, 3].map(i => (
             <div key={i} className="h-20 bg-white dark:bg-slate-800 rounded-2xl animate-pulse shadow-sm" />
@@ -414,24 +542,26 @@ function PlanningPage() {
         </div>
       ) : (
         <>
-          {/* Formulário */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-slate-700 space-y-6">
+          {/* Orçamento do mês: receita, investimento e o que sobra */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-slate-700 space-y-5">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
                 <ClipboardList className="h-4 w-4 text-blue-500" />
-                Configure seu planejamento
+                Orçamento do mês
               </h2>
-              <button
-                type="button"
-                onClick={() => setTemplateOpen(v => !v)}
-                className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium transition-colors"
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                Usar template
-              </button>
+              <div className="flex items-center gap-3">
+                <SaveIndicator status={saveStatus} error={saveError} />
+                <button
+                  type="button"
+                  onClick={() => setTemplateOpen(v => !v)}
+                  className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium transition-colors"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Usar template
+                </button>
+              </div>
             </div>
 
-            {/* Template picker */}
             {templateOpen && (
               <div className="grid grid-cols-2 gap-2 pb-2 border-b border-slate-100 dark:border-slate-700">
                 {PLAN_TEMPLATES.map(tpl => {
@@ -459,7 +589,7 @@ function PlanningPage() {
                     </button>
                   )
                 })}
-                {parseNum(expectedIncome) === 0 && (
+                {incomeNum === 0 && (
                   <p className="col-span-2 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5 pt-1">
                     <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                     Preencha a receita prevista para aplicar valores automaticamente.
@@ -468,402 +598,123 @@ function PlanningPage() {
               </div>
             )}
 
-            {/* Receita + Gastos Previstos + Investimento */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 whitespace-nowrap">
+                <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
                   <TrendingUp className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                   Receita prevista
                 </Label>
-                <CurrencyInput value={expectedIncome} onChange={setExpectedIncome} />
+                <CurrencyInput value={expectedIncome} onChange={editIncome} />
+                <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                  Recebido até agora: <span className="text-green-600 dark:text-green-400 font-medium">{fmt(actualIncome)}</span>
+                </p>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 whitespace-nowrap">
-                  <RefreshCw className="h-3.5 w-3.5 text-violet-500 shrink-0" />
-                  Gastos Previstos
-                  <span className="text-[10px] text-slate-400">{hasExpensesSnapshot ? '(recorrência)' : '(prévia)'}</span>
-                </Label>
-                <Input
-                  type="text"
-                  readOnly
-                  value={recurringLoading ? '...' : new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(expensesTargetDisplay)}
-                  className="bg-slate-50 dark:bg-slate-700/50 cursor-default text-slate-500 dark:text-slate-400"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 whitespace-nowrap">
+                <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
                   <PiggyBank className="h-3.5 w-3.5 text-blue-500 shrink-0" />
                   Investimento previsto
-                  <span className="text-[10px] text-blue-400">↔ cat. Investimento</span>
                 </Label>
-                <CurrencyInput value={investmentTarget} onChange={setInvestmentTarget} />
+                <CurrencyInput value={investmentTarget} onChange={editInvest} />
+                <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                  Aportado até agora: <span className="text-blue-600 dark:text-blue-400 font-medium">{fmt(investActual)}</span>
+                </p>
               </div>
             </div>
 
-            {/* Limite por categoria + por subcategoria — lado a lado a partir de md */}
-            <div className="border-t border-slate-100 dark:border-slate-700 pt-5 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
-
-            {/* Limite por categoria */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  Limite por categoria
-                </p>
-                {availableToAddAll.length > 0 && !addingCategory && (
-                  <Button
-                    variant="ghost" size="sm"
-                    className="h-7 text-xs gap-1 text-blue-600 dark:text-blue-400 hover:text-blue-700"
-                    onClick={() => setAddingCategory(true)}
-                  >
-                    <Plus className="h-3.5 w-3.5" /> Adicionar
-                  </Button>
-                )}
+            {/* A conta do mês */}
+            <div className="border-t border-slate-100 dark:border-slate-700 pt-4 space-y-1.5 text-sm">
+              <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                <span>Receita prevista</span><span className="tabular-nums">{fmt(incomeNum)}</span>
               </div>
-
-              {/* Seletor de categoria */}
-              {addingCategory && (
-                <div className="flex items-center gap-2">
-                  <Select onValueChange={addCategory}>
-                    <SelectTrigger className="flex-1 h-9 text-sm">
-                      <SelectValue placeholder="Selecione uma categoria..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableToAddNormal.length === 0 ? (
-                        <SelectItem value="__empty__" disabled>Nenhuma categoria disponível</SelectItem>
-                      ) : (
-                        availableToAddNormal.map(c => (
-                          <SelectItem key={c.name} value={c.name}>
-                            <div className="flex items-center gap-2">
-                              <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
-                              {c.name}
-                            </div>
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {availableToAddSpecial.length > 0 && (
-                    <Select onValueChange={addCategory}>
-                      <SelectTrigger className="flex-1 h-9 text-sm">
-                        <SelectValue placeholder="Categoria isolada..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableToAddSpecial.map(c => (
-                          <SelectItem key={c.name} value={c.name}>
-                            <div className="flex items-center gap-2">
-                              <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
-                              {c.name}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+              <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                <span>− Investimento</span><span className="tabular-nums">{fmt(investNum)}</span>
+              </div>
+              <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                <span>
+                  − Despesas planejadas
+                  {expensesTargetDisplay > 0 && (
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500"> · {fmt(expensesTargetDisplay)} já são fixos</span>
                   )}
-                  <Button variant="ghost" size="sm" className="h-9 px-2 text-slate-400 hover:text-slate-600" onClick={() => setAddingCategory(false)}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-
-              {/* Lista de categorias adicionadas */}
-              {activeCategoryNames.length === 0 ? (
-                <p className="text-xs text-slate-400 dark:text-slate-500 py-2">
-                  Nenhuma categoria adicionada. Clique em &ldquo;Adicionar&rdquo; acima.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {activeCategoryNames.map(name => {
-                    const cat = expenseCategories.find(c => c.name === name)
-                    return (
-                      <div key={name} className="flex items-center gap-3">
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: cat?.color ?? '#6b7280' }} />
-                          <span className="text-sm text-slate-700 dark:text-slate-200 truncate">{name}</span>
-                        </div>
-                        <CurrencyInput
-                          value={categoryLimits[name] ?? ''}
-                          onChange={v => setCategoryLimits(prev => ({ ...prev, [name]: v }))}
-                          placeholder="0,00"
-                          className="h-9 w-44 text-sm"
-                        />
-                        <Button
-                          variant="ghost" size="sm"
-                          className="h-8 w-8 p-0 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-                          onClick={() => removeCategory(name)}
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Limite por subcategoria (recorrência) */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  Limite por subcategoria
-                </p>
-                {availableSubcategories.length > 0 && !addingSubcategory && (
-                  <Button
-                    variant="ghost" size="sm"
-                    className="h-7 text-xs gap-1 text-blue-600 dark:text-blue-400 hover:text-blue-700"
-                    onClick={() => setAddingSubcategory(true)}
-                  >
-                    <Plus className="h-3.5 w-3.5" /> Adicionar
-                  </Button>
-                )}
+                </span>
+                <span className="tabular-nums">{fmt(totalPlanned)}</span>
               </div>
+              <div className={cn(
+                'flex justify-between font-semibold pt-1.5 border-t border-slate-100 dark:border-slate-700',
+                free >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500',
+              )}>
+                <span>{free >= 0 ? 'Livre para planejar' : 'Planejado além da receita'}</span>
+                <span className="tabular-nums">{fmt(Math.abs(free))}</span>
+              </div>
+            </div>
 
-              {addingSubcategory && (
-                <div className="flex items-center gap-2">
-                  <Select onValueChange={addSubcategory}>
-                    <SelectTrigger className="flex-1 h-9 text-sm">
-                      <SelectValue placeholder="Selecione uma subcategoria..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableSubcategories.length === 0 ? (
-                        <SelectItem value="__empty__" disabled>Nenhuma subcategoria disponível</SelectItem>
-                      ) : (
-                        availableSubcategories.map(s => (
-                          <SelectItem key={s.name} value={s.name}>
-                            <div className="flex items-center gap-2">
-                              <Tag className="h-3 w-3 text-slate-400 shrink-0" />
-                              {s.name}
-                            </div>
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                  <Button variant="ghost" size="sm" className="h-9 px-2 text-slate-400 hover:text-slate-600" onClick={() => setAddingSubcategory(false)}>
-                    <X className="h-4 w-4" />
-                  </Button>
+            {totalPlanned > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-500 dark:text-slate-400">Gasto nas categorias planejadas</span>
+                  <span className={cn('tabular-nums font-semibold', actualPlanned > totalPlanned ? 'text-red-500' : 'text-slate-700 dark:text-slate-200')}>
+                    {fmt(actualPlanned)} de {fmt(totalPlanned)}
+                  </span>
                 </div>
-              )}
-
-              {activeSubcategoryNames.length === 0 ? (
-                <p className="text-xs text-slate-400 dark:text-slate-500 py-2">
-                  Nenhuma subcategoria adicionada.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {activeSubcategoryNames.map(name => (
-                    <div key={name} className="flex items-center gap-3">
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <Tag className="h-3 w-3 text-slate-400 shrink-0" />
-                        <span className="text-sm text-slate-700 dark:text-slate-200 truncate">{name}</span>
-                      </div>
-                      <CurrencyInput
-                        value={categoryLimits[subKey(name)] ?? ''}
-                        onChange={v => setCategoryLimits(prev => ({ ...prev, [subKey(name)]: v }))}
-                        placeholder="0,00"
-                        className="h-9 w-44 text-sm"
-                      />
-                      <Button
-                        variant="ghost" size="sm"
-                        className="h-8 w-8 p-0 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-                        onClick={() => removeSubcategory(name)}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            </div>
-
-            {/* Salvar */}
-            <div className="flex items-center gap-3 pt-2 border-t border-slate-100 dark:border-slate-700">
-              <Button onClick={handleSave} disabled={saving} className="gap-2">
-                <Save className="h-4 w-4" />
-                {saving ? 'Salvando...' : 'Salvar Planejamento'}
-              </Button>
-              {saved && (
-                <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                  <CheckCircle className="h-3.5 w-3.5" /> Salvo com sucesso!
-                </span>
-              )}
-              {saveError && (
-                <span className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
-                  <XCircle className="h-3.5 w-3.5 shrink-0" /> Não foi possível salvar: {saveError}
-                </span>
-              )}
-            </div>
+                <ProgressBar actual={actualPlanned} planned={totalPlanned} />
+              </div>
+            )}
           </div>
 
-          {/* Planejado × Realizado */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700">
-              <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Planejado × Realizado</h2>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Comparativo do período selecionado</p>
+          {/* Categorias: planejar e acompanhar na mesma linha */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 px-6 py-4">
+            <div className="flex items-start justify-between gap-3 flex-wrap pb-2">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Despesas por categoria</h2>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                  Digite quanto quer gastar em cada uma. Abra a categoria para limitar as subcategorias.
+                </p>
+              </div>
+              {emptyToFill.length > 0 && average.months > 0 && (
+                <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={fillFromAverage}>
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Preencher pela média
+                </Button>
+              )}
             </div>
 
-            {!hasTable ? (
-              <div className="px-6 py-10 text-center">
-                <p className="text-sm text-slate-400 dark:text-slate-500">
-                  Configure seu planejamento acima e salve para ver o comparativo aqui.
-                </p>
-              </div>
+            <div className="hidden sm:flex items-center gap-3 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-700 pb-2">
+              <span className="flex-1">Categoria</span>
+              <span className="w-32 text-right">Planejado</span>
+              <span className="w-44 text-right">Gasto no mês</span>
+            </div>
+
+            {activeRows.length === 0 ? (
+              <p className="text-sm text-slate-400 dark:text-slate-500 py-6 text-center">
+                Nenhum gasto registrado ainda. Importe um extrato para ver as categorias aqui.
+              </p>
             ) : (
-              <>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-slate-100 dark:border-slate-700">
-                      <th className="text-left text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide px-6 py-3">Item</th>
-                      <th className="text-right text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide px-4 py-3">Planejado</th>
-                      <th className="text-right text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide px-4 py-3">Realizado</th>
-                      <th className="text-right text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide px-4 py-3">Diferença</th>
-                      <th className="text-center text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide px-4 py-3">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
-
-                    {/* Receita */}
-                    {incomeNum > 0 && (
-                      <tr className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                        <td className="px-6 py-3">
-                          <div className="flex items-center gap-2">
-                            <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
-                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Receita</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right text-xs text-slate-600 dark:text-slate-300">{fmt(incomeNum)}</td>
-                        <td className="px-4 py-3 text-right text-xs font-semibold text-emerald-600 dark:text-emerald-400">{fmt(actualIncome)}</td>
-                        <td className="px-4 py-3 text-right text-xs font-semibold">
-                          <span className={actualIncome >= incomeNum ? 'text-emerald-600' : 'text-red-500'}>
-                            {actualIncome >= incomeNum ? '+' : ''}{fmt(actualIncome - incomeNum)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <StatusBadge planned={incomeNum} actual={actualIncome} higherIsBetter />
-                        </td>
-                      </tr>
-                    )}
-
-                    {/* Categorias de despesa */}
-                    {tableCategories.map(cat => {
-                      const planned = parseNum(categoryLimits[cat.name] ?? '')
-                      // Inclui o que foi gasto nas subcategorias dentro dela.
-                      const actual = actualByMother[cat.name] ?? 0
-                      const diff = actual - planned
-                      return (
-                        <tr key={cat.name} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                          <td className="px-6 py-3">
-                            <div className="flex items-center gap-2">
-                              <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                              <span className="text-xs text-slate-600 dark:text-slate-300">{cat.name}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-right text-xs text-slate-500 dark:text-slate-400">{fmt(planned)}</td>
-                          <td className="px-4 py-3 text-right text-xs font-semibold text-red-500">
-                            {actual > 0 ? fmt(actual) : <span className="text-slate-300 dark:text-slate-600">R$ 0,00</span>}
-                          </td>
-                          <td className="px-4 py-3 text-right text-xs font-semibold">
-                            <span className={diff <= 0 ? 'text-emerald-600' : 'text-red-500'}>
-                              {diff > 0 ? '+' : ''}{fmt(diff)}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <StatusBadge planned={planned} actual={actual} />
-                          </td>
-                        </tr>
-                      )
-                    })}
-
-                    {/* Subcategorias — entram no Total Despesas junto com as
-                        categorias (nunca junto com a categoria que já pertence
-                        a elas, ver comentário de totalPlanned acima) */}
-                    {tableSubcategories.map(sub => {
-                      const planned = parseNum(categoryLimits[subKey(sub.name)] ?? '')
-                      const actual = actualByCategory[sub.name] ?? 0
-                      const diff = actual - planned
-                      return (
-                        <tr key={`sub:${sub.name}`} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                          <td className="px-6 py-3">
-                            <div className="flex items-center gap-2">
-                              <Tag className="h-3 w-3 text-slate-400 shrink-0" />
-                              <span className="text-xs text-slate-600 dark:text-slate-300">{sub.name}</span>
-                              <span className="text-[10px] text-slate-400 dark:text-slate-500">subcategoria</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-right text-xs text-slate-500 dark:text-slate-400">{fmt(planned)}</td>
-                          <td className="px-4 py-3 text-right text-xs font-semibold text-red-500">
-                            {actual > 0 ? fmt(actual) : <span className="text-slate-300 dark:text-slate-600">R$ 0,00</span>}
-                          </td>
-                          <td className="px-4 py-3 text-right text-xs font-semibold">
-                            <span className={diff <= 0 ? 'text-emerald-600' : 'text-red-500'}>
-                              {diff > 0 ? '+' : ''}{fmt(diff)}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <StatusBadge planned={planned} actual={actual} />
-                          </td>
-                        </tr>
-                      )
-                    })}
-
-                    {/* Investimento — linkado à categoria */}
-                    {investNum > 0 && (
-                      <tr className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                        <td className="px-6 py-3">
-                          <div className="flex items-center gap-2">
-                            <span className="h-2 w-2 rounded-full bg-blue-500 shrink-0" />
-                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Investir (aportes)</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right text-xs text-slate-600 dark:text-slate-300">{fmt(investNum)}</td>
-                        <td className="px-4 py-3 text-right text-xs font-semibold text-blue-600 dark:text-blue-400">
-                          {investActual > 0 ? fmt(investActual) : <span className="text-slate-300 dark:text-slate-600">R$ 0,00</span>}
-                        </td>
-                        <td className="px-4 py-3 text-right text-xs font-semibold">
-                          <span className={investActual >= investNum ? 'text-emerald-600' : 'text-amber-500'}>
-                            {investActual - investNum > 0 ? '+' : ''}{fmt(investActual - investNum)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <StatusBadge planned={investNum} actual={investActual} higherIsBetter />
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-
-                  {(totalPlanned > 0 || actualExpenses > 0) && (
-                    <tfoot>
-                      <tr className="bg-slate-50 dark:bg-slate-700/30 border-t-2 border-slate-200 dark:border-slate-600">
-                        <td className="px-6 py-3">
-                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Total Despesas</span>
-                        </td>
-                        <td className="px-4 py-3 text-right text-xs font-bold text-slate-700 dark:text-slate-200">
-                          {totalPlanned > 0 ? fmt(totalPlanned) : '—'}
-                        </td>
-                        <td className="px-4 py-3 text-right text-xs font-bold text-red-500">{fmt(actualExpenses)}</td>
-                        <td className="px-4 py-3 text-right text-xs font-bold">
-                          {totalPlanned > 0 && (
-                            <span className={actualExpenses <= totalPlanned ? 'text-emerald-600' : 'text-red-500'}>
-                              {actualExpenses <= totalPlanned ? '' : '+'}{fmt(actualExpenses - totalPlanned)}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {totalPlanned > 0 && <StatusBadge planned={totalPlanned} actual={actualExpenses} />}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  )}
-                </table>
+              <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                {activeRows.map(renderRow)}
               </div>
-              {untrackedExpenses > 0 && (
-                <p className="text-xs text-slate-400 dark:text-slate-500 px-6 py-3 border-t border-slate-100 dark:border-slate-700">
-                  + {fmt(untrackedExpenses)} em despesas fora deste plano (categorias/subcategorias sem limite definido) — não entram no &ldquo;Total Despesas&rdquo; acima. Gasto real do período: {fmt(totalDespesasPeriodo)}.
-                </p>
-              )}
-              </>
+            )}
+
+            {quietRows.length > 0 && (
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowQuiet(v => !v)}
+                  className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex items-center gap-1"
+                >
+                  {showQuiet ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                  {showQuiet ? 'Ocultar' : 'Mostrar'} {quietRows.length} categoria{quietRows.length === 1 ? '' : 's'} sem movimento
+                </button>
+                {showQuiet && (
+                  <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                    {quietRows.map(renderRow)}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {untracked > 0 && totalPlanned > 0 && (
+              <p className="text-xs text-slate-400 dark:text-slate-500 pt-3 mt-2 border-t border-slate-100 dark:border-slate-700">
+                + {fmt(untracked)} gastos em categorias sem limite. Gasto total do mês: {fmt(actual.total)}.
+              </p>
             )}
           </div>
 
@@ -934,33 +785,6 @@ function PlanningPage() {
             </div>
           )}
 
-          {/* Resumo de desvio */}
-          {hasTable && totalPlanned > 0 && (
-            <div className={`flex items-center gap-3 p-4 rounded-2xl border ${
-              actualExpenses <= totalPlanned
-                ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20'
-                : 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20'
-            }`}>
-              {actualExpenses <= totalPlanned
-                ? <CheckCircle className="h-5 w-5 text-emerald-500 shrink-0" />
-                : <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
-              }
-              <div className="flex-1 min-w-0">
-                {actualExpenses <= totalPlanned ? (
-                  <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
-                    Você está {fmt(totalPlanned - actualExpenses)} dentro do planejamento este mês.
-                  </p>
-                ) : (
-                  <p className="text-sm font-semibold text-red-600 dark:text-red-400">
-                    Você está {fmt(actualExpenses - totalPlanned)} acima do planejamento este mês.
-                  </p>
-                )}
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Planejado: {fmt(totalPlanned)} · Realizado: {fmt(actualExpenses)}
-                </p>
-              </div>
-            </div>
-          )}
         </>
       )}
     </div>

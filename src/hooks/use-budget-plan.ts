@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 export interface BudgetPlan {
@@ -22,12 +22,20 @@ export function useBudgetPlan(month: number, year: number) {
   const [inherited, setInherited] = useState(false)
   const [inheritedFrom, setInheritedFrom] = useState<{ month: number; year: number } | null>(null)
   const [loading, setLoading] = useState(true)
+  // Mês a que o plano atual se refere ("2026-9"). Troca de mês deixa um
+  // render com o plano antigo antes do load começar — quem hidrata um
+  // formulário precisa saber se o que está em `plan` já é do mês pedido.
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
+  // Mês que a tela está mostrando agora — um save do mês anterior que termina
+  // depois da troca não pode substituir o plano do mês novo.
+  const currentKey = useRef(`${year}-${month}`)
+  useEffect(() => { currentKey.current = `${year}-${month}` }, [month, year])
 
   async function load() {
     setLoading(true)
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoading(false); return }
+    if (!user) { setLoading(false); setLoadedKey(`${year}-${month}`); return }
 
     const { data: exact } = await supabase
       .from('budget_plans')
@@ -42,6 +50,7 @@ export function useBudgetPlan(month: number, year: number) {
       setInherited(false)
       setInheritedFrom(null)
       setLoading(false)
+      setLoadedKey(`${year}-${month}`)
       return
     }
 
@@ -67,6 +76,7 @@ export function useBudgetPlan(month: number, year: number) {
       setInheritedFrom(null)
     }
     setLoading(false)
+    setLoadedKey(`${year}-${month}`)
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -92,7 +102,7 @@ export function useBudgetPlan(month: number, year: number) {
       .select()
       .single()
 
-    if (data) {
+    if (data && currentKey.current === `${data.year}-${data.month}`) {
       setPlan(data)
       setInherited(false)
       setInheritedFrom(null)
@@ -100,5 +110,5 @@ export function useBudgetPlan(month: number, year: number) {
     return { error }
   }
 
-  return { plan, loading, inherited, inheritedFrom, savePlan, refetch: load }
+  return { plan, loading, loadedKey, inherited, inheritedFrom, savePlan, refetch: load }
 }
