@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { CaktoOrderData, CaktoPayload, ordersOf } from './types'
 import { enviarEmail } from '@/lib/email/send'
+import { PLANS, PaidTier } from '@/lib/plans'
 import {
   emailAssinaturaEncerrada, emailBoasVindas, emailPagamentoAtrasado,
   emailPlanoLiberado, emailRenovacao,
@@ -51,34 +52,39 @@ export function statusForEvent(event: string): SubscriptionStatus | null {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
- * Qual plano foi comprado.
+ * Qual plano foi comprado, e por quantos meses vale cada cobrança.
  *
  * O caminho confiável é o id da oferta na Cakto, configurado no ambiente.
  * Sem ele, cai no nome da oferta/produto — que funciona, mas quebra se
  * alguém renomear a oferta no painel. Na dúvida, entrega o plano mais
  * completo: é melhor dar a mais para quem pagou do que a menos.
+ *
+ * As ofertas antigas (Essencial/Completo, mensal/anual) seguem mapeadas para
+ * as renovações de quem assinou antes da troca: o recurso liberado vem do
+ * plano novo equivalente, e o período continua o que a pessoa contratou.
  */
-export function planoDaOferta(order: CaktoOrderData): { tier: 'essencial' | 'completo'; periodo: 'mensal' | 'anual' } {
-  const ofertas: Record<string, { tier: 'essencial' | 'completo'; periodo: 'mensal' | 'anual' }> = {}
-  const mapear = (envVar: string | undefined, tier: 'essencial' | 'completo', periodo: 'mensal' | 'anual') => {
-    if (envVar) ofertas[envVar] = { tier, periodo }
+export function planoDaOferta(order: CaktoOrderData): { tier: PaidTier; meses: number } {
+  const ofertas: Record<string, { tier: PaidTier; meses: number }> = {}
+  const mapear = (envVar: string | undefined, tier: PaidTier, meses: number) => {
+    if (envVar) ofertas[envVar] = { tier, meses }
   }
-  mapear(process.env.CAKTO_OFFER_ESSENCIAL_MENSAL, 'essencial', 'mensal')
-  mapear(process.env.CAKTO_OFFER_ESSENCIAL_ANUAL, 'essencial', 'anual')
-  mapear(process.env.CAKTO_OFFER_COMPLETO_MENSAL, 'completo', 'mensal')
-  mapear(process.env.CAKTO_OFFER_COMPLETO_ANUAL, 'completo', 'anual')
+  mapear(process.env.CAKTO_OFFER_MENSAL, 'mensal', 1)
+  mapear(process.env.CAKTO_OFFER_TRIMESTRAL, 'trimestral', 3)
+  mapear(process.env.CAKTO_OFFER_ANUAL, 'anual', 12)
+  // Legado
+  mapear(process.env.CAKTO_OFFER_ESSENCIAL_MENSAL, 'mensal', 1)
+  mapear(process.env.CAKTO_OFFER_ESSENCIAL_ANUAL, 'mensal', 12)
+  mapear(process.env.CAKTO_OFFER_COMPLETO_MENSAL, 'anual', 1)
+  mapear(process.env.CAKTO_OFFER_COMPLETO_ANUAL, 'anual', 12)
 
   const porId = order.offer?.id ? ofertas[order.offer.id] : undefined
   if (porId) return porId
 
   const nome = `${order.offer?.name ?? ''} ${order.product?.name ?? ''}`.toLowerCase()
-  const periodo: 'mensal' | 'anual' = /anual|annual|12 ?meses/.test(nome) ? 'anual' : 'mensal'
-  const tier: 'essencial' | 'completo' = /essencial|basico|básico/.test(nome) ? 'essencial' : 'completo'
-  return { tier, periodo }
-}
-
-function isAnnual(order: CaktoOrderData): boolean {
-  return planoDaOferta(order).periodo === 'anual'
+  const meses = /trimestr|3 ?meses/.test(nome) ? 3 : /anual|annual|12 ?meses/.test(nome) ? 12 : 1
+  if (/essencial|basico|básico/.test(nome)) return { tier: 'mensal', meses }
+  if (/completo/.test(nome)) return { tier: 'anual', meses }
+  return { tier: meses === 12 ? 'anual' : meses === 3 ? 'trimestral' : 'mensal', meses }
 }
 
 /**
@@ -89,8 +95,7 @@ function isAnnual(order: CaktoOrderData): boolean {
 export function periodEnd(order: CaktoOrderData, from = new Date()): string {
   const base = order.paidAt ? new Date(order.paidAt) : from
   const end = new Date(base)
-  if (isAnnual(order)) end.setFullYear(end.getFullYear() + 1)
-  else end.setMonth(end.getMonth() + 1)
+  end.setMonth(end.getMonth() + planoDaOferta(order).meses)
   end.setDate(end.getDate() + 1)
   return end.toISOString()
 }
@@ -213,9 +218,7 @@ export async function handleCaktoEvent(
     const row = {
       user_id: resolved.userId,
       status,
-      plan: status === 'active'
-        ? `${planoDaOferta(order).tier}_${planoDaOferta(order).periodo}`
-        : 'free',
+      plan: status === 'active' ? planoDaOferta(order).tier : 'free',
       provider: 'cakto',
       provider_subscription_id: (order.subscription as { id?: string } | null)?.id ?? null,
       provider_order_id: order.id,
@@ -250,11 +253,8 @@ export async function handleCaktoEvent(
   return results
 }
 
-const ROTULO: Record<string, string> = { essencial: 'Essencial', completo: 'Completo' }
-
 function rotuloDoPlano(order: CaktoOrderData): string {
-  const { tier, periodo } = planoDaOferta(order)
-  return `${ROTULO[tier]} ${periodo === 'anual' ? 'anual' : 'mensal'}`
+  return PLANS[planoDaOferta(order).tier].label
 }
 
 /**

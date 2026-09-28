@@ -3,11 +3,13 @@ import { NextRequest, NextResponse } from 'next/server'
 /**
  * Links curtos de assinatura no nosso domínio.
  *
- *   noblifinance.com.br/assinar/essencial        → checkout Essencial mensal
- *   noblifinance.com.br/assinar/essencial-anual  → checkout Essencial anual
- *   noblifinance.com.br/assinar/completo         → checkout Completo mensal
- *   noblifinance.com.br/assinar/completo-anual   → checkout Completo anual
- *   noblifinance.com.br/assinar                  → Completo mensal (padrão)
+ *   noblifinance.com.br/assinar/mensal       → checkout do plano Mensal
+ *   noblifinance.com.br/assinar/trimestral   → checkout do plano Trimestral
+ *   noblifinance.com.br/assinar/anual        → checkout do plano Anual
+ *   noblifinance.com.br/assinar              → Mensal (padrão)
+ *
+ * Os links dos planos antigos (essencial, completo, *-anual) ainda circulam
+ * em anúncio já publicado: caem no plano novo do mesmo período.
  *
  * Por que redirecionar e não repassar a página de pagamento: o checkout tem
  * antifraude, autenticação do cartão pelo banco (3DS) e cookies próprios da
@@ -23,10 +25,16 @@ import { NextRequest, NextResponse } from 'next/server'
  */
 
 const DESTINOS: Record<string, string | undefined> = {
-  'essencial': process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_ESSENCIAL_MENSAL,
-  'essencial-anual': process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_ESSENCIAL_ANUAL,
-  'completo': process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_COMPLETO_MENSAL,
-  'completo-anual': process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_COMPLETO_ANUAL,
+  'mensal': process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_MENSAL,
+  'trimestral': process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_TRIMESTRAL,
+  'anual': process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_ANUAL,
+}
+
+const LEGADO: Record<string, string> = {
+  'essencial': 'mensal',
+  'completo': 'mensal',
+  'essencial-anual': 'anual',
+  'completo-anual': 'anual',
 }
 
 export async function GET(
@@ -34,9 +42,10 @@ export async function GET(
   { params }: { params: Promise<{ plano?: string[] }> },
 ) {
   const { plano } = await params
-  const chave = (plano?.[0] ?? 'completo').toLowerCase()
+  const pedido = (plano?.[0] ?? 'mensal').toLowerCase()
+  const chave = LEGADO[pedido] ?? pedido
 
-  const destino = DESTINOS[chave] ?? DESTINOS['completo']
+  const destino = DESTINOS[chave] ?? DESTINOS['mensal']
   const site = process.env.NEXT_PUBLIC_SITE_URL ?? req.nextUrl.origin
 
   // Sem checkout configurado, manda para a página de planos em vez de dar

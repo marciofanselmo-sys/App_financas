@@ -32,13 +32,13 @@ export default function TermsPage() {
 
         <h2>4. Planos e assinatura</h2>
         <p>
-          A {BRAND.name} tem um plano gratuito e planos pagos (Essencial e Completo), nas
-          modalidades mensal e anual. O que cada plano inclui e o preço vigente ficam sempre
+          A {BRAND.name} tem um plano gratuito e três planos pagos: Mensal, Trimestral e
+          Anual. O que cada plano inclui e o preço vigente ficam sempre
           visíveis na página de planos, dentro do app, antes da contratação.
         </p>
         <p>
           A assinatura é <strong>recorrente e renovada automaticamente</strong> ao fim de cada
-          período — a cada 30 dias no plano mensal, a cada 365 dias no anual — até que você
+          período — a cada mês no plano Mensal, a cada 3 meses no Trimestral e a cada 12 meses no Anual — até que você
           cancele. A cobrança é processada pela <strong>Cakto</strong>, que é quem recebe os
           dados de pagamento e emite o comprovante; a {BRAND.name} não armazena dados do seu
           cartão.

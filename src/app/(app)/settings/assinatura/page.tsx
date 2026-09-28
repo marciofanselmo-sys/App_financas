@@ -1,8 +1,7 @@
 'use client'
 
-import { useState } from 'react'
 import { useSubscription, checkoutUrl } from '@/hooks/use-subscription'
-import { BillingPeriod, PLANS, PlanTier, maiorDescontoAnual, moeda, precoDe } from '@/lib/plans'
+import { PAID_TIERS, PLANS, PLAN_ITEMS, PlanTier, moeda, periodicidade, precoDe } from '@/lib/plans'
 import { Badge } from '@/components/ui/badge'
 import { Check, Sparkles, AlertTriangle, Crown } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -13,28 +12,7 @@ import { cn } from '@/lib/utils'
  * da Cakto. Cancelamento também é lá, e o link leva o usuário para lá.
  */
 
-const ORDEM: PlanTier[] = ['free', 'essencial', 'completo']
-
-const ITENS: Record<PlanTier, string[]> = {
-  free: [
-    'Até 2 contas ou cartões',
-    'Lançamentos, categorias e eventos sem limite',
-    'Histórico completo, sem corte de meses',
-    '1 importação de extrato por mês',
-  ],
-  essencial: [
-    'Até 5 contas e cartões',
-    'Importação de extrato sem limite',
-    'Regras que categorizam sozinhas',
-    'Recorrências, parcelas e planejamento mensal',
-    'Relatório mensal, metas e exportação em CSV',
-  ],
-  completo: [
-    'Tudo do Essencial, com contas ilimitadas',
-    'Todos os relatórios: anual, parcelas, gastos fixos e investimentos',
-    'Carteira de investimentos com proventos e alocação',
-  ],
-}
+const ORDEM: PlanTier[] = ['free', ...PAID_TIERS]
 
 const STATUS_TEXTO: Record<string, { texto: string; cor: string }> = {
   free:       { texto: 'Plano grátis',            cor: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300' },
@@ -49,7 +27,6 @@ const dataBR = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/')
 
 export default function AssinaturaPage() {
   const { subscription, status, tier, userId, loading } = useSubscription()
-  const [periodo, setPeriodo] = useState<BillingPeriod>('mensal')
 
   if (loading) {
     return (
@@ -112,33 +89,11 @@ export default function AssinaturaPage() {
         )}
       </div>
 
-      {/* Mensal x anual */}
-      <div className="flex items-center justify-center gap-2">
-        <div className="inline-flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
-          {(['mensal', 'anual'] as BillingPeriod[]).map(p => (
-            <button
-              key={p} type="button" onClick={() => setPeriodo(p)}
-              className={cn(
-                'px-4 py-1.5 rounded-lg text-sm font-medium transition-colors',
-                periodo === p
-                  ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700',
-              )}
-            >
-              {p === 'mensal' ? 'Mensal' : 'Anual'}
-            </button>
-          ))}
-        </div>
-        <Badge className="text-[10px] border-0 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-          {maiorDescontoAnual()}% de desconto no anual
-        </Badge>
-      </div>
-
       {/* Planos */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {ORDEM.map(t => {
           const atual = t === tier
-          const destaque = t === 'completo'
+          const destaque = t === 'anual'
           return (
             <div
               key={t}
@@ -158,19 +113,19 @@ export default function AssinaturaPage() {
                   )}
                 </div>
                 {(() => {
-                  const preco = precoDe(t, periodo)
-                  if (!preco) {
+                  const preco = precoDe(t)
+                  if (!preco || t === 'free') {
                     return <p className="text-2xl font-extrabold text-[#0B2D6B] dark:text-slate-100 mt-1">R$ 0</p>
                   }
                   return (
                     <div className="mt-1">
                       <p className="text-2xl font-extrabold text-[#0B2D6B] dark:text-slate-100">
-                        {moeda(preco.porMes)}
-                        <span className="text-xs font-medium text-slate-400"> /mês</span>
+                        {moeda(preco.total)}
+                        <span className="text-xs font-medium text-slate-400"> {periodicidade(t)}</span>
                       </p>
-                      {periodo === 'anual' && (
+                      {preco.economia > 0 && (
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                          {moeda(preco.total)} à vista por 12 meses ·{' '}
+                          {moeda(preco.porMes)}/mês ·{' '}
                           <span className="text-emerald-600 dark:text-emerald-400 font-medium">
                             economiza {moeda(preco.economia)}
                           </span>
@@ -182,7 +137,7 @@ export default function AssinaturaPage() {
               </div>
 
               <ul className="space-y-1.5 flex-1">
-                {ITENS[t].map(item => (
+                {PLAN_ITEMS[t].map(item => (
                   <li key={item} className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300">
                     <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
                     {item}
@@ -192,11 +147,11 @@ export default function AssinaturaPage() {
 
               {t !== 'free' && !atual && (
                 <a
-                  href={checkoutUrl(userId, `app_planos_${t}_${periodo}`, { tier: t, periodo })}
+                  href={checkoutUrl(userId, `app_planos_${t}`, t)}
                   target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 transition-colors"
                 >
-                  <Sparkles className="h-4 w-4" /> Assinar {periodo === 'anual' ? 'por 12 meses' : ''}
+                  <Sparkles className="h-4 w-4" /> Assinar {PLANS[t].label}
                 </a>
               )}
             </div>
@@ -205,7 +160,7 @@ export default function AssinaturaPage() {
       </div>
 
       <p className="text-xs text-slate-400 dark:text-slate-500">
-        No plano anual você paga uma vez e fica 12 meses sem se preocupar.
+        No Trimestral e no Anual você paga uma vez e fica 3 ou 12 meses sem se preocupar.
         Nenhum plano corta o seu histórico: seus lançamentos continuam inteiros mesmo no plano grátis.
         Se uma assinatura terminar, nada é apagado — os recursos pagos apenas deixam de abrir.
       </p>

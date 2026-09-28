@@ -225,11 +225,13 @@ Recomendações já passadas ao time de aquisição: tirar o Tailwind do CDN
 ## M-2. Links curtos de assinatura — USAR ESTES
 
 ```
-https://noblifinance.com.br/assinar/essencial         R$ 29,90/mês
-https://noblifinance.com.br/assinar/essencial-anual   R$ 297,00
-https://noblifinance.com.br/assinar/completo          R$ 49,90/mês
-https://noblifinance.com.br/assinar/completo-anual    R$ 497,00
-https://noblifinance.com.br/assinar                   (padrão: Completo mensal)
+https://noblifinance.com.br/assinar/mensal       R$ 29,90 por mês
+https://noblifinance.com.br/assinar/trimestral   R$ 79,90 a cada 3 meses
+https://noblifinance.com.br/assinar/anual        R$ 297,00 por ano
+https://noblifinance.com.br/assinar              (padrão: Mensal)
+
+Links antigos (essencial, completo, *-anual) continuam funcionando e caem
+no plano novo do mesmo período.
 ```
 
 Eles redirecionam para o checkout da Cakto **repassando `utm_*`, `sck` e

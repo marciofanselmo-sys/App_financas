@@ -27,6 +27,8 @@ import {
   ChevronDown, ChevronUp, RefreshCw, AlertCircle, CheckCircle2,
 } from 'lucide-react'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
+import { usePlan } from '@/hooks/use-subscription'
+import { UpgradeCard } from '@/components/plan/plan-gate'
 import { createClient } from '@/lib/supabase/client'
 
 const TYPE_FILTER_OPTIONS: { value: 'all' | TransactionType; label: string }[] = [
@@ -69,6 +71,8 @@ export default function BoardDetailPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
+  const [exportLocked, setExportLocked] = useState(false)
+  const { can: canPlan, loading: planLoading } = usePlan()
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [expandedPos, setExpandedPos] = useState(false)
   const [expandedProventos, setExpandedProventos] = useState(false)
@@ -376,7 +380,7 @@ export default function BoardDetailPage() {
             variant="outline"
             size="sm"
             className="gap-2"
-            onClick={() => setExportOpen(true)}
+            onClick={() => (planLoading || canPlan('export') ? setExportOpen(true) : setExportLocked(true))}
           >
             <Download className="h-4 w-4" />
             <span className="hidden sm:inline">Exportar CSV</span>
@@ -572,6 +576,13 @@ export default function BoardDetailPage() {
         onImported={refetch}
         boardId={boardId}
       />
+
+      <Dialog open={exportLocked} onOpenChange={setExportLocked}>
+        <DialogContent className="sm:max-w-lg p-0 border-0 bg-transparent shadow-none">
+          <DialogHeader className="sr-only"><DialogTitle>Exportar em CSV</DialogTitle></DialogHeader>
+          <UpgradeCard feature="export" pitch="Leve seus lançamentos para a planilha em CSV e salve os relatórios em PDF." />
+        </DialogContent>
+      </Dialog>
 
       <ExportCSVModal
         open={exportOpen}

@@ -1,6 +1,9 @@
 'use client'
 
 import { withPlan } from '@/components/plan/with-plan'
+import { PlanGate } from '@/components/plan/plan-gate'
+import Link from 'next/link'
+import { usePlan } from '@/hooks/use-subscription'
 import type { Category, Transaction } from '@/types'
 
 import { useState, useMemo, Fragment } from 'react'
@@ -15,7 +18,7 @@ import { useSubcategoryNames } from '@/hooks/use-subcategory-names'
 import { subKey } from '@/lib/plan-keys'
 import { calcHealthScore, scoreConfig } from '@/components/dashboard/summary-cards'
 import {
-  Printer, CalendarDays, BarChart2, CreditCard, RefreshCw,
+  Printer, CalendarDays, BarChart2, CreditCard, RefreshCw, Lock,
   ChevronLeft, ChevronRight, ChevronsUpDown, TrendingUp, Tag,
 } from 'lucide-react'
 import { CategorySummary, PositionsBreakdown, ProventosBreakdown } from '@/components/investments/rico-position-summary'
@@ -882,6 +885,11 @@ function ReportsPage() {
   const [boardId, setBoardId] = useState<string>('all')
 
   const { boards } = useTransactionBoards()
+  const { can, loading: planLoading } = usePlan()
+  // Relatórios além do mensal e o PDF dependem do plano; enquanto o plano
+  // carrega, libera — o bloqueio nunca pisca.
+  const podeVer = planLoading || type === 'mensal' || can('reportsFull')
+  const podeExportar = planLoading || can('export')
   // Conta de investimento nunca entra nos agregados de Mensal/Anual/Parcelas/
   // Fixos (aporte não é gasto) — ela tem a aba própria "Investimentos", onde o
   // alfinete de /investments controla quem aparece.
@@ -898,13 +906,27 @@ function ReportsPage() {
           <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Relatórios</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Visualize e exporte relatórios do período desejado</p>
         </div>
-        <Button onClick={() => window.print()} size="lg" className="gap-2 shrink-0">
-          <Printer className="h-5 w-5" />
-          Exportar PDF
-        </Button>
+        {podeExportar ? (
+          podeVer && (
+            <Button onClick={() => window.print()} size="lg" className="gap-2 shrink-0">
+              <Printer className="h-5 w-5" />
+              Exportar PDF
+            </Button>
+          )
+        ) : (
+          <Link
+            href="/settings/assinatura"
+            title="Exportar em PDF está nos planos Mensal e Anual"
+            className="inline-flex items-center gap-2 shrink-0 rounded-xl border border-slate-200 dark:border-white/[0.08] px-4 h-10 text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-blue-600 hover:border-blue-300 transition-colors"
+          >
+            <Lock className="h-4 w-4" />
+            Exportar PDF
+          </Link>
+        )}
       </div>
 
       {/* Dica de exportação PDF */}
+      {podeExportar && (
       <div className="print:hidden flex items-start gap-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-xl p-3.5">
         <Printer className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
         <div className="text-xs text-amber-700 dark:text-amber-300 space-y-1">
@@ -913,6 +935,7 @@ function ReportsPage() {
           <p><strong>Windows:</strong> clique em &quot;Exportar PDF&quot; → selecione a impressora &quot;Microsoft Print to PDF&quot; → &quot;Imprimir&quot;.</p>
         </div>
       </div>
+      )}
 
       {/* Controles */}
       <div className="print:hidden space-y-3">
@@ -976,10 +999,17 @@ function ReportsPage() {
       {/* Conteúdo */}
       <div className="bg-white dark:bg-[#111c2d] print:bg-white rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] print:border-0 print:shadow-none p-3 sm:p-6 print:p-0">
         {type === 'mensal'   && <MonthlyReport month={month} year={year} boardId={boardId} excludeBoardIds={excludeBoardIds} />}
-        {type === 'anual'    && <AnnualReport year={year} boardId={boardId} excludeBoardIds={excludeBoardIds} />}
-        {type === 'parcelas' && <InstallmentsReport boardId={boardId} excludeBoardIds={excludeBoardIds} />}
-        {type === 'fixos'    && <FixedChargesReport boardId={boardId} excludeBoardIds={excludeBoardIds} />}
-        {type === 'investimentos' && <InvestmentsReport boardId={boardId} />}
+        {type !== 'mensal' && (
+          <PlanGate
+            feature="reportsFull"
+            pitch="Veja o ano inteiro, as parcelas que ainda vão cair, seus gastos fixos e a carteira de investimentos."
+          >
+            {type === 'anual'    && <AnnualReport year={year} boardId={boardId} excludeBoardIds={excludeBoardIds} />}
+            {type === 'parcelas' && <InstallmentsReport boardId={boardId} excludeBoardIds={excludeBoardIds} />}
+            {type === 'fixos'    && <FixedChargesReport boardId={boardId} excludeBoardIds={excludeBoardIds} />}
+            {type === 'investimentos' && <InvestmentsReport boardId={boardId} />}
+          </PlanGate>
+        )}
       </div>
     </div>
   )

@@ -121,10 +121,14 @@ export async function GET() {
     resend_api_key: Boolean(process.env.RESEND_API_KEY),
     site_url: process.env.NEXT_PUBLIC_SITE_URL ?? null,
     checkouts: {
-      essencial_mensal: Boolean(process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_ESSENCIAL_MENSAL),
-      essencial_anual: Boolean(process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_ESSENCIAL_ANUAL),
-      completo_mensal: Boolean(process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_COMPLETO_MENSAL),
-      completo_anual: Boolean(process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_COMPLETO_ANUAL),
+      mensal: Boolean(process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_MENSAL),
+      trimestral: Boolean(process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_TRIMESTRAL),
+      anual: Boolean(process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_ANUAL),
+    },
+    ofertas: {
+      mensal: Boolean(process.env.CAKTO_OFFER_MENSAL),
+      trimestral: Boolean(process.env.CAKTO_OFFER_TRIMESTRAL),
+      anual: Boolean(process.env.CAKTO_OFFER_ANUAL),
     },
   }
 

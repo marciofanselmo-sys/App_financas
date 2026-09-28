@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { logSafeError } from '@/lib/supabase-error'
-import { BillingPeriod, Feature, PLANS, PlanDefinition, PlanTier, tierFor } from '@/lib/plans'
+import { Feature, PLANS, PaidTier, PlanDefinition, PlanTier, tierFor } from '@/lib/plans'
 
 export type SubscriptionStatus =
   | 'free' | 'active' | 'past_due' | 'canceled' | 'refunded' | 'chargeback'
@@ -68,23 +68,22 @@ export function usePlan(): { tier: PlanTier; plan: PlanDefinition; can: (f: Feat
  * que o webhook usa para ligar o pagamento à conta certa, sem depender de o
  * e-mail do checkout ser igual ao do cadastro.
  *
- * As quatro variáveis são escritas uma a uma de propósito: o Next troca
+ * As três variáveis são escritas uma a uma de propósito: o Next troca
  * `process.env.NEXT_PUBLIC_*` no código durante o build, e acesso dinâmico
  * (process.env[chave]) chegaria vazio no navegador.
  */
-const CHECKOUTS: Record<string, string | undefined> = {
-  essencial_mensal: process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_ESSENCIAL_MENSAL,
-  essencial_anual: process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_ESSENCIAL_ANUAL,
-  completo_mensal: process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_COMPLETO_MENSAL,
-  completo_anual: process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_COMPLETO_ANUAL,
+const CHECKOUTS: Record<PaidTier, string | undefined> = {
+  mensal: process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_MENSAL,
+  trimestral: process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_TRIMESTRAL,
+  anual: process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_ANUAL,
 }
 
 export function checkoutUrl(
   userId: string | null,
   utmSource = 'app',
-  opcoes?: { tier?: PlanTier; periodo?: BillingPeriod },
+  tier: PaidTier = 'mensal',
 ): string {
-  const chave = `${opcoes?.tier ?? 'completo'}_${opcoes?.periodo ?? 'mensal'}`
+  const chave = tier
   const base = CHECKOUTS[chave] ?? process.env.NEXT_PUBLIC_CAKTO_CHECKOUT_URL
   if (!base) return '#'
   const url = new URL(base)

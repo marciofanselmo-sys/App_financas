@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Feature, FEATURE_LABEL, PLANS, PlanTier, requiredTier } from '@/lib/plans'
+import { Feature, FEATURE_LABEL, PLANS, PLAN_ITEMS, requiredTier } from '@/lib/plans'
 import { usePlan, checkoutUrl } from '@/hooks/use-subscription'
 import { Lock, Sparkles, Check } from 'lucide-react'
 
@@ -62,7 +62,7 @@ export function UpgradeCard({ feature, pitch }: { feature: Feature; pitch?: stri
           </div>
 
           <ul className="space-y-1">
-            {resumoDoPlano(tier).map(item => (
+            {PLAN_ITEMS[tier].map(item => (
               <li key={item} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                 <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                 {item}
@@ -72,7 +72,7 @@ export function UpgradeCard({ feature, pitch }: { feature: Feature; pitch?: stri
 
           <div className="flex items-center gap-3 flex-wrap pt-1">
             <a
-              href={checkoutUrl(userId, 'app_bloqueio')}
+              href={checkoutUrl(userId, 'app_bloqueio', tier)}
               target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 transition-colors"
             >
@@ -86,20 +86,4 @@ export function UpgradeCard({ feature, pitch }: { feature: Feature; pitch?: stri
       </div>
     </div>
   )
-}
-
-function resumoDoPlano(tier: PlanTier): string[] {
-  if (tier === 'essencial') {
-    return [
-      'Importação de extrato sem limite (C6, Inter, Itaú, Mercado Pago, Nubank em CSV/OFX)',
-      'Regras que categorizam sozinhas o que se repete',
-      'Recorrências, parcelas e planejamento mensal',
-      'Até 5 contas e cartões',
-    ]
-  }
-  return [
-    'Tudo do Essencial, com contas ilimitadas',
-    'Todos os relatórios: anual, parcelas, gastos fixos e investimentos',
-    'Carteira de investimentos com proventos e alocação',
-  ]
 }

@@ -1194,7 +1194,7 @@ function shiftDays(date: string, days: number): string {
             <div className="pt-2">
               <UpgradeCard
                 feature="import"
-                pitch={`Você já usou ${quota.used} de ${quota.limit} importação${quota.limit === 1 ? '' : 'ões'} deste mês no plano grátis. Com o Essencial, importa quantos extratos quiser — e as regras categorizam sozinhas.`}
+                pitch={`Você já usou ${quota.used} de ${quota.limit} importação${quota.limit === 1 ? '' : 'ões'} deste mês no plano grátis. Com qualquer plano pago, importa quantos extratos quiser — e as regras categorizam sozinhas.`}
               />
             </div>
           )}
