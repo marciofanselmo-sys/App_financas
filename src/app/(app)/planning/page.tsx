@@ -67,14 +67,20 @@ function CurrencyInput({
       ? new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num)
       : ''
 
+  // Só avisa quando o número mudou de verdade — clicar e sair sem alterar
+  // nada não pode disparar o salvamento automático.
+  const commit = (v: string) => {
+    if (parseNum(v) !== parseNum(value)) onChange(v)
+  }
+
   if (editing) {
     return (
       <Input
         type="number"
         autoFocus
         defaultValue={!isNaN(num) && num > 0 ? num : ''}
-        onChange={e => onChange(e.target.value)}
-        onBlur={e => { onChange(e.target.value); setEditing(false) }}
+        onChange={e => commit(e.target.value)}
+        onBlur={e => { commit(e.target.value); setEditing(false) }}
         step="0.01"
         min="0"
         placeholder={placeholder}
@@ -482,7 +488,6 @@ function PlanningPage() {
               <CurrencyInput
                 value={categoryLimits[r.cat.name] ?? ''}
                 onChange={v => setLimit(r.cat.name, v)}
-                placeholder={r.avg > 0 ? new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(r.avg) : '0,00'}
                 className="h-9 text-sm text-right"
               />
             )}
