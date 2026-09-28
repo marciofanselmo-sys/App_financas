@@ -2,7 +2,7 @@
 
 import { withPlan } from '@/components/plan/with-plan'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { sumInvestmentContributions } from '@/lib/investment-contributions'
@@ -124,19 +124,43 @@ function monthsBack(month: number, year: number, n: number) {
   return { month: d.getMonth() + 1, year: d.getFullYear() }
 }
 
-// Cor da barra de progresso: dentro, perto do limite ou estourado.
-function progressColor(pct: number) {
-  if (pct > 100) return 'bg-red-500'
-  if (pct > 90) return 'bg-amber-500'
-  return 'bg-emerald-500'
+function StatusBadge({ planned, actual, higherIsBetter = false }: { planned: number; actual: number; higherIsBetter?: boolean }) {
+  if (planned === 0) return null
+  const pct = (actual / planned) * 100
+  if (higherIsBetter) {
+    if (pct >= 100) return <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400"><CheckCircle className="h-3 w-3" /> Atingido</span>
+    if (pct >= 80)  return <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-500"><AlertTriangle className="h-3 w-3" /> Quase</span>
+    return <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-500"><XCircle className="h-3 w-3" /> Abaixo</span>
+  }
+  if (pct <= 90)  return <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400"><CheckCircle className="h-3 w-3" /> OK</span>
+  if (pct <= 100) return <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-500"><AlertTriangle className="h-3 w-3" /> Atenção</span>
+  return <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-500"><XCircle className="h-3 w-3" /> Estourado</span>
 }
 
-function ProgressBar({ actual, planned }: { actual: number; planned: number }) {
-  const pct = planned > 0 ? (actual / planned) * 100 : 0
+// Linha da tabela Planejado × Realizado. Em despesa, gastar menos é bom;
+// em receita e investimento (higherIsBetter), é o contrário.
+function TableRow({ label, planned, actual, actualClass, higherIsBetter = false, strong = false, sub = false }: {
+  label: string; planned: number; actual: number; actualClass: string
+  higherIsBetter?: boolean; strong?: boolean; sub?: boolean
+}) {
+  const diff = actual - planned
+  const good = higherIsBetter ? diff >= 0 : diff <= 0
   return (
-    <div className="h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-      <div className={`h-full rounded-full transition-all ${progressColor(pct)}`} style={{ width: `${Math.min(100, pct)}%` }} />
-    </div>
+    <tr className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+      <td className={cn('py-3 pr-4', sub ? 'pl-10' : 'pl-6')}>
+        <span className={cn('text-xs', strong ? 'font-semibold text-slate-700 dark:text-slate-200' : sub ? 'text-slate-500 dark:text-slate-400' : 'text-slate-600 dark:text-slate-300')}>
+          {label}
+        </span>
+      </td>
+      <td className="px-4 py-3 text-right text-xs text-slate-500 dark:text-slate-400 tabular-nums">{fmt(planned)}</td>
+      <td className={cn('px-4 py-3 text-right text-xs font-semibold tabular-nums', actual > 0 ? actualClass : 'text-slate-300 dark:text-slate-600')}>
+        {fmt(actual)}
+      </td>
+      <td className="px-4 py-3 text-right text-xs font-semibold tabular-nums">
+        <span className={good ? 'text-emerald-600' : 'text-red-500'}>{diff > 0 ? '+' : ''}{fmt(diff)}</span>
+      </td>
+      <td className="px-4 py-3 text-center"><StatusBadge planned={planned} actual={actual} higherIsBetter={higherIsBetter} /></td>
+    </tr>
   )
 }
 
@@ -383,6 +407,8 @@ function PlanningPage() {
   // Realizado só das categorias com limite, para bater com o planejado.
   const actualPlanned = rows.filter(r => r.planned > 0).reduce((s, r) => s + r.actual, 0)
   const untracked = Math.max(0, actual.total - actualPlanned)
+  const tableRows = activeRows.filter(r => r.planned > 0)
+  const hasTable = tableRows.length > 0 || incomeNum > 0 || investNum > 0
   const emptyToFill = rows.filter(r => r.planned === 0 && Math.max(r.avg, r.fixed) > 0)
 
   // Preenche só o que está vazio: o maior entre a média e o que já é fixo,
@@ -427,7 +453,6 @@ function PlanningPage() {
 
   function renderRow(r: typeof rows[number]) {
     const open = expanded.has(r.cat.id)
-    const over = r.planned > 0 && r.actual > r.planned
     return (
       <div key={r.cat.id} className="py-3">
         <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
@@ -439,7 +464,6 @@ function PlanningPage() {
             {r.kids.length > 0
               ? (open ? <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" /> : <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />)
               : <span className="w-4 shrink-0" />}
-            <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: r.cat.color }} />
             <div className="min-w-0">
               <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{r.cat.name}</p>
               <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate">
@@ -463,14 +487,6 @@ function PlanningPage() {
               />
             )}
           </div>
-
-          <div className="w-full sm:w-44 shrink-0 space-y-1">
-            <p className={cn('text-xs tabular-nums text-right', over ? 'text-red-500 font-semibold' : 'text-slate-500 dark:text-slate-400')}>
-              {fmt(r.actual)}
-              {r.planned > 0 && <span className="text-slate-400 dark:text-slate-500 font-normal"> de {fmt(r.planned)}</span>}
-            </p>
-            {r.planned > 0 && <ProgressBar actual={r.actual} planned={r.planned} />}
-          </div>
         </div>
 
         {r.own > 0 && r.kidsSum > r.own && (
@@ -487,8 +503,6 @@ function PlanningPage() {
         {open && (
           <div className="mt-2 ml-10 pl-3 border-l-2 border-slate-100 dark:border-white/[0.08] space-y-2">
             {r.kids.map(k => {
-              const kPlanned = parseNum(categoryLimits[subKey(k.name)] ?? '')
-              const kActual = actual.byCategory[k.name] ?? 0
               const kAvg = average.byCategory[k.name] ?? 0
               const kFixed = fixed.byCategory[k.name] ?? 0
               return (
@@ -507,12 +521,6 @@ function PlanningPage() {
                       placeholder="opcional"
                       className="h-8 text-xs text-right"
                     />
-                  </div>
-                  <div className="w-full sm:w-44 shrink-0 space-y-1">
-                    <p className={cn('text-[11px] tabular-nums text-right', kPlanned > 0 && kActual > kPlanned ? 'text-red-500 font-semibold' : 'text-slate-400 dark:text-slate-500')}>
-                      {fmt(kActual)}{kPlanned > 0 && <> de {fmt(kPlanned)}</>}
-                    </p>
-                    {kPlanned > 0 && <ProgressBar actual={kActual} planned={kPlanned} />}
                   </div>
                 </div>
               )
@@ -646,21 +654,9 @@ function PlanningPage() {
                 <span className="tabular-nums">{fmt(Math.abs(free))}</span>
               </div>
             </div>
-
-            {totalPlanned > 0 && (
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500 dark:text-slate-400">Gasto nas categorias planejadas</span>
-                  <span className={cn('tabular-nums font-semibold', actualPlanned > totalPlanned ? 'text-red-500' : 'text-slate-700 dark:text-slate-200')}>
-                    {fmt(actualPlanned)} de {fmt(totalPlanned)}
-                  </span>
-                </div>
-                <ProgressBar actual={actualPlanned} planned={totalPlanned} />
-              </div>
-            )}
           </div>
 
-          {/* Categorias: planejar e acompanhar na mesma linha */}
+          {/* Categorias: onde se planeja. O acompanhamento fica na tabela abaixo. */}
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 px-6 py-4">
             <div className="flex items-start justify-between gap-3 flex-wrap pb-2">
               <div>
@@ -680,7 +676,6 @@ function PlanningPage() {
             <div className="hidden sm:flex items-center gap-3 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-700 pb-2">
               <span className="flex-1">Categoria</span>
               <span className="w-32 text-right">Planejado</span>
-              <span className="w-44 text-right">Gasto no mês</span>
             </div>
 
             {activeRows.length === 0 ? (
@@ -710,11 +705,85 @@ function PlanningPage() {
                 )}
               </div>
             )}
+          </div>
 
-            {untracked > 0 && totalPlanned > 0 && (
-              <p className="text-xs text-slate-400 dark:text-slate-500 pt-3 mt-2 border-t border-slate-100 dark:border-slate-700">
-                + {fmt(untracked)} gastos em categorias sem limite. Gasto total do mês: {fmt(actual.total)}.
-              </p>
+          {/* Planejado × Realizado — com o gasto do mês */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700">
+              <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Planejado × Realizado</h2>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Quanto já saiu em cada categoria planejada neste mês</p>
+            </div>
+
+            {!hasTable ? (
+              <div className="px-6 py-10 text-center">
+                <p className="text-sm text-slate-400 dark:text-slate-500">
+                  Defina a receita ou o limite de alguma categoria acima para ver o comparativo aqui.
+                </p>
+              </div>
+            ) : (
+              <>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-slate-100 dark:border-slate-700">
+                      <th className="text-left text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide px-6 py-3">Item</th>
+                      <th className="text-right text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide px-4 py-3">Planejado</th>
+                      <th className="text-right text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide px-4 py-3">Realizado</th>
+                      <th className="text-right text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide px-4 py-3">Diferença</th>
+                      <th className="text-center text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide px-4 py-3">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
+                    {incomeNum > 0 && (
+                      <TableRow label="Receita" strong planned={incomeNum} actual={actualIncome} actualClass="text-green-600 dark:text-green-400" higherIsBetter />
+                    )}
+
+                    {tableRows.map(r => (
+                      <Fragment key={r.cat.id}>
+                        <TableRow label={r.cat.name} planned={r.planned} actual={r.actual} actualClass="text-red-500" />
+                        {r.kids
+                          .filter(k => parseNum(categoryLimits[subKey(k.name)] ?? '') > 0)
+                          .map(k => (
+                            <TableRow
+                              key={k.id}
+                              label={k.name}
+                              sub
+                              planned={parseNum(categoryLimits[subKey(k.name)] ?? '')}
+                              actual={actual.byCategory[k.name] ?? 0}
+                              actualClass="text-red-500"
+                            />
+                          ))}
+                      </Fragment>
+                    ))}
+
+                    {investNum > 0 && (
+                      <TableRow label="Investir (aportes)" strong planned={investNum} actual={investActual} actualClass="text-blue-600 dark:text-blue-400" higherIsBetter />
+                    )}
+                  </tbody>
+
+                  {totalPlanned > 0 && (
+                    <tfoot>
+                      <tr className="bg-slate-50 dark:bg-slate-700/30 border-t-2 border-slate-200 dark:border-slate-600">
+                        <td className="px-6 py-3 text-xs font-bold text-slate-700 dark:text-slate-200">Total Despesas</td>
+                        <td className="px-4 py-3 text-right text-xs font-bold text-slate-700 dark:text-slate-200">{fmt(totalPlanned)}</td>
+                        <td className="px-4 py-3 text-right text-xs font-bold text-red-500">{fmt(actualPlanned)}</td>
+                        <td className="px-4 py-3 text-right text-xs font-bold">
+                          <span className={actualPlanned <= totalPlanned ? 'text-emerald-600' : 'text-red-500'}>
+                            {actualPlanned > totalPlanned ? '+' : ''}{fmt(actualPlanned - totalPlanned)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center"><StatusBadge planned={totalPlanned} actual={actualPlanned} /></td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+              {untracked > 0 && totalPlanned > 0 && (
+                <p className="text-xs text-slate-400 dark:text-slate-500 px-6 py-3 border-t border-slate-100 dark:border-slate-700">
+                  + {fmt(untracked)} em categorias sem limite, fora do &ldquo;Total Despesas&rdquo;. Gasto total do mês: {fmt(actual.total)}.
+                </p>
+              )}
+              </>
             )}
           </div>
 
