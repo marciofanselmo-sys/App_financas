@@ -449,10 +449,10 @@ export default function BoardDetailPage() {
         </div>
       )}
 
-      {/* Filters — no celular: busca inteira, depois mês, depois tipo e
-          categoria lado a lado */}
+      {/* Filters — no celular: busca ao lado do mês, e tipo e categoria
+          lado a lado na linha de baixo */}
       <div className="flex flex-wrap gap-2 sm:gap-3 items-center">
-        <div className="relative basis-full sm:basis-auto flex-1 min-w-[180px]">
+        <div className="relative flex-1 min-w-0 sm:min-w-[180px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <Input
             placeholder="Buscar..."
@@ -463,7 +463,7 @@ export default function BoardDetailPage() {
         </div>
 
         {!isInvestmentBoard && (
-          <div className="basis-full sm:basis-auto">
+          <div className="shrink-0">
             <PeriodFilter
               month={month}
               year={year}
@@ -473,6 +473,7 @@ export default function BoardDetailPage() {
           </div>
         )}
 
+        <div className="flex gap-2 basis-full sm:contents">
         <Select value={typeFilter} onValueChange={v => setTypeFilter((v ?? 'all') as 'all' | TransactionType)} items={TYPE_FILTER_OPTIONS}>
           <SelectTrigger className="flex-1 min-w-0 sm:flex-none sm:w-44 h-9 rounded-xl border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] shadow-sm focus-visible:ring-blue-500/50">
             <SelectValue />
@@ -500,6 +501,7 @@ export default function BoardDetailPage() {
             ))}
           </SelectContent>
         </Select>
+        </div>
 
         {hasExtraFilters && (
           <button onClick={clearExtraFilters} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 underline">
