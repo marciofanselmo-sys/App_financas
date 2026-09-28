@@ -162,7 +162,7 @@ export function requiredTier(feature: Feature): PaidTier {
  * Mudou o preço na Cakto? Mude aqui também. São os dois lugares.
  */
 const PRECOS: Record<PaidTier, number> = {
-  mensal: 29.9,
+  mensal: 39.9,
   trimestral: 79.9,
   anual: 297,
 }

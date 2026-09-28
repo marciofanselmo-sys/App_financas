@@ -225,7 +225,7 @@ Recomendações já passadas ao time de aquisição: tirar o Tailwind do CDN
 ## M-2. Links curtos de assinatura — USAR ESTES
 
 ```
-https://noblifinance.com.br/assinar/mensal       R$ 29,90 por mês
+https://noblifinance.com.br/assinar/mensal       R$ 39,90 por mês
 https://noblifinance.com.br/assinar/trimestral   R$ 79,90 a cada 3 meses
 https://noblifinance.com.br/assinar/anual        R$ 297,00 por ano
 https://noblifinance.com.br/assinar              (padrão: Mensal)
