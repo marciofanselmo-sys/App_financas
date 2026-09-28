@@ -70,8 +70,12 @@ const marketingHeaders = [
  * variáveis de ambiente ou ao banco.
  *
  * Só os caminhos abaixo saem daqui. Login, app, API e webhook continuam
- * sendo servidos por este projeto — inclusive /obrigado, que depende de
- * saber se a pessoa está logada.
+ * sendo servidos por este projeto.
+ *
+ * /obrigado também é do projeto dele desde 28/09/2026. A página deste repo
+ * continua existindo e volta a responder sozinha se `LP_ORIGIN` ficar vazia —
+ * é o que evita que o cliente pague e caia em uma página de erro caso o
+ * projeto da landing saia do ar.
  */
 const LP_ORIGIN = process.env.LP_ORIGIN?.replace(/\/$/, '')
 
@@ -83,6 +87,8 @@ const marketingRewrites = LP_ORIGIN
       { source: '/quiz/:path*', destination: `${LP_ORIGIN}/quiz/:path*` },
       { source: '/landing-page', destination: `${LP_ORIGIN}/landing-page` },
       { source: '/landing-page/:path*', destination: `${LP_ORIGIN}/landing-page/:path*` },
+      { source: '/obrigado', destination: `${LP_ORIGIN}/obrigado` },
+      { source: '/obrigado/:path*', destination: `${LP_ORIGIN}/obrigado/:path*` },
       // Imagens e estáticos da landing. O app não usa /assets nem /_lp, então
       // não há colisão de caminho entre os dois projetos.
       { source: '/assets/:path*', destination: `${LP_ORIGIN}/assets/:path*` },
@@ -113,7 +119,16 @@ const nextConfig: NextConfig = {
   async headers() {
     // A regra mais específica vem depois: no Next, quando duas regras batem
     // no mesmo caminho, a última vence para o mesmo cabeçalho.
-    const marketing = ['/', '/landing-page', '/landing-page/:path*', '/quiz', '/quiz/:path*', '/assets/:path*']
+    const marketing = [
+      '/',
+      '/landing-page',
+      '/landing-page/:path*',
+      '/quiz',
+      '/quiz/:path*',
+      '/obrigado',
+      '/obrigado/:path*',
+      '/assets/:path*',
+    ]
     return [
       { source: '/(.*)', headers: securityHeaders },
       ...marketing.map(source => ({ source, headers: marketingHeaders })),
