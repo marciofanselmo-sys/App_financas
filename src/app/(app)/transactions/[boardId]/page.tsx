@@ -388,19 +388,20 @@ export default function BoardDetailPage() {
         </div>
       </div>
 
-      {/* Os três refletem o período e os filtros ativos */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06]">
+      {/* Os três refletem o período e os filtros ativos. Lado a lado também
+          no celular — empilhados, ocupavam a tela inteira. */}
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="bg-white dark:bg-[#111c2d] rounded-2xl px-2 py-3 sm:p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06] min-w-0">
           <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Entradas</p>
-          <p className="text-sm sm:text-base font-semibold text-green-600">{formatCurrency(stats.income)}</p>
+          <p className="text-[13px] sm:text-base font-semibold text-green-600 tabular-nums truncate">{formatCurrency(stats.income)}</p>
         </div>
-        <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06]">
+        <div className="bg-white dark:bg-[#111c2d] rounded-2xl px-2 py-3 sm:p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06] min-w-0">
           <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Saídas</p>
-          <p className="text-sm sm:text-base font-semibold text-red-500">{formatCurrency(stats.expenses)}</p>
+          <p className="text-[13px] sm:text-base font-semibold text-red-500 tabular-nums truncate">{formatCurrency(stats.expenses)}</p>
         </div>
-        <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06]">
-          <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Saldo do período</p>
-          <p className={`text-sm sm:text-base font-semibold ${stats.balance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500'}`}>
+        <div className="bg-white dark:bg-[#111c2d] rounded-2xl px-2 py-3 sm:p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06] min-w-0">
+          <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Saldo<span className="hidden sm:inline"> do período</span></p>
+          <p className={`text-[13px] sm:text-base font-semibold tabular-nums truncate ${stats.balance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500'}`}>
             {formatCurrency(stats.balance)}
           </p>
         </div>
@@ -448,9 +449,10 @@ export default function BoardDetailPage() {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 items-center">
-        <div className="relative flex-1 min-w-[180px]">
+      {/* Filters — no celular: busca inteira, depois mês, depois tipo e
+          categoria lado a lado */}
+      <div className="flex flex-wrap gap-2 sm:gap-3 items-center">
+        <div className="relative basis-full sm:basis-auto flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <Input
             placeholder="Buscar..."
@@ -461,16 +463,18 @@ export default function BoardDetailPage() {
         </div>
 
         {!isInvestmentBoard && (
-          <PeriodFilter
-            month={month}
-            year={year}
-            onMonthChange={setMonth}
-            onYearChange={setYear}
-          />
+          <div className="basis-full sm:basis-auto">
+            <PeriodFilter
+              month={month}
+              year={year}
+              onMonthChange={setMonth}
+              onYearChange={setYear}
+            />
+          </div>
         )}
 
         <Select value={typeFilter} onValueChange={v => setTypeFilter((v ?? 'all') as 'all' | TransactionType)} items={TYPE_FILTER_OPTIONS}>
-          <SelectTrigger className="w-full sm:w-44 h-9 rounded-xl border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] shadow-sm focus-visible:ring-blue-500/50">
+          <SelectTrigger className="flex-1 min-w-0 sm:flex-none sm:w-44 h-9 rounded-xl border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] shadow-sm focus-visible:ring-blue-500/50">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -481,7 +485,7 @@ export default function BoardDetailPage() {
         </Select>
 
         <Select value={categoryFilter} onValueChange={v => setCategoryFilter(v ?? 'all')} items={categoryFilterItems}>
-          <SelectTrigger className="w-full sm:w-44 h-9 rounded-xl border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] shadow-sm focus-visible:ring-blue-500/50">
+          <SelectTrigger className="flex-1 min-w-0 sm:flex-none sm:w-44 h-9 rounded-xl border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] shadow-sm focus-visible:ring-blue-500/50">
             <SelectValue placeholder="Categoria" />
           </SelectTrigger>
           <SelectContent>

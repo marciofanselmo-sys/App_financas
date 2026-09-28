@@ -316,7 +316,7 @@ export function TransactionTable({
               <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden md:table-cell w-36">Data</TableHead>
               <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden md:table-cell w-24">Parcelas</TableHead>
               <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden lg:table-cell w-28">Recorrência</TableHead>
-              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 w-24">Tipo</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden sm:table-cell w-24">Tipo</TableHead>
               <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 text-right w-28">Valor</TableHead>
               <TableHead className="w-10" />
             </TableRow>
@@ -335,7 +335,15 @@ export function TransactionTable({
                     />
                   </TableCell>
                 )}
-                <TableCell className="font-medium text-slate-700 dark:text-slate-200 text-sm truncate overflow-hidden">{tx.description}</TableCell>
+                <TableCell className="overflow-hidden">
+                  <p className="font-medium text-slate-700 dark:text-slate-200 text-sm truncate">{tx.description}</p>
+                  {/* No celular as colunas de data e categoria somem — a
+                      informação desce para baixo da descrição. */}
+                  <p className="sm:hidden text-[11px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
+                    {format(new Date(tx.date + 'T00:00:00'), 'dd/MM', { locale: ptBR })} · {tx.category}
+                    {installmentLabel(tx) && ` · ${installmentLabel(tx)}`}
+                  </p>
+                </TableCell>
                 <TableCell className="hidden sm:table-cell">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <Badge variant="secondary" className="text-xs font-normal">
@@ -379,7 +387,7 @@ export function TransactionTable({
                     </button>
                   )}
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden sm:table-cell">
                   <Badge
                     className={`text-xs ${
                       tx.type === 'receita'
@@ -391,7 +399,7 @@ export function TransactionTable({
                     {tx.type === 'receita' ? 'Receita' : 'Despesa'}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-right font-semibold text-sm">
+                <TableCell className="text-right font-semibold text-sm whitespace-nowrap">
                   <span className={tx.type === 'receita' ? 'text-green-600' : 'text-red-500'}>
                     {tx.type === 'despesa' ? '- ' : '+ '}
                     {formatCurrency(Number(tx.amount))}
