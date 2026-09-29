@@ -58,10 +58,6 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * Sem ele, cai no nome da oferta/produto — que funciona, mas quebra se
  * alguém renomear a oferta no painel. Na dúvida, entrega o plano mais
  * completo: é melhor dar a mais para quem pagou do que a menos.
- *
- * As ofertas antigas (Essencial/Completo, mensal/anual) seguem mapeadas para
- * as renovações de quem assinou antes da troca: o recurso liberado vem do
- * plano novo equivalente, e o período continua o que a pessoa contratou.
  */
 export function planoDaOferta(order: CaktoOrderData): { tier: PaidTier; meses: number } {
   const ofertas: Record<string, { tier: PaidTier; meses: number }> = {}
@@ -71,11 +67,6 @@ export function planoDaOferta(order: CaktoOrderData): { tier: PaidTier; meses: n
   mapear(process.env.CAKTO_OFFER_MENSAL, 'mensal', 1)
   mapear(process.env.CAKTO_OFFER_TRIMESTRAL, 'trimestral', 3)
   mapear(process.env.CAKTO_OFFER_ANUAL, 'anual', 12)
-  // Legado
-  mapear(process.env.CAKTO_OFFER_ESSENCIAL_MENSAL, 'trimestral', 1)
-  mapear(process.env.CAKTO_OFFER_ESSENCIAL_ANUAL, 'trimestral', 12)
-  mapear(process.env.CAKTO_OFFER_COMPLETO_MENSAL, 'anual', 1)
-  mapear(process.env.CAKTO_OFFER_COMPLETO_ANUAL, 'anual', 12)
 
   const porId = order.offer?.id ? ofertas[order.offer.id] : undefined
   if (porId) return porId
