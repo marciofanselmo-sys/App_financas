@@ -1,6 +1,7 @@
 'use client'
 
 import { usePlan } from '@/hooks/use-subscription'
+import { PLANS, planoComMais } from '@/lib/plans'
 import { UpgradeCard } from '@/components/plan/plan-gate'
 
 import { useState } from 'react'
@@ -84,7 +85,7 @@ export default function TransactionsPage() {
   const router = useRouter()
   const now = new Date()
   const { boards: allBoards, loading, createBoard, updateBoard, deleteBoard } = useTransactionBoards()
-  const { plan } = usePlan()
+  const { plan, tier } = usePlan()
   const boards = allBoards.filter(b => !b.is_investment)
   const { transactions } = useTransactions({ month: now.getMonth() + 1, year: now.getFullYear() })
   // Histórico completo, sem filtro de período: é daqui que sai o saldo de cada
@@ -320,6 +321,8 @@ export default function TransactionsPage() {
           <div className="pt-2">
             <UpgradeCard
               feature="import"
+              tier={planoComMais(tier, 'maxBoards')}
+              title={`Mais contas no plano ${PLANS[planoComMais(tier, 'maxBoards')].label}`}
               pitch={`Seu plano permite ${plan.maxBoards} conta${plan.maxBoards === 1 ? '' : 's'}, e você já usou todas. Nenhuma conta sua é apagada — para cadastrar mais uma, é só liberar um plano maior.`}
             />
           </div>

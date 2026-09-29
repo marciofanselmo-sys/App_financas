@@ -30,12 +30,16 @@ const dataBR = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/')
 const COMPARE_FEATURES: Feature[] = [
   'rules', 'recurring', 'planning', 'goals', 'reports', 'reportsFull', 'export', 'exportPdf', 'investments',
 ]
-const contas = (t: PlanTier) =>
-  PLANS[t].maxBoards === null ? 'Contas e cartões ilimitados' : `Até ${PLANS[t].maxBoards} contas e cartões`
-const importacoes = (t: PlanTier) =>
-  PLANS[t].importsPerMonth === null
-    ? 'Importação de extrato sem limite'
-    : `${PLANS[t].importsPerMonth} importação de extrato por mês`
+const contas = (t: PlanTier) => {
+  const n = PLANS[t].maxBoards
+  if (n === null) return 'Contas e cartões ilimitados'
+  return n === 1 ? '1 conta ou cartão' : `Até ${n} contas e cartões`
+}
+const importacoes = (t: PlanTier) => {
+  const n = PLANS[t].importsPerMonth
+  if (n === null) return 'Importação de extrato sem limite'
+  return `${n} ${n === 1 ? 'importação' : 'importações'} de extrato por mês`
+}
 
 export default function AssinaturaPage() {
   const { subscription, status, tier, userId, loading } = useSubscription()

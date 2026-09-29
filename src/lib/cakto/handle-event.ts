@@ -72,8 +72,8 @@ export function planoDaOferta(order: CaktoOrderData): { tier: PaidTier; meses: n
   mapear(process.env.CAKTO_OFFER_TRIMESTRAL, 'trimestral', 3)
   mapear(process.env.CAKTO_OFFER_ANUAL, 'anual', 12)
   // Legado
-  mapear(process.env.CAKTO_OFFER_ESSENCIAL_MENSAL, 'mensal', 1)
-  mapear(process.env.CAKTO_OFFER_ESSENCIAL_ANUAL, 'mensal', 12)
+  mapear(process.env.CAKTO_OFFER_ESSENCIAL_MENSAL, 'trimestral', 1)
+  mapear(process.env.CAKTO_OFFER_ESSENCIAL_ANUAL, 'trimestral', 12)
   mapear(process.env.CAKTO_OFFER_COMPLETO_MENSAL, 'anual', 1)
   mapear(process.env.CAKTO_OFFER_COMPLETO_ANUAL, 'anual', 12)
 
@@ -82,7 +82,7 @@ export function planoDaOferta(order: CaktoOrderData): { tier: PaidTier; meses: n
 
   const nome = `${order.offer?.name ?? ''} ${order.product?.name ?? ''}`.toLowerCase()
   const meses = /trimestr|3 ?meses/.test(nome) ? 3 : /anual|annual|12 ?meses/.test(nome) ? 12 : 1
-  if (/essencial|basico|básico/.test(nome)) return { tier: 'mensal', meses }
+  if (/essencial|basico|básico/.test(nome)) return { tier: 'trimestral', meses }
   if (/completo/.test(nome)) return { tier: 'anual', meses }
   return { tier: meses === 12 ? 'anual' : meses === 3 ? 'trimestral' : 'mensal', meses }
 }

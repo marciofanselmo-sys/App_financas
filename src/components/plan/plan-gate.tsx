@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Feature, FEATURE_LABEL, PLANS, PLAN_ITEMS, requiredTier } from '@/lib/plans'
+import { Feature, FEATURE_LABEL, PLANS, PLAN_ITEMS, PaidTier, requiredTier } from '@/lib/plans'
 import { usePlan, checkoutUrl } from '@/hooks/use-subscription'
 import { Lock, Sparkles, Check } from 'lucide-react'
 
@@ -40,9 +40,16 @@ export function PlanGate({ feature, children, pitch, preview }: PlanGateProps) {
   )
 }
 
-export function UpgradeCard({ feature, pitch }: { feature: Feature; pitch?: string }) {
+export function UpgradeCard({ feature, pitch, tier: tierPedido, title }: {
+  feature: Feature
+  pitch?: string
+  /** Plano a oferecer; sem ele, o mais barato que libera o recurso. */
+  tier?: PaidTier
+  /** Título no lugar de "<recurso> está no plano X" — para limites de uso. */
+  title?: string
+}) {
   const { userId } = usePlan()
-  const tier = requiredTier(feature)
+  const tier = tierPedido ?? requiredTier(feature)
   const plano = PLANS[tier]
 
   return (
@@ -54,7 +61,7 @@ export function UpgradeCard({ feature, pitch }: { feature: Feature; pitch?: stri
         <div className="flex-1 min-w-0 space-y-3">
           <div>
             <p className="font-semibold text-slate-800 dark:text-slate-100">
-              {FEATURE_LABEL[feature]} está no plano {plano.label}
+              {title ?? `${FEATURE_LABEL[feature]} está no plano ${plano.label}`}
             </p>
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
               {pitch ?? 'Libere este recurso e continue de onde parou — seus dados já estão aqui.'}

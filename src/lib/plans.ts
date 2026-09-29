@@ -5,9 +5,10 @@ import type { SubscriptionStatus } from '@/hooks/use-subscription'
  * pelo período de cobrança — Mensal, Trimestral e Anual. Quanto maior o
  * compromisso, mais o plano libera:
  *
- *  - Mensal     → o essencial do dia a dia (até 5 contas, relatório mensal, CSV)
- *  - Trimestral → + contas ilimitadas e todos os relatórios, mas sem exportar
- *  - Anual      → tudo, inclusive investimentos e exportação
+ *  - Grátis     → 1 conta e 1 importação por mês, para conhecer o app
+ *  - Mensal     → até 3 contas e 3 importações por mês, relatório mensal
+ *  - Trimestral → até 5 contas e 5 importações, todos os relatórios e CSV
+ *  - Anual      → tudo sem limite, inclusive investimentos e PDF
  *
  * Regra de ouro do recorte: **nenhum plano corta histórico**. Limitar os
  * meses de dados esvazia Recorrências (precisa de 2 meses) e o Relatório
@@ -64,7 +65,7 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
     tier: 'free',
     label: 'Grátis',
     meses: 0,
-    maxBoards: 2,
+    maxBoards: 1,
     importsPerMonth: 1,
     features: { ...NENHUMA, import: true },
   },
@@ -72,24 +73,24 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
     tier: 'mensal',
     label: 'Mensal',
     meses: 1,
-    maxBoards: 5,
-    importsPerMonth: null,
+    maxBoards: 3,
+    importsPerMonth: 3,
     features: {
       ...NENHUMA,
       import: true, rules: true, recurring: true, planning: true,
-      reports: true, export: true, goals: true,
+      reports: true, goals: true,
     },
   },
   trimestral: {
     tier: 'trimestral',
     label: 'Trimestral',
     meses: 3,
-    maxBoards: null,
-    importsPerMonth: null,
+    maxBoards: 5,
+    importsPerMonth: 5,
     features: {
       ...NENHUMA,
       import: true, rules: true, recurring: true, planning: true,
-      reports: true, reportsFull: true, goals: true,
+      reports: true, reportsFull: true, export: true, goals: true,
     },
   },
   anual: {
@@ -109,14 +110,14 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
  * Converte o que está gravado em `subscriptions.plan` no plano em vigor.
  *
  * Os valores antigos (essencial_mensal, completo_anual…) continuam valendo
- * para quem assinou antes da troca: Essencial libera o mesmo que o Mensal, e
- * Completo o mesmo que o Anual. Por isso são testados antes dos novos — senão
+ * para quem assinou antes da troca: Essencial vira Trimestral (o que mantém
+ * as 5 contas e o CSV que a pessoa já tinha), e Completo vira Anual. Por isso são testados antes dos novos — senão
  * "essencial_anual" viraria Anual pelo sufixo.
  */
 export function tierDoPlano(plan: string | null | undefined): PlanTier | null {
   const p = (plan ?? '').toLowerCase()
   if (p.includes('completo')) return 'anual'
-  if (p.includes('essencial')) return 'mensal'
+  if (p.includes('essencial')) return 'trimestral'
   if (p.includes('trimestral')) return 'trimestral'
   if (p.includes('anual')) return 'anual'
   if (p.includes('mensal')) return 'mensal'
@@ -148,6 +149,18 @@ export const FEATURE_LABEL: Record<Feature, string> = {
   goals: 'Metas',
 }
 
+/**
+ * O plano mais barato com mais espaço que o atual num limite (contas ou
+ * importações) — é o que o aviso oferece quando a pessoa bate no teto.
+ */
+export function planoComMais(atual: PlanTier, limite: 'maxBoards' | 'importsPerMonth'): PaidTier {
+  const agora = PLANS[atual][limite]
+  return PAID_TIERS.find(t => {
+    const v = PLANS[t][limite]
+    return v === null || (agora !== null && v > agora)
+  }) ?? 'anual'
+}
+
 /** O plano mais barato que libera cada recurso — é o que o aviso oferece. */
 export function requiredTier(feature: Feature): PaidTier {
   return PAID_TIERS.find(t => PLANS[t].features[feature]) ?? 'anual'
@@ -162,9 +175,9 @@ export function requiredTier(feature: Feature): PaidTier {
  * Mudou o preço na Cakto? Mude aqui também. São os dois lugares.
  */
 const PRECOS: Record<PaidTier, number> = {
-  mensal: 39.9,
-  trimestral: 79.9,
-  anual: 297,
+  mensal: 21,
+  trimestral: 44,
+  anual: 169,
 }
 
 export interface Preco {
@@ -208,28 +221,28 @@ export const moeda = (v: number) =>
  */
 export const PLAN_ITEMS: Record<PlanTier, string[]> = {
   free: [
-    'Até 2 contas ou cartões',
+    '1 conta ou cartão',
+    '1 importação de extrato por mês',
     'Lançamentos, categorias e eventos sem limite',
     'Histórico completo, sem corte de meses',
-    '1 importação de extrato por mês',
   ],
   mensal: [
-    'Até 5 contas e cartões',
-    'Importação de extrato sem limite',
+    'Até 3 contas e cartões',
+    '3 importações de extrato por mês',
     'Regras que categorizam sozinhas',
     'Recorrências, parcelas e planejamento mensal',
     'Relatório mensal e metas',
-    'Exportação dos lançamentos em CSV',
   ],
   trimestral: [
-    'Contas e cartões ilimitados',
-    'Importação de extrato sem limite',
-    'Regras, recorrências, parcelas e planejamento',
-    'Todos os relatórios: mensal, anual, parcelas, gastos fixos e investimentos (só na tela)',
-    'Metas',
+    'Até 5 contas e cartões',
+    '5 importações de extrato por mês',
+    'Regras, recorrências, parcelas, planejamento e metas',
+    'Todos os relatórios: mensal, anual, parcelas, gastos fixos e investimentos',
+    'Exportação dos lançamentos em CSV',
   ],
   anual: [
-    'Tudo liberado, com contas ilimitadas',
+    'Contas e cartões ilimitados',
+    'Importação de extrato sem limite',
     'Todos os relatórios, com exportação em CSV e PDF',
     'Carteira de investimentos com proventos e alocação',
     'Regras, recorrências, planejamento e metas',

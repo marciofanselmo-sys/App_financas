@@ -35,6 +35,8 @@ import { installmentLabel } from '@/utils/format-installment'
 import { categoriesForDate } from '@/lib/special-category-filter'
 import { CategoryOptions } from '@/components/categories/category-options'
 import { useImportQuota } from '@/hooks/use-import-quota'
+import { usePlan } from '@/hooks/use-subscription'
+import { PLANS, planoComMais } from '@/lib/plans'
 import { UpgradeCard } from '@/components/plan/plan-gate'
 
 // ─── CSV TEMPLATE ────────────────────────────────────────────────────────────
@@ -415,6 +417,7 @@ function parseC6Checking(content: string): PreviewRow[] {
 export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSVModalProps) {
   // Plano grátis tem 1 importação por mês; o contador vive no servidor.
   const quota = useImportQuota()
+  const { tier: planTier } = usePlan()
   const { categories } = useCategories()
   const { rules, syncCategoryToRule } = useRules()
   const categoryNames = categories.map(c => c.name)
@@ -1194,7 +1197,9 @@ function shiftDays(date: string, days: number): string {
             <div className="pt-2">
               <UpgradeCard
                 feature="import"
-                pitch={`Você já usou ${quota.used} de ${quota.limit} importação${quota.limit === 1 ? '' : 'ões'} deste mês no plano grátis. Com qualquer plano pago, importa quantos extratos quiser — e as regras categorizam sozinhas.`}
+                tier={planoComMais(planTier, 'importsPerMonth')}
+                title={`Mais importações no plano ${PLANS[planoComMais(planTier, 'importsPerMonth')].label}`}
+                pitch={`Você já usou ${quota.used} de ${quota.limit} importação${quota.limit === 1 ? '' : 'ões'} deste mês no seu plano. O limite volta no começo do mês que vem — ou libere agora um plano com mais importações.`}
               />
             </div>
           )}
@@ -1204,7 +1209,7 @@ function shiftDays(date: string, days: number): string {
             <div className="space-y-4 pt-2">
               {quota.limit !== null && (
                 <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-lg px-3 py-2">
-                  Plano grátis: {quota.limit - quota.used} de {quota.limit} importação{quota.limit === 1 ? '' : 'ões'} disponível neste mês.
+                  Seu plano: {quota.limit - quota.used} de {quota.limit} importação{quota.limit === 1 ? '' : 'ões'} disponível neste mês.
                 </p>
               )}
               <div className="grid grid-cols-2 gap-2 text-sm">
