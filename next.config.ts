@@ -109,6 +109,15 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       { source: '/import', destination: '/transactions', permanent: false },
+      // A landing manda "Entrar" para /login, mas a rota do app é /auth/login.
+      // Sem esta regra, só quem está deslogado chegava lá — pelo desvio do
+      // middleware. Quem já tinha sessão caía em 404, porque /login não existe
+      // como página e o middleware só redireciona quem não está autenticado.
+      // Aqui vale para os dois: deslogado vê o login, logado segue para o app.
+      { source: '/login', destination: '/auth/login', permanent: false },
+      { source: '/entrar', destination: '/auth/login', permanent: false },
+      { source: '/cadastro', destination: '/auth/register', permanent: false },
+      { source: '/registro', destination: '/auth/register', permanent: false },
       // Categorias, Subcategorias e Categorias isoladas viraram uma tela só
       // (dois níveis + eventos). Link antigo cai nela.
       { source: '/categories', destination: '/settings/categories', permanent: false },
