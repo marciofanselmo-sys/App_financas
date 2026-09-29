@@ -7,7 +7,6 @@ import {
 import { DailyFlowPoint, hasDailyFlowActivity } from '@/lib/analytics-charts'
 import { formatChartCurrency } from '@/lib/dashboard-charts'
 import { CalendarDays, ChevronDown, ChevronRight } from 'lucide-react'
-import { usePersistedToggle } from '@/hooks/use-persisted-toggle'
 
 type FlowMode = 'daily' | 'cumulative'
 
@@ -25,7 +24,9 @@ const MONTH_NAMES = [
 
 export function DailyFlowChart({ data, month, year, loading }: DailyFlowChartProps) {
   const [mode, setMode] = useState<FlowMode>('daily')
-  const [open, toggleOpen] = usePersistedToggle('analytics-daily-flow-open')
+  // Começa sempre recolhido ao abrir a tela.
+  const [open, setOpen] = useState(false)
+  const toggleOpen = () => setOpen(v => !v)
 
   if (loading) {
     return <div className="h-72 bg-white dark:bg-slate-800 rounded-xl animate-pulse shadow-sm border border-slate-100 dark:border-slate-700" />

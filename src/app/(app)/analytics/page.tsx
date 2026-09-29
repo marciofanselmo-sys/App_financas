@@ -20,7 +20,6 @@ import { isInternalMovement, internalTotals } from '@/lib/internal-movement'
 import { installmentLabel } from '@/utils/format-installment'
 import { aggregateDailyFlow } from '@/lib/analytics-charts'
 import { DailyFlowChart } from '@/components/analytics/daily-flow-chart'
-import { usePersistedToggle } from '@/hooks/use-persisted-toggle'
 
 const CATEGORY_COLORS: Record<string, string> = {
   'Alimentação':  '#f59e0b',
@@ -74,7 +73,9 @@ export default function AnalyticsPage() {
   const [boardId, setBoardId] = useState<string>('all')
   // Categoria aberta na lista, mostrando os lançamentos dela ali mesmo.
   const [expandedCat, setExpandedCat] = useState<string | null>(null)
-  const [internalOpen, toggleInternal] = usePersistedToggle('analytics-internal-open')
+  // Começa sempre recolhido ao abrir a tela.
+  const [internalOpen, setInternalOpen] = useState(false)
+  const toggleInternal = () => setInternalOpen(v => !v)
 
   const { boards } = useTransactionBoards()
   const { categories } = useCategories()
