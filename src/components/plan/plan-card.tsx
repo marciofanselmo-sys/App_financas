@@ -14,10 +14,13 @@ import { cn } from '@/lib/utils'
 /** O plano em destaque: menor preço por mês e tudo liberado. */
 export const PLANO_DESTAQUE: PlanTier = 'anual'
 
-const COBRANCA: Record<Exclude<PlanTier, 'free'>, string> = {
-  mensal: 'cobrado todo mês',
-  trimestral: 'cobrado a cada 3 meses',
-  anual: 'cobrado uma vez por ano',
+// O número grande é o valor que sai do bolso em cada cobrança; o
+// equivalente por mês fica embaixo, como comparação.
+const SUFIXO: Record<PlanTier, string> = {
+  free: '/mês',
+  mensal: '/mês',
+  trimestral: '/3 meses',
+  anual: '/ano',
 }
 
 export function PlanCard({ tier, atual = false, cta }: {
@@ -57,16 +60,16 @@ export function PlanCard({ tier, atual = false, cta }: {
       {/* Preço: altura fixa para os cartões ficarem alinhados lado a lado */}
       <div className="mt-3 min-h-[92px]">
         <p className="text-3xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100 whitespace-nowrap">
-          {preco ? moeda(preco.porMes) : 'R$ 0'}
-          <span className="text-xs font-medium text-slate-400"> /mês</span>
+          {preco ? moeda(preco.total) : 'R$ 0'}
+          <span className="text-xs font-medium text-slate-400"> {SUFIXO[tier]}</span>
         </p>
-        {tier === 'free' ? (
-          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">para sempre, sem cartão</p>
-        ) : (
-          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-            {tier === 'mensal' ? COBRANCA.mensal : `${moeda(preco!.total)} ${COBRANCA[tier]}`}
-          </p>
-        )}
+        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+          {tier === 'free'
+            ? 'para sempre, sem cartão'
+            : tier === 'mensal'
+              ? 'cobrado todo mês'
+              : `equivale a ${moeda(preco!.porMes)}/mês`}
+        </p>
         {preco && preco.economia > 0 && (
           <span className="inline-block mt-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
             economiza {moeda(preco.economia)} ({preco.descontoPct}% off)
