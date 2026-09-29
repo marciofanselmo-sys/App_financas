@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useCategories } from '@/hooks/use-categories'
-import { TrendingDown, TrendingUp, Wallet, BarChart2, Loader2, AlertCircle, CheckCircle2, X, ArrowLeftRight, ChevronRight, Tag } from 'lucide-react'
+import { TrendingDown, TrendingUp, Wallet, BarChart2, Loader2, AlertCircle, CheckCircle2, X, ArrowLeftRight, ChevronRight, ChevronDown, Tag } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
 import Link from 'next/link'
@@ -20,6 +20,7 @@ import { isInternalMovement, internalTotals } from '@/lib/internal-movement'
 import { installmentLabel } from '@/utils/format-installment'
 import { aggregateDailyFlow } from '@/lib/analytics-charts'
 import { DailyFlowChart } from '@/components/analytics/daily-flow-chart'
+import { usePersistedToggle } from '@/hooks/use-persisted-toggle'
 
 const CATEGORY_COLORS: Record<string, string> = {
   'Alimentação':  '#f59e0b',
@@ -73,6 +74,7 @@ export default function AnalyticsPage() {
   const [boardId, setBoardId] = useState<string>('all')
   // Categoria aberta na lista, mostrando os lançamentos dela ali mesmo.
   const [expandedCat, setExpandedCat] = useState<string | null>(null)
+  const [internalOpen, toggleInternal] = usePersistedToggle('analytics-internal-open')
 
   const { boards } = useTransactionBoards()
   const { categories } = useCategories()
@@ -320,10 +322,22 @@ export default function AnalyticsPage() {
         </div>
       )}
 
+      {/* Recolhível: fechado, vira uma linha só com o resumo */}
       {!loading && internal.count > 0 && (
-        <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl p-3.5">
+        <button
+          type="button"
+          onClick={toggleInternal}
+          aria-expanded={internalOpen}
+          className="w-full text-left flex items-start gap-2.5 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl p-3.5"
+        >
           <ArrowLeftRight className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          {!internalOpen ? (
+            <p className="flex-1 text-xs text-slate-500 dark:text-slate-400">
+              <strong className="text-slate-600 dark:text-slate-300">Entre suas contas:</strong>{' '}
+              {internal.count} lançamento{internal.count === 1 ? '' : 's'} fora dos totais
+            </p>
+          ) : (
+          <p className="flex-1 text-xs text-slate-500 dark:text-slate-400">
             <strong className="text-slate-600 dark:text-slate-300">Entre suas contas:</strong>{' '}
             {internal.out > 0.005 && <>{fmt(internal.out)} saíram</>}
             {internal.out > 0.005 && internal.in > 0.005 && ' e '}
@@ -332,7 +346,11 @@ export default function AnalyticsPage() {
             entre contas suas (pagamento de fatura, transferência). Eles aparecem no extrato e no saldo
             das contas, mas ficam <strong>fora</strong> dos totais acima — não são gasto nem ganho.
           </p>
-        </div>
+          )}
+          {internalOpen
+            ? <ChevronDown className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
+            : <ChevronRight className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />}
+        </button>
       )}
 
       {!loading && transactions.length === 0 && (

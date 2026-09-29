@@ -6,7 +6,8 @@ import {
 } from 'recharts'
 import { DailyFlowPoint, hasDailyFlowActivity } from '@/lib/analytics-charts'
 import { formatChartCurrency } from '@/lib/dashboard-charts'
-import { CalendarDays } from 'lucide-react'
+import { CalendarDays, ChevronDown, ChevronRight } from 'lucide-react'
+import { usePersistedToggle } from '@/hooks/use-persisted-toggle'
 
 type FlowMode = 'daily' | 'cumulative'
 
@@ -24,6 +25,7 @@ const MONTH_NAMES = [
 
 export function DailyFlowChart({ data, month, year, loading }: DailyFlowChartProps) {
   const [mode, setMode] = useState<FlowMode>('daily')
+  const [open, toggleOpen] = usePersistedToggle('analytics-daily-flow-open')
 
   if (loading) {
     return <div className="h-72 bg-white dark:bg-slate-800 rounded-xl animate-pulse shadow-sm border border-slate-100 dark:border-slate-700" />
@@ -33,16 +35,20 @@ export function DailyFlowChart({ data, month, year, loading }: DailyFlowChartPro
 
   return (
     <section className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
-      <div className="px-5 pt-5 pb-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-        <div>
+      <div className={`px-5 pt-5 ${open ? 'pb-3' : 'pb-5'} flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3`}>
+        <button type="button" onClick={toggleOpen} className="text-left" aria-expanded={open}>
           <div className="flex items-center gap-2 mb-1">
+            {open
+              ? <ChevronDown className="h-4 w-4 text-slate-400" />
+              : <ChevronRight className="h-4 w-4 text-slate-400" />}
             <CalendarDays className="h-4 w-4 text-blue-500" />
             <h2 className="text-base font-semibold text-slate-700 dark:text-slate-200">Fluxo do mês</h2>
           </div>
-          <p className="text-xs text-slate-400 dark:text-slate-500">
+          <p className="text-xs text-slate-400 dark:text-slate-500 ml-6">
             {MONTH_NAMES[month - 1]} {year} · dia a dia ou acumulado
           </p>
-        </div>
+        </button>
+        {open && (
         <div className="flex gap-1 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-lg shrink-0">
           <button
             type="button"
@@ -67,8 +73,10 @@ export function DailyFlowChart({ data, month, year, loading }: DailyFlowChartPro
             Acumulado
           </button>
         </div>
+        )}
       </div>
 
+      {open && (
       <div className="px-3 pb-4">
         {!active ? (
           <div className="h-56 flex items-center justify-center text-sm text-slate-400 dark:text-slate-500">
@@ -125,6 +133,7 @@ export function DailyFlowChart({ data, month, year, loading }: DailyFlowChartPro
           </ResponsiveContainer>
         )}
       </div>
+      )}
     </section>
   )
 }
