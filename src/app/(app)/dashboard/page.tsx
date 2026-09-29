@@ -219,19 +219,24 @@ export default function DashboardPage() {
       <AppPageHeader
         title="Dashboard"
         subtitle="Patrimônio acumulado + fluxo do mês"
-        actions={
-          <PeriodFilter month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
-        }
       />
 
+      {/* Patrimônio e composição não dependem do mês — ficam acima do filtro */}
       <MacroOverview overview={patrimony} loading={boardsLoading || patrimonyLoading} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <PatrimonyCompositionChart data={patrimonyChartData} loading={chartsLoading} />
-        <CashBalanceTrendChart data={cashBalanceTrend} loading={chartsLoading} />
+      <PatrimonyCompositionChart data={patrimonyChartData} loading={chartsLoading} />
+
+      {/* Daqui para baixo tudo segue o mês escolhido (os gráficos mostram os
+          6 meses que terminam nele) — por isso o filtro fica aqui, e não no topo. */}
+      <div className="flex items-center gap-3 pt-2">
+        <PeriodFilter month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
+        <div className="h-px flex-1 bg-[#DDE7F3] dark:bg-white/[0.08]" />
       </div>
 
-      <MonthlyFlowChart data={monthlyFlowData} loading={chartsLoading} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <CashBalanceTrendChart data={cashBalanceTrend} loading={chartsLoading} />
+        <MonthlyFlowChart data={monthlyFlowData} loading={chartsLoading} />
+      </div>
 
       <div>
         <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-[#93A5C1] dark:text-slate-500 mb-3">
