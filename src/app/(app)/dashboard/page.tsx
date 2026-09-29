@@ -228,9 +228,12 @@ export default function DashboardPage() {
 
       {/* Daqui para baixo tudo segue o mês escolhido (os gráficos mostram os
           6 meses que terminam nele) — por isso o filtro fica aqui, e não no topo. */}
+      {/* No celular o filtro ocupa a largura toda, com o mês centralizado */}
       <div className="flex items-center gap-3 pt-2">
-        <PeriodFilter month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
-        <div className="h-px flex-1 bg-[#DDE7F3] dark:bg-white/[0.08]" />
+        <div className="flex-1 sm:flex-none">
+          <PeriodFilter month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
+        </div>
+        <div className="hidden sm:block h-px flex-1 bg-[#DDE7F3] dark:bg-white/[0.08]" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
