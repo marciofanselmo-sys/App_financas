@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Feature, FEATURE_LABEL, PLANS, PLAN_ITEMS, PaidTier, requiredTier } from '@/lib/plans'
+import { Feature, FEATURE_LABEL, PLANS, PLAN_COPY, PaidTier, incluiTexto, moeda, precoDe, requiredTier } from '@/lib/plans'
 import { usePlan, checkoutUrl } from '@/hooks/use-subscription'
 import { Lock, Sparkles, Check } from 'lucide-react'
 
@@ -68,8 +68,11 @@ export function UpgradeCard({ feature, pitch, tier: tierPedido, title }: {
             </p>
           </div>
 
+          {incluiTexto(tier) && (
+            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">{incluiTexto(tier)}</p>
+          )}
           <ul className="space-y-1">
-            {PLAN_ITEMS[tier].map(item => (
+            {PLAN_COPY[tier].itens.map(item => (
               <li key={item} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                 <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                 {item}
@@ -85,6 +88,9 @@ export function UpgradeCard({ feature, pitch, tier: tierPedido, title }: {
             >
               <Sparkles className="h-4 w-4" /> Assinar o {plano.label}
             </a>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {moeda(precoDe(tier)!.porMes)}/mês
+            </span>
             <Link href="/settings/assinatura" className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
               Ver os planos
             </Link>

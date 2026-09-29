@@ -1,9 +1,10 @@
 'use client'
 
 import { useSubscription, checkoutUrl } from '@/hooks/use-subscription'
-import { PAID_TIERS, PLANS, FEATURE_LABEL, Feature, PlanTier, moeda, periodicidade, precoDe } from '@/lib/plans'
+import { PAID_TIERS, PLANS, PlanTier } from '@/lib/plans'
+import { PlanCard, ctaClasses } from '@/components/plan/plan-card'
 import { Badge } from '@/components/ui/badge'
-import { Check, Sparkles, AlertTriangle, Crown } from 'lucide-react'
+import { Sparkles, AlertTriangle, Crown, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /**
@@ -24,22 +25,6 @@ const STATUS_TEXTO: Record<string, { texto: string; cor: string }> = {
 }
 
 const dataBR = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/')
-
-// Todos os cartões listam as mesmas funcionalidades, na mesma ordem, lidas
-// direto de PLANS — o cartão nunca promete algo que o app não libera.
-const COMPARE_FEATURES: Feature[] = [
-  'rules', 'recurring', 'planning', 'goals', 'reports', 'reportsFull', 'export', 'exportPdf', 'investments',
-]
-const contas = (t: PlanTier) => {
-  const n = PLANS[t].maxBoards
-  if (n === null) return 'Contas e cartões ilimitados'
-  return n === 1 ? '1 conta ou cartão' : `Até ${n} contas e cartões`
-}
-const importacoes = (t: PlanTier) => {
-  const n = PLANS[t].importsPerMonth
-  if (n === null) return 'Importação de extrato sem limite'
-  return `${n} ${n === 1 ? 'importação' : 'importações'} de extrato por mês`
-}
 
 export default function AssinaturaPage() {
   const { subscription, status, tier, userId, loading } = useSubscription()
@@ -105,99 +90,48 @@ export default function AssinaturaPage() {
         )}
       </div>
 
-      {/* Planos — mesma estrutura em todos os cartões, botão sempre no pé */}
+      {/* Planos — o mesmo cartão da landing */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
         {ORDEM.map(t => {
           const atual = t === tier
-          const destaque = t === 'anual'
-          const preco = precoDe(t)
           return (
-            <div
+            <PlanCard
               key={t}
-              className={cn(
-                'nobli-card p-5 flex flex-col relative',
-                atual && 'ring-2 ring-blue-500',
-                !atual && destaque && 'ring-2 ring-blue-200 dark:ring-blue-800/60',
-              )}
-            >
-              <div className="flex items-center justify-between gap-2 min-h-[22px]">
-                <p className="font-bold text-slate-800 dark:text-slate-100">{PLANS[t].label}</p>
-                {atual ? (
-                  <Badge className="text-[10px] border-0 bg-blue-600 text-white">Seu plano</Badge>
-                ) : destaque ? (
-                  <Badge className="text-[10px] border-0 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">Mais vantajoso</Badge>
-                ) : null}
-              </div>
-
-              {/* Preço: altura fixa para os cartões ficarem alinhados */}
-              <div className="mt-3 min-h-[76px]">
-                <p className="text-3xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100 whitespace-nowrap">
-                  {preco ? moeda(preco.total) : 'R$ 0'}
-                </p>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                  {t === 'free' ? 'para sempre' : periodicidade(t as Exclude<PlanTier, 'free'>)}
-                </p>
-                {preco && preco.economia > 0 && (
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 flex items-center gap-1.5 flex-wrap">
-                    <span>{moeda(preco.porMes)}/mês</span>
-                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                      −{preco.descontoPct}% · economiza {moeda(preco.economia)}
-                    </span>
-                  </p>
-                )}
-              </div>
-
-              <ul className="space-y-2 flex-1 border-t border-slate-100 dark:border-white/[0.06] pt-4 mt-3">
-                {[contas(t), importacoes(t)].map(item => (
-                  <li key={item} className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300 leading-snug">
-                    <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
-                    {item}
-                  </li>
-                ))}
-                {COMPARE_FEATURES.map(f => {
-                  const tem = PLANS[t].features[f]
-                  return (
-                    <li
-                      key={f}
-                      className={cn(
-                        'flex items-start gap-2 text-xs leading-snug',
-                        tem ? 'text-slate-600 dark:text-slate-300' : 'text-slate-300 dark:text-slate-600',
-                      )}
-                    >
-                      {tem
-                        ? <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
-                        : <span className="h-3.5 w-3.5 shrink-0" />}
-                      {FEATURE_LABEL[f]}
-                    </li>
-                  )
-                })}
-              </ul>
-
-              <div className="mt-5">
-                {atual ? (
+              tier={t}
+              atual={atual}
+              cta={
+                atual ? (
                   <div className="h-10 flex items-center justify-center rounded-xl border border-slate-200 dark:border-white/[0.08] text-sm font-medium text-slate-400 dark:text-slate-500">
                     Plano atual
                   </div>
                 ) : t === 'free' ? (
-                  <div className="h-10" />
+                  <div className="h-10 flex items-center justify-center text-xs text-slate-400 dark:text-slate-500">
+                    Sempre disponível
+                  </div>
                 ) : (
                   <a
                     href={checkoutUrl(userId, `app_planos_${t}`, t)}
                     target="_blank" rel="noopener noreferrer"
-                    className={cn(
-                      'h-10 inline-flex w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors',
-                      destaque
-                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                        : 'border border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30',
-                    )}
+                    className={ctaClasses(t)}
                   >
                     <Sparkles className="h-4 w-4" /> Assinar {PLANS[t].label}
                   </a>
-                )}
-              </div>
-            </div>
+                )
+              }
+            />
           )
         })}
+      </div>
+
+      <div className="flex items-start gap-3 nobli-card p-4">
+        <ShieldCheck className="h-5 w-5 text-emerald-500 shrink-0 mt-0.5" />
+        <div className="text-xs text-slate-500 dark:text-slate-400 space-y-1">
+          <p className="font-semibold text-slate-700 dark:text-slate-200">Sem risco para experimentar</p>
+          <p>
+            7 dias para pedir o dinheiro de volta, sem justificativa. Cancele quando quiser — o
+            cancelamento vale ao fim do período já pago.
+          </p>
+        </div>
       </div>
 
       <p className="text-xs text-slate-400 dark:text-slate-500">

@@ -215,36 +215,69 @@ export const moeda = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 
 /**
- * O que cada plano entrega, em linguagem de venda. Usado na landing, na tela
- * de assinatura e no aviso de bloqueio — texto num lugar só para as três
- * telas nunca prometerem coisas diferentes.
+ * Como cada plano se apresenta: para quem é, e o que acrescenta ao plano de
+ * baixo ("Tudo do Mensal, mais: …"). Usado na tela de assinatura, na landing
+ * e no aviso de bloqueio — texto num lugar só, para as três telas nunca
+ * prometerem coisas diferentes.
+ *
+ * A escada funciona porque cada plano libera tudo do anterior. Se um dia um
+ * plano maior deixar de ter algo do menor, o "Tudo do X" vira mentira.
  */
-export const PLAN_ITEMS: Record<PlanTier, string[]> = {
-  free: [
-    '1 conta ou cartão',
-    '1 importação de extrato por mês',
-    'Lançamentos, categorias e eventos sem limite',
-    'Histórico completo, sem corte de meses',
-  ],
-  mensal: [
-    'Até 3 contas e cartões',
-    '3 importações de extrato por mês',
-    'Regras que categorizam sozinhas',
-    'Recorrências, parcelas e planejamento mensal',
-    'Relatório mensal e metas',
-  ],
-  trimestral: [
-    'Até 5 contas e cartões',
-    '5 importações de extrato por mês',
-    'Regras, recorrências, parcelas, planejamento e metas',
-    'Todos os relatórios: mensal, anual, parcelas, gastos fixos e investimentos',
-    'Exportação dos lançamentos em CSV',
-  ],
-  anual: [
-    'Contas e cartões ilimitados',
-    'Importação de extrato sem limite',
-    'Todos os relatórios, com exportação em CSV e PDF',
-    'Carteira de investimentos com proventos e alocação',
-    'Regras, recorrências, planejamento e metas',
-  ],
+export interface PlanCopy {
+  /** Uma linha: para quem é o plano. */
+  tagline: string
+  /** Plano de baixo que este inclui por inteiro; ausente no Grátis. */
+  inclui?: PlanTier
+  itens: string[]
+}
+
+export const PLAN_COPY: Record<PlanTier, PlanCopy> = {
+  free: {
+    tagline: 'Para conhecer o NOBLI sem gastar nada.',
+    itens: [
+      'Categorização automática: aprende com cada correção sua',
+      '1 conta ou cartão',
+      '1 importação de extrato por mês',
+      'Lançamentos, categorias e eventos sem limite',
+      'Histórico completo, nada é apagado',
+    ],
+  },
+  mensal: {
+    tagline: 'Para organizar o dia a dia das suas contas.',
+    inclui: 'free',
+    itens: [
+      'Até 3 contas e cartões',
+      '3 importações de extrato por mês',
+      'Gastos fixos, parcelas e recorrências no automático',
+      'Planejamento do mês e metas',
+      'Relatório mensal',
+      'Tela de regras para ajustar a automação',
+    ],
+  },
+  trimestral: {
+    tagline: 'Para quem tem várias contas e quer ver o todo.',
+    inclui: 'mensal',
+    itens: [
+      'Até 5 contas e cartões',
+      '5 importações de extrato por mês',
+      'Relatórios anual, de parcelas e de gastos fixos',
+      'Exportação dos lançamentos em CSV',
+    ],
+  },
+  anual: {
+    tagline: 'Controle total, sem limite, pelo menor preço por mês.',
+    inclui: 'trimestral',
+    itens: [
+      'Contas e cartões ilimitados',
+      'Importação de extrato sem limite',
+      'Carteira de investimentos com proventos',
+      'Relatórios em PDF',
+    ],
+  },
+}
+
+/** "Tudo do Mensal, mais:" — ou nada, no Grátis. */
+export function incluiTexto(tier: PlanTier): string | null {
+  const base = PLAN_COPY[tier].inclui
+  return base ? `Tudo do ${PLANS[base].label}, mais:` : null
 }

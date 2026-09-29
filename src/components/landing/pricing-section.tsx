@@ -1,9 +1,9 @@
 'use client'
 
-import { PAID_TIERS, PLANS, PLAN_ITEMS, PlanTier, moeda, periodicidade, precoDe } from '@/lib/plans'
+import { PAID_TIERS, PLANS, PlanTier } from '@/lib/plans'
 import { checkoutUrl } from '@/hooks/use-subscription'
-import { Check, Sparkles } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { PlanCard, ctaClasses } from '@/components/plan/plan-card'
+import { Sparkles } from 'lucide-react'
 
 /**
  * Tabela de planos da página pública.
@@ -28,81 +28,32 @@ export function PricingSection() {
             Escolha como quer começar
           </h2>
           <p className="text-slate-500 dark:text-slate-400 max-w-xl mx-auto">
-            Comece de graça, sem cartão. Quando quiser importar seus extratos sem limite e ver para onde
-            vai o seu dinheiro, você assina.
+            Comece de graça, sem cartão — o NOBLI já categoriza sozinho desde o primeiro extrato.
+            Quando quiser mais contas e relatórios completos, você assina.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {ORDEM.map(t => {
-            const preco = precoDe(t)
-            const destaque = t === 'anual'
-            return (
-              <div
-                key={t}
-                className={cn(
-                  'rounded-2xl border bg-white dark:bg-slate-800 p-6 flex flex-col gap-5 shadow-sm',
-                  destaque
-                    ? 'border-2 border-blue-500 lg:-mt-2 lg:mb-2'
-                    : 'border-slate-200 dark:border-slate-700',
-                )}
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-bold text-slate-800 dark:text-slate-100">{PLANS[t].label}</p>
-                    {destaque && (
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                        mais completo
-                      </span>
-                    )}
-                  </div>
-                  {preco && t !== 'free' ? (
-                    <div className="mt-2">
-                      <p className="text-3xl font-extrabold text-[#0B2D6B] dark:text-slate-100">
-                        {moeda(preco.total)}
-                        <span className="text-xs font-medium text-slate-400"> {periodicidade(t)}</span>
-                      </p>
-                      {preco.economia > 0 && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                          {moeda(preco.porMes)}/mês ·{' '}
-                          <span className="text-emerald-600 dark:text-emerald-400 font-medium">
-                            {preco.descontoPct}% off
-                          </span>
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-3xl font-extrabold text-[#0B2D6B] dark:text-slate-100 mt-2">R$ 0</p>
-                  )}
-                </div>
-
-                <ul className="space-y-2 flex-1">
-                  {PLAN_ITEMS[t].map(item => (
-                    <li key={item} className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
-                      <Check className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-
-                {t === 'free' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 items-stretch">
+          {ORDEM.map(t => (
+            <PlanCard
+              key={t}
+              tier={t}
+              cta={
+                t === 'free' ? (
                   <a
                     href="/auth/register"
-                    className="inline-flex items-center justify-center rounded-xl border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+                    className="h-10 inline-flex w-full items-center justify-center rounded-xl border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
                   >
                     Criar conta grátis
                   </a>
                 ) : (
-                  <a
-                    href={checkoutUrl(null, `site_planos_${t}`, t)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 transition-colors"
-                  >
+                  <a href={checkoutUrl(null, `site_planos_${t}`, t)} className={ctaClasses(t)}>
                     <Sparkles className="h-4 w-4" /> Assinar {PLANS[t].label}
                   </a>
-                )}
-              </div>
-            )
-          })}
+                )
+              }
+            />
+          ))}
         </div>
 
         <p className="text-center text-xs text-slate-400 dark:text-slate-500">
