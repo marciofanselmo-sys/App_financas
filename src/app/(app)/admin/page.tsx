@@ -72,6 +72,7 @@ export default function AdminPage() {
   const [views, setViews]           = useState<PageView[]>([])
   const [errors, setErrors]         = useState<AppError[]>([])
   const [errorsUnavailable, setErrorsUnavailable] = useState(false)
+  const [viewsUnavailable, setViewsUnavailable]   = useState(false)
   const [loading, setLoading]       = useState(true)
   const [firstLoad, setFirstLoad]   = useState(true)
   const [lastRefresh, setLastRefresh] = useState(new Date())
@@ -114,6 +115,7 @@ export default function AdminPage() {
       .order('created_at', { ascending: false }))
 
     if (error) logSafeError('adminPageViews.load', error)
+    setViewsUnavailable(!!error)
     setViews(rows)
 
     // Erros do app — mesma retenção de 30 dias dos page views.
@@ -259,6 +261,18 @@ export default function AdminPage() {
           Atualizar
         </button>
       </div>
+
+      {/* Sem a tabela, os cartões e gráficos abaixo mostram zero — que parece
+          "ninguém usou" em vez de "não está sendo medido". */}
+      {viewsUnavailable && (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-5 py-4">
+          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+          <p className="text-sm text-amber-800 dark:text-amber-300">
+            Os acessos não estão sendo registrados, então os números abaixo não valem. Rode{' '}
+            <code className="font-mono">migration_admin_page_views_fix.sql</code> no Supabase.
+          </p>
+        </div>
+      )}
 
       {/* Cards de resumo */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
