@@ -37,6 +37,8 @@ const PAGE_LABELS: Record<string, string> = {
   '/analytics':              'Análise',
   '/reports':                'Relatórios',
   '/transactions':           'Contas e Cartões',
+  '/transactions/[conta]':   'Extrato de uma conta',
+  '/investments':            'Investimentos',
   '/planning':               'Planejamento',
   '/goals':                  'Metas',
   '/recurring':              'Cartões & Parcelas',
@@ -45,14 +47,21 @@ const PAGE_LABELS: Record<string, string> = {
   '/settings/categories':    'Categorias',
   '/settings/subcategories': 'Subcategorias',
   '/settings/rules':         'Regras Auto.',
+  '/settings/assinatura':    'Minha assinatura',
   '/account':                'Conta',
   '/help':                   'Ajuda',
   '/suggestions':            'Sugestões',
   '/admin':                  'Admin',
 }
 
+// Cada conta tem a própria URL (/transactions/<uuid>). Sem juntar, cada conta
+// virava uma "página" diferente no ranking, com o id cru no lugar do nome.
+function normalizePage(page: string) {
+  return page.startsWith('/transactions/') ? '/transactions/[conta]' : page
+}
+
 function pageLabel(page: string) {
-  return PAGE_LABELS[page] ?? page
+  return PAGE_LABELS[normalizePage(page)] ?? page
 }
 
 function fmt(n: number) { return n.toLocaleString('pt-BR') }
@@ -64,6 +73,7 @@ export default function AdminPage() {
   const [errors, setErrors]         = useState<AppError[]>([])
   const [errorsUnavailable, setErrorsUnavailable] = useState(false)
   const [loading, setLoading]       = useState(true)
+  const [firstLoad, setFirstLoad]   = useState(true)
   const [lastRefresh, setLastRefresh] = useState(new Date())
 
   // Verifica autorização e carrega dados
@@ -121,9 +131,10 @@ export default function AdminPage() {
     setErrors(errRows)
     setLastRefresh(new Date())
     setLoading(false)
+    setFirstLoad(false)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Redireciona se não autorizado
   useEffect(() => {
@@ -184,10 +195,11 @@ export default function AdminPage() {
   const topPages = useMemo(() => {
     const map = new Map<string, { views: number; users: Set<string> }>()
     for (const v of views) {
-      const entry = map.get(v.page) ?? { views: 0, users: new Set() }
+      const page = normalizePage(v.page)
+      const entry = map.get(page) ?? { views: 0, users: new Set() }
       entry.views++
       entry.users.add(v.user_id)
-      map.set(v.page, entry)
+      map.set(page, entry)
     }
     return Array.from(map.entries())
       .map(([page, d]) => ({ page, views: d.views, users: d.users.size }))
@@ -212,7 +224,7 @@ export default function AdminPage() {
 
   const maxDay = Math.max(...last7Days.map(d => d.count), 1)
 
-  if (authorized === null || loading) {
+  if (authorized === null || firstLoad) {
     return (
       <div className="flex items-center justify-center h-64">
         <RefreshCw className="h-6 w-6 animate-spin text-slate-400" />
@@ -277,10 +289,10 @@ export default function AdminPage() {
             <div className="h-8 w-8 rounded-lg bg-violet-50 dark:bg-violet-900/30 flex items-center justify-center">
               <Users className="h-4 w-4 text-violet-500" />
             </div>
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Total usuários</span>
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Ativos no mês</span>
           </div>
           <p className="text-3xl font-bold text-slate-800 dark:text-slate-100">{totalUsersEver}</p>
-          <p className="text-xs text-slate-400 mt-0.5">30 dias</p>
+          <p className="text-xs text-slate-400 mt-0.5">usaram nos últimos 30 dias</p>
         </div>
 
         <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 shadow-sm border border-slate-100 dark:border-slate-700">

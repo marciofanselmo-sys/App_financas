@@ -21,6 +21,7 @@ export function SuggestionsPanel({ enabled }: SuggestionsPanelProps) {
   const { suggestions, loading, updateStatus } = useAdminSuggestions(enabled)
   const [statusFilter, setStatusFilter] = useState<'all' | SuggestionStatus>('all')
   const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
 
   const filtered = useMemo(
     () =>
@@ -40,8 +41,11 @@ export function SuggestionsPanel({ enabled }: SuggestionsPanelProps) {
 
   async function handleStatusChange(id: string, status: SuggestionStatus) {
     setUpdatingId(id)
-    await updateStatus(id, status)
+    setErro(null)
+    const res = await updateStatus(id, status)
     setUpdatingId(null)
+    // Sem isto, a falha só fazia o select voltar ao valor antigo, sem aviso.
+    if (res.error) setErro(`Não foi possível mudar o status: ${res.error}`)
   }
 
   if (!enabled) return null
@@ -75,6 +79,12 @@ export function SuggestionsPanel({ enabled }: SuggestionsPanelProps) {
           ))}
         </div>
       </div>
+
+      {erro && (
+        <p className="mx-5 mt-4 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-lg px-3 py-2">
+          {erro}
+        </p>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-12">
