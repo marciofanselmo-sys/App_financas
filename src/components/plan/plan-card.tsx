@@ -51,7 +51,7 @@ export function PlanCard({ tier, atual = false, cta }: {
       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 min-h-[32px] leading-snug">{copy.tagline}</p>
 
       {/* Preço: altura fixa para os cartões ficarem alinhados lado a lado */}
-      <div className="mt-3 min-h-[72px]">
+      <div className="mt-3 min-h-[92px]">
         <p className="text-3xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100 whitespace-nowrap">
           {preco ? moeda(preco.porMes) : 'R$ 0'}
           <span className="text-xs font-medium text-slate-400"> /mês</span>
