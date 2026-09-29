@@ -8,8 +8,10 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, ArrowLeftRight, CalendarCheck, Target,
   MoreHorizontal, BarChart2, CreditCard, RefreshCw, FileText,
-  Settings, LogOut, X, HelpCircle, UserCircle, PiggyBank, MessageSquarePlus,
+  LogOut, X, HelpCircle, UserCircle, PiggyBank, MessageSquarePlus,
+  Tag, Zap, Crown, Shield,
 } from 'lucide-react'
+import { useIsAdmin } from '@/hooks/use-is-admin'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { NobliLogo } from '@/components/brand/nobli-logo'
 import { usePlan } from '@/hooks/use-subscription'
@@ -23,23 +25,46 @@ const PRIMARY = [
   { href: '/goals',       label: 'Metas',          icon: Target          },
 ]
 
-// Secondary items shown in the "Mais" drawer
-const SECONDARY = [
-  { href: '/investments', label: 'Investimentos',     icon: PiggyBank    },
-  { href: '/analytics',   label: 'Análise',           icon: BarChart2    },
-  { href: '/recurring',   label: 'Cartões & Parc.',   icon: CreditCard   },
-  { href: '/fixos',       label: 'Recorrências',      icon: RefreshCw    },
-  { href: '/reports',     label: 'Relatórios',        icon: FileText     },
-  { href: '/settings/categories', label: 'Config.',   icon: Settings     },
-  { href: '/account',     label: 'Minha conta',       icon: UserCircle   },
-  { href: '/help',        label: 'Ajuda',             icon: HelpCircle   },
-  { href: '/suggestions', label: 'Sugestões',         icon: MessageSquarePlus },
+// Menu "Mais": o que não cabe na barra de baixo, nas mesmas seções do menu
+// do computador. Configurações lista as três telas — antes era um atalho
+// direto para Categorias, e Regras e Minha assinatura ficavam inacessíveis
+// no celular.
+type NavLink = { href: string; label: string; icon: React.ElementType }
+const SECTIONS: { label: string; items: NavLink[] }[] = [
+  {
+    label: 'Acompanhar',
+    items: [
+      { href: '/analytics',   label: 'Análise',         icon: BarChart2  },
+      { href: '/reports',     label: 'Relatórios',      icon: FileText   },
+      { href: '/investments', label: 'Investimentos',   icon: PiggyBank  },
+      { href: '/recurring',   label: 'Cartões & Parc.', icon: CreditCard },
+      { href: '/fixos',       label: 'Recorrências',    icon: RefreshCw  },
+    ],
+  },
+  {
+    label: 'Configurações',
+    items: [
+      { href: '/settings/categories', label: 'Categorias',       icon: Tag   },
+      { href: '/settings/rules',      label: 'Regras auto.',     icon: Zap   },
+      { href: '/settings/assinatura', label: 'Minha assinatura', icon: Crown },
+    ],
+  },
+  {
+    label: 'Conta e ajuda',
+    items: [
+      { href: '/account',     label: 'Minha conta', icon: UserCircle        },
+      { href: '/help',        label: 'Ajuda',       icon: HelpCircle        },
+      { href: '/suggestions', label: 'Sugestões',   icon: MessageSquarePlus },
+    ],
+  },
 ]
+const SECONDARY = SECTIONS.flatMap(s => s.items)
 
 export function MobileNav() {
   const pathname = usePathname()
   const router   = useRouter()
   const [open, setOpen] = useState(false)
+  const { isAdmin } = useIsAdmin()
   // Tela fora do plano: continua clicável (abre a explicação do plano), só
   // com a letra mais fraca. Enquanto o plano carrega, nada fica apagado.
   const { can, loading: planLoading } = usePlan()
@@ -58,7 +83,12 @@ export function MobileNav() {
     router.refresh()
   }
 
-  const isSecondaryActive = SECONDARY.some(s => pathname === s.href)
+  const isSecondaryActive = SECONDARY.some(s => pathname === s.href) || pathname === '/admin'
+  const sections = isAdmin
+    ? SECTIONS.map(sec => sec.label === 'Conta e ajuda'
+        ? { ...sec, items: [...sec.items, { href: '/admin', label: 'Admin', icon: Shield }] }
+        : sec)
+    : SECTIONS
 
   return (
     <>
@@ -90,28 +120,37 @@ export function MobileNav() {
             </button>
           </div>
 
-          {/* Nav grid */}
-          <div className="grid grid-cols-3 gap-0.5 p-3">
-            {SECONDARY.map(({ href, label, icon: Icon }) => {
-              const active = pathname === href
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  className={cn(
-                    'flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl text-[11px] font-medium transition-all',
-                    active
-                      ? 'bg-[#E8F2FF] dark:bg-blue-500/15 text-[#2563EB] dark:text-blue-400'
-                      : isLocked(href)
-                        ? 'text-slate-400 dark:text-slate-600 hover:bg-slate-50 dark:hover:bg-white/5'
-                        : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-[#0B2D6B] dark:hover:text-slate-200'
-                  )}
-                >
-                  <Icon className={cn('h-5 w-5', active && 'text-[#2563EB] dark:text-blue-400')} />
-                  <span className="text-center leading-tight">{label}</span>
-                </Link>
-              )
-            })}
+          {/* Seções — rola quando a tela é baixa */}
+          <div className="max-h-[calc(100dvh-64px-140px)] overflow-y-auto px-3 pt-2 pb-1">
+            {sections.map(section => (
+              <div key={section.label} className="pb-2">
+                <p className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                  {section.label}
+                </p>
+                <div className="grid grid-cols-3 gap-0.5">
+                  {section.items.map(({ href, label, icon: Icon }) => {
+                    const active = pathname === href
+                    return (
+                      <Link
+                        key={href}
+                        href={href}
+                        className={cn(
+                          'flex flex-col items-center gap-1.5 py-2.5 px-1 rounded-xl text-[11px] font-medium transition-all',
+                          active
+                            ? 'bg-[#E8F2FF] dark:bg-blue-500/15 text-[#2563EB] dark:text-blue-400'
+                            : isLocked(href)
+                              ? 'text-slate-400 dark:text-slate-600 hover:bg-slate-50 dark:hover:bg-white/5'
+                              : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-[#0B2D6B] dark:hover:text-slate-200'
+                        )}
+                      >
+                        <Icon className={cn('h-5 w-5', active && 'text-[#2563EB] dark:text-blue-400')} />
+                        <span className="text-center leading-tight">{label}</span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
 
           {/* Bottom row: theme + logout */}
