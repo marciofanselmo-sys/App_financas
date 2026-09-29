@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Users, Activity, BarChart2, Clock, RefreshCw, Shield, Eye, AlertTriangle } from 'lucide-react'
 import { SuggestionsPanel } from '@/components/admin/suggestions-panel'
+import { UsersPanel } from '@/components/admin/users-panel'
 import { format, subDays, startOfDay } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
@@ -435,6 +436,8 @@ export default function AdminPage() {
           </div>
         )}
       </div>
+
+      <UsersPanel enabled={authorized === true} />
 
       <SuggestionsPanel enabled={authorized === true} />
 
