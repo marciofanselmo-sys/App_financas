@@ -8,6 +8,7 @@ import { useCategories } from '@/hooks/use-categories'
 import { CategoryOptions } from '@/components/categories/category-options'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { CategoryType } from '@/types'
+import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -101,47 +102,114 @@ function RuleRow({
   )
 }
 
-function CategoryGroup({
-  category, rules, boardMap, onToggle, onEdit, onDelete,
-}: {
-  category: string
-  rules: CategorizationRule[]
+type RuleHandlers = {
   boardMap: Record<string, string>
   onToggle: (id: string, active: boolean) => void
   onEdit: (rule: CategorizationRule) => void
   onDelete: (rule: CategorizationRule) => void
+}
+
+function ruleList(rules: CategorizationRule[], h: RuleHandlers) {
+  return rules.map(rule => (
+    <RuleRow
+      key={rule.id}
+      rule={rule}
+      boardName={(rule as CategorizationRule & { board_id?: string }).board_id ? h.boardMap[(rule as CategorizationRule & { board_id?: string }).board_id!] : undefined}
+      onToggle={() => h.onToggle(rule.id, !rule.active)}
+      onEdit={() => h.onEdit(rule)}
+      onDelete={() => h.onDelete(rule)}
+    />
+  ))
+}
+
+const ativas = (rules: CategorizationRule[]) => {
+  const n = rules.filter(r => r.active).length
+  return `${n}/${rules.length} ativa${rules.length !== 1 ? 's' : ''}`
+}
+
+// Subcategoria dentro do cartão da categoria — também recolhida.
+function SubGroup({ name, rules, direct, forceOpen, h }: {
+  name: string
+  rules: CategorizationRule[]
+  /** Regras que apontam para a própria categoria principal. */
+  direct?: boolean
+  forceOpen: boolean
+  h: RuleHandlers
 }) {
   const [open, setOpen] = useState(false)
-  const activeCount = rules.filter(r => r.active).length
+  const isOpen = open || forceOpen
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-2.5 pl-10 pr-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors"
+      >
+        {isOpen
+          ? <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+          : <ChevronRight className="h-3.5 w-3.5 text-slate-400 shrink-0" />}
+        <span className="flex-1 min-w-0 text-sm text-slate-600 dark:text-slate-300 truncate">
+          {name}
+          {direct && (
+            <span className="ml-2 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400">
+              sem subcategoria
+            </span>
+          )}
+        </span>
+        <span className="text-xs text-slate-400 dark:text-slate-500 shrink-0">{ativas(rules)}</span>
+      </button>
+      {isOpen && (
+        <div className="ml-10 mr-3 mb-2 rounded-xl border border-slate-100 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700 overflow-hidden">
+          {ruleList(rules, h)}
+        </div>
+      )}
+    </div>
+  )
+}
 
+// Categoria principal: recolhida, com as subcategorias dentro.
+function MotherGroup({ mother, direct, subs, forceOpen, h }: {
+  mother: string
+  direct: CategorizationRule[]
+  subs: [string, CategorizationRule[]][]
+  forceOpen: boolean
+  h: RuleHandlers
+}) {
+  const [open, setOpen] = useState(false)
+  const isOpen = open || forceOpen
+  const all = [...direct, ...subs.flatMap(([, r]) => r)]
   return (
     <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
       >
-        {open
+        {isOpen
           ? <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
-          : <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />
-        }
-        <span className="flex-1 font-semibold text-sm text-slate-700 dark:text-slate-200">{category}</span>
-        <span className="text-xs text-slate-400 dark:text-slate-500">
-          {activeCount}/{rules.length} ativa{rules.length !== 1 ? 's' : ''}
-        </span>
+          : <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />}
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-sm text-slate-700 dark:text-slate-200 truncate">{mother}</p>
+          {subs.length > 0 && (
+            <p className="text-[11px] text-slate-400 dark:text-slate-500">
+              {subs.length} subcategoria{subs.length === 1 ? '' : 's'}
+            </p>
+          )}
+        </div>
+        <span className="text-xs text-slate-400 dark:text-slate-500 shrink-0">{ativas(all)}</span>
       </button>
 
-      {open && (
-        <div className="divide-y divide-slate-100 dark:divide-slate-700 border-t border-slate-100 dark:border-slate-700">
-          {rules.map(rule => (
-            <RuleRow
-              key={rule.id}
-              rule={rule}
-              boardName={(rule as CategorizationRule & { board_id?: string }).board_id ? boardMap[(rule as CategorizationRule & { board_id?: string }).board_id!] : undefined}
-              onToggle={() => onToggle(rule.id, !rule.active)}
-              onEdit={() => onEdit(rule)}
-              onDelete={() => onDelete(rule)}
-            />
-          ))}
+      {isOpen && (
+        <div className="border-t border-slate-100 dark:border-slate-700 py-1">
+          {/* Sem subcategorias: as regras aparecem direto, sem um nível a mais */}
+          {subs.length === 0 ? (
+            <div className="divide-y divide-slate-100 dark:divide-slate-700">{ruleList(direct, h)}</div>
+          ) : (
+            <>
+              {direct.length > 0 && <SubGroup name={mother} direct rules={direct} forceOpen={forceOpen} h={h} />}
+              {subs.map(([name, rules]) => (
+                <SubGroup key={name} name={name} rules={rules} forceOpen={forceOpen} h={h} />
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -203,10 +271,14 @@ function RulesPage() {
   }
 
   const grouped = useMemo(() => {
-    const filtered = search.trim()
+    // Busca também pelo nome da categoria principal ("Transporte" acha 99, Buser...).
+    const mothers = motherNameByCategory(categories)
+    const q = search.trim().toLowerCase()
+    const filtered = q
       ? rules.filter(r =>
-          r.keyword.toLowerCase().includes(search.toLowerCase()) ||
-          r.category.toLowerCase().includes(search.toLowerCase())
+          r.keyword.toLowerCase().includes(q) ||
+          r.category.toLowerCase().includes(q) ||
+          motherOf(r.category, mothers).toLowerCase().includes(q)
         )
       : rules
     const map = new Map<string, CategorizationRule[]>()
@@ -216,18 +288,35 @@ function RulesPage() {
       map.set(rule.category, arr)
     }
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b, 'pt-BR'))
-  }, [rules, search])
+  }, [rules, search, categories])
 
+  // Categoria principal › subcategoria › regras, como no resto do app.
+  type MotherEntry = { mother: string; direct: CategorizationRule[]; subs: [string, CategorizationRule[]][] }
   const groupedBySection = useMemo(() => {
-    const buckets: Record<SectionKey, [string, CategorizationRule[]][]> = {
-      despesa: [], receita: [], ambos: [],
+    const mothers = motherNameByCategory(categories)
+    const byMother = new Map<string, MotherEntry>()
+    for (const [category, catRules] of grouped) {
+      const mother = motherOf(category, mothers)
+      const entry = byMother.get(mother) ?? { mother, direct: [], subs: [] }
+      if (category === mother) entry.direct.push(...catRules)
+      else entry.subs.push([category, catRules])
+      byMother.set(mother, entry)
     }
-    for (const entry of grouped) {
-      buckets[sectionFor(entry[0])].push(entry)
+    const buckets: Record<SectionKey, MotherEntry[]> = { despesa: [], receita: [], ambos: [] }
+    for (const entry of [...byMother.values()].sort((a, b) => a.mother.localeCompare(b.mother, 'pt-BR'))) {
+      entry.subs.sort(([a], [b]) => a.localeCompare(b, 'pt-BR'))
+      buckets[sectionFor(entry.mother)].push(entry)
     }
     return buckets
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [grouped, categoryTypeMap])
+  }, [grouped, categories, categoryTypeMap])
+  const motherCount = SECTION_ORDER.reduce((n, k) => n + groupedBySection[k].length, 0)
+  const handlers: RuleHandlers = {
+    boardMap,
+    onToggle: (id, active) => updateRule(id, { active }),
+    onEdit: openEdit,
+    onDelete: setDeleteTarget,
+  }
 
   function openCreate() { setEditing(null); setForm(EMPTY); setFormOpen(true) }
   function openEdit(r: CategorizationRule) {
@@ -308,7 +397,7 @@ function RulesPage() {
         <div>
           <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Regras de categorização</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            {rules.length} regra{rules.length !== 1 ? 's' : ''} em {grouped.length} categoria{grouped.length !== 1 ? 's' : ''}
+            {rules.length} regra{rules.length !== 1 ? 's' : ''} em {motherCount} categoria{motherCount !== 1 ? 's' : ''}
           </p>
         </div>
         <Button onClick={openCreate} className="gap-2 shrink-0">
@@ -441,15 +530,14 @@ function RulesPage() {
                   </div>
                   <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 ml-9">{help}</p>
                 </div>
-                {entries.map(([category, catRules]) => (
-                  <CategoryGroup
-                    key={category}
-                    category={category}
-                    rules={catRules}
-                    boardMap={boardMap}
-                    onToggle={(id, active) => updateRule(id, { active })}
-                    onEdit={openEdit}
-                    onDelete={setDeleteTarget}
+                {entries.map(entry => (
+                  <MotherGroup
+                    key={entry.mother}
+                    mother={entry.mother}
+                    direct={entry.direct}
+                    subs={entry.subs}
+                    forceOpen={!!search.trim()}
+                    h={handlers}
                   />
                 ))}
               </section>
