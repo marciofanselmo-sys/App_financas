@@ -11,6 +11,7 @@ import { useCategories } from '@/hooks/use-categories'
 import { useRules, applyTypeToExisting } from '@/hooks/use-rules'
 import { usePositionImport } from '@/hooks/use-position-import'
 import { TransactionTable } from '@/components/transactions/transaction-table'
+import { HistoryWindowNote } from '@/components/plan/history-window-note'
 import { TransactionForm } from '@/components/transactions/transaction-form'
 import { ImportCSVModal } from '@/components/transactions/import-csv-modal'
 import { ExportCSVModal } from '@/components/transactions/export-csv-modal'
@@ -560,6 +561,8 @@ export default function BoardDetailPage() {
           balanceImpactOf={balanceImpactOf}
         />
       )}
+
+      {!loading && <HistoryWindowNote className="mt-4 px-1" />}
 
       <TransactionForm
         open={formOpen}

@@ -48,7 +48,26 @@ export default function TermsPage() {
           antecedência mínima de 30 dias, valendo apenas para as renovações seguintes.
         </p>
 
-        <h2>5. Cancelamento e arrependimento</h2>
+        <h2>5. Histórico disponível em cada plano</h2>
+        <p>
+          Cada plano mostra uma quantidade diferente de histórico: o Grátis exibe os
+          últimos 6 meses, o Mensal 12 meses, o Trimestral 2 anos e o Anual 3 anos.
+        </p>
+        <p>
+          Esse limite é de <strong>exibição, não de armazenamento</strong>. Nada é
+          apagado: lançamentos mais antigos que a janela do seu plano continuam
+          guardados na sua conta e voltam a aparecer, inteiros, assim que você passa
+          para um plano com histórico maior. Você pode importar extratos de qualquer
+          período — avisamos na hora da importação quando parte dele ficar fora da
+          janela do plano atual.
+        </p>
+        <p>
+          Se a assinatura terminar, a conta volta ao plano Grátis e passa a exibir os
+          últimos 6 meses. O restante permanece guardado e reaparece caso você assine
+          novamente.
+        </p>
+
+        <h2>6. Cancelamento e arrependimento</h2>
         <p>
           Você pode cancelar a assinatura a qualquer momento. O cancelamento interrompe as
           cobranças futuras e o acesso pago permanece até o fim do período já pago — não há
@@ -65,7 +84,7 @@ export default function TermsPage() {
           gratuito.
         </p>
 
-        <h2>6. O que acontece com seus dados ao sair</h2>
+        <h2>7. O que acontece com seus dados ao sair</h2>
         <p>
           Cancelar a assinatura <strong>não apaga nada</strong>: seus lançamentos, contas,
           categorias e histórico continuam na sua conta, que volta ao plano gratuito e aos
@@ -76,21 +95,21 @@ export default function TermsPage() {
           remove seus dados dos nossos sistemas.
         </p>
 
-        <h2>7. Disponibilidade</h2>
+        <h2>8. Disponibilidade</h2>
         <p>
           Buscamos alta disponibilidade, mas o serviço pode passar por manutenções ou
           indisponibilidades temporárias. A importação de extratos depende do formato de
           arquivo fornecido por cada banco, que pode mudar sem aviso.
         </p>
 
-        <h2>8. Encerramento pela nossa parte</h2>
+        <h2>9. Encerramento pela nossa parte</h2>
         <p>
           Reservamo-nos o direito de suspender contas que violem estes termos. Em caso de
           suspensão sem violação da sua parte, devolvemos proporcionalmente o valor do período
           já pago e não utilizado.
         </p>
 
-        <h2>9. Contato</h2>
+        <h2>10. Contato</h2>
         <p>
           Dúvidas sobre estes termos:{' '}
           <a href="mailto:contato@noblifinance.com.br" className="text-blue-600 hover:underline">

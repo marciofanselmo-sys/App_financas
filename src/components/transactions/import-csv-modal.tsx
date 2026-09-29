@@ -12,7 +12,9 @@ import { Badge } from '@/components/ui/badge'
 import { TransactionType} from '@/types'
 import { useCategories } from '@/hooks/use-categories'
 import { useRules, applyUserRules } from '@/hooks/use-rules'
-import { Upload, Download, CheckCircle, AlertCircle, FileText, Zap, Tag, TrendingUp } from 'lucide-react'
+import { useHistoryWindow } from '@/hooks/use-history-window'
+import { textoJanela } from '@/lib/plans'
+import { Upload, Download, CheckCircle, AlertCircle, FileText, Zap, Tag, TrendingUp, History } from 'lucide-react'
 import { parseOFX } from '@/utils/parse-ofx'
 import { parseRicoExtratoXLSX, isRicoExtratoRows } from '@/utils/parse-rico-extrato'
 import { extractPdfText } from '@/utils/extract-pdf-text'
@@ -420,6 +422,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   const { tier: planTier } = usePlan()
   const { categories } = useCategories()
   const { rules, syncCategoryToRule } = useRules()
+  const janela = useHistoryWindow()
   const categoryNames = categories.map(c => c.name)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -1163,6 +1166,12 @@ function shiftDays(date: string, days: number): string {
   const validCount = preview.filter(r => r.valid).length
   const invalidCount = preview.filter(r => !r.valid).length
   const othersCount = preview.filter(r => r.valid && r.category === 'Outros').length
+  // Lançamentos anteriores à janela do plano: são importados e guardados
+  // normalmente, mas não vão aparecer nas telas enquanto o plano for este.
+  // Avisar aqui evita a leitura de que a importação "perdeu" parte do extrato.
+  const foraDaJanela = janela.desde
+    ? preview.filter(r => r.valid && r.date && r.date < janela.desde!).length
+    : 0
   const isBankFormat = fileType === 'c6-credit' || fileType === 'c6-checking' || fileType === 'mercadopago-pdf' || fileType === 'nubank' || fileType === 'nubank-checking' || fileType === 'inter-pdf' || fileType === 'itau-extrato-pdf' || fileType === 'rico-extrato-xlsx'
   const bankFormatLabel: Record<string, string> = {
     'c6-credit': 'C6 Cartão de Crédito',
@@ -1342,6 +1351,17 @@ function shiftDays(date: string, days: number): string {
                   <button type="button" onClick={() => { setMappingRecognized(false); setStep('map') }} className="shrink-0 underline font-medium">
                     Ajustar colunas
                   </button>
+                </div>
+              )}
+              {foraDaJanela > 0 && (
+                <div className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                  <History className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>{foraDaJanela}</strong> {foraDaJanela === 1 ? 'lançamento é anterior' : 'lançamentos são anteriores'} aos{' '}
+                    {janela.tier ? textoJanela(janela.tier) : 'meses do seu plano'}. Vamos guardar{' '}
+                    {foraDaJanela === 1 ? 'ele' : 'todos'} mesmo assim, mas só {foraDaJanela === 1 ? 'aparece' : 'aparecem'} nas telas
+                    em um plano com histórico maior.
+                  </span>
                 </div>
               )}
               {importWarning && (

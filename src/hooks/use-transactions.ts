@@ -5,13 +5,27 @@ import { createClient } from '@/lib/supabase/client'
 import { Transaction, TransactionFilters } from '@/types'
 import { formatUserError } from '@/lib/supabase-error'
 import { toLocalISO } from '@/utils/local-date'
+import { useHistoryWindow } from '@/hooks/use-history-window'
 
+/**
+ * Lançamentos do usuário, sempre dentro da janela de histórico do plano.
+ *
+ * A janela entra aqui, e não em cada tela, porque este é o único caminho até
+ * a tabela: uma tela nova nasce com o recorte certo sem ninguém lembrar dele.
+ * O que fica fora da janela continua no banco — só não é buscado.
+ */
 export function useTransactions(filters?: TransactionFilters) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const janela = useHistoryWindow()
 
   const fetchTransactions = useCallback(async () => {
+    // Enquanto o plano não chega, não consulta: buscar sem a janela e refazer
+    // depois baixaria o histórico inteiro justamente no caso que a janela
+    // existe para evitar.
+    if (janela.loading || !janela.desde) return
+
     setLoading(true)
     setError(null)
     const supabase = createClient()
@@ -21,6 +35,11 @@ export function useTransactions(filters?: TransactionFilters) {
         .from('transactions')
         .select('*')
         .order('date', { ascending: false })
+
+      // Piso do plano, aplicado antes de qualquer outro filtro de data. Um
+      // período pedido fora da janela volta vazio — que é o comportamento
+      // certo: o dado existe, mas este plano não o mostra.
+      query = query.gte('date', janela.desde!)
 
       if (filters?.month && filters?.year) {
         const start = `${filters.year}-${String(filters.month).padStart(2, '0')}-01`
@@ -82,7 +101,7 @@ export function useTransactions(filters?: TransactionFilters) {
     setTransactions(allData)
     setLoading(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters?.month, filters?.year, filters?.category, filters?.type, filters?.search, filters?.board_id, filters?.tag, filters?.exclude_board_ids?.join(',')])
+  }, [janela.desde, janela.loading, filters?.month, filters?.year, filters?.category, filters?.type, filters?.search, filters?.board_id, filters?.tag, filters?.exclude_board_ids?.join(',')])
 
   useEffect(() => {
     fetchTransactions()

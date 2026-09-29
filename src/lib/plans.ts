@@ -10,9 +10,19 @@ import type { SubscriptionStatus } from '@/hooks/use-subscription'
  *  - Trimestral → até 5 contas e 5 importações, todos os relatórios e CSV
  *  - Anual      → tudo sem limite, inclusive investimentos e PDF
  *
- * Regra de ouro do recorte: **nenhum plano corta histórico**. Limitar os
- * meses de dados esvazia Recorrências (precisa de 2 meses) e o Relatório
- * Anual (precisa de 12) — entregar tela vazia é pior do que não ter a tela.
+ * Regra do histórico (29/09/2026): cada plano tem uma **janela** de meses que
+ * o app carrega e mostra. Nada é apagado — o que fica fora da janela continua
+ * no banco e reaparece inteiro quando a pessoa assina (ou volta a assinar).
+ *
+ * A janela existe por dois motivos que andam juntos. O primeiro é técnico: as
+ * telas buscam o histórico do usuário para somar no navegador, então o custo
+ * de banda cresce com o tamanho do histórico — sem recorte, o assinante Anual
+ * é o mais caro de servir. O segundo é comercial: ver o próprio passado é o
+ * motivo mais concreto para subir de plano.
+ *
+ * As janelas respeitam o que cada plano entrega: Recorrências precisa de 2
+ * meses (Mensal tem 12) e o Relatório Anual precisa de 12 (Trimestral tem 24).
+ * Nenhuma tela liberada por um plano fica vazia por causa da janela dele.
  */
 export type PlanTier = 'free' | 'mensal' | 'trimestral' | 'anual'
 export type PaidTier = Exclude<PlanTier, 'free'>
@@ -52,6 +62,11 @@ export interface PlanDefinition {
   maxBoards: number | null
   /** Importações de extrato por mês; null = sem limite */
   importsPerMonth: number | null
+  /**
+   * Meses de histórico que o app carrega, contados do primeiro dia do mês
+   * atual para trás. O que ficar fora continua guardado, só não é buscado.
+   */
+  mesesHistorico: number
   features: Record<Feature, boolean>
 }
 
@@ -67,6 +82,7 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
     meses: 0,
     maxBoards: 1,
     importsPerMonth: 1,
+    mesesHistorico: 6,
     features: { ...NENHUMA, import: true },
   },
   mensal: {
@@ -75,6 +91,7 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
     meses: 1,
     maxBoards: 3,
     importsPerMonth: 3,
+    mesesHistorico: 12,
     features: {
       ...NENHUMA,
       import: true, rules: true, recurring: true, planning: true,
@@ -87,6 +104,7 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
     meses: 3,
     maxBoards: 5,
     importsPerMonth: 5,
+    mesesHistorico: 24,
     features: {
       ...NENHUMA,
       import: true, rules: true, recurring: true, planning: true,
@@ -99,11 +117,33 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
     meses: 12,
     maxBoards: null,
     importsPerMonth: null,
+    mesesHistorico: 36,
     features: {
       import: true, rules: true, recurring: true, planning: true,
       reports: true, reportsFull: true, export: true, exportPdf: true, investments: true, goals: true,
     },
   },
+}
+
+/**
+ * Primeiro dia do histórico visível, no formato que o banco entende
+ * (`YYYY-MM-DD`). Conta do primeiro dia do mês atual para trás, para o recorte
+ * não mudar no meio do mês: quem tem 6 meses em 30/09 continua vendo abril
+ * inteiro no dia 1º de outubro, não um pedaço dele.
+ */
+export function inicioDoHistorico(tier: PlanTier, hoje = new Date()): string {
+  const meses = PLANS[tier].mesesHistorico
+  const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - (meses - 1), 1)
+  const mes = String(inicio.getMonth() + 1).padStart(2, '0')
+  return `${inicio.getFullYear()}-${mes}-01`
+}
+
+/** "últimos 12 meses" / "últimos 3 anos" — o mesmo texto em toda a interface. */
+export function textoJanela(tier: PlanTier): string {
+  const meses = PLANS[tier].mesesHistorico
+  if (meses % 12 === 0 && meses >= 24) return `últimos ${meses / 12} anos`
+  if (meses === 12) return 'últimos 12 meses'
+  return `últimos ${meses} meses`
 }
 
 /**
@@ -239,7 +279,8 @@ export const PLAN_COPY: Record<PlanTier, PlanCopy> = {
       '1 conta ou cartão',
       '1 importação de extrato por mês',
       'Lançamentos, categorias e eventos sem limite',
-      'Histórico completo, nada é apagado',
+      'Histórico dos últimos 6 meses',
+      'Nada é apagado: o que passa de 6 meses fica guardado e volta quando você assina',
     ],
   },
   mensal: {
@@ -251,6 +292,7 @@ export const PLAN_COPY: Record<PlanTier, PlanCopy> = {
       'Gastos fixos, parcelas e recorrências no automático',
       'Planejamento do mês e metas',
       'Relatório mensal',
+      'Histórico dos últimos 12 meses',
       'Tela de regras para ajustar a automação',
     ],
   },
@@ -261,6 +303,7 @@ export const PLAN_COPY: Record<PlanTier, PlanCopy> = {
       'Até 5 contas e cartões',
       '5 importações de extrato por mês',
       'Relatórios anual, de parcelas e de gastos fixos',
+      'Histórico dos últimos 2 anos',
       'Exportação dos lançamentos em CSV',
     ],
   },
@@ -270,6 +313,7 @@ export const PLAN_COPY: Record<PlanTier, PlanCopy> = {
     itens: [
       'Contas e cartões ilimitados',
       'Importação de extrato sem limite',
+      'Histórico dos últimos 3 anos',
       'Carteira de investimentos com proventos',
       'Relatórios em PDF',
     ],
