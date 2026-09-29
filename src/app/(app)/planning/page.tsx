@@ -182,6 +182,17 @@ function PlanningPage() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [templateOpen, setTemplateOpen] = useState(false)
+  // Orçamento do mês recolhível; a escolha fica lembrada neste navegador.
+  const [budgetOpen, setBudgetOpen] = useState(true)
+  useEffect(() => {
+    try { if (localStorage.getItem('nobli:planning-budget-open') === '0') setBudgetOpen(false) } catch {}
+  }, [])
+  function toggleBudget() {
+    setBudgetOpen(v => {
+      try { localStorage.setItem('nobli:planning-budget-open', v ? '0' : '1') } catch {}
+      return !v
+    })
+  }
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [showQuiet, setShowQuiet] = useState(false)
 
@@ -561,14 +572,23 @@ function PlanningPage() {
       ) : (
         <>
           {/* Orçamento do mês: receita, investimento e o que sobra */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-slate-700 space-y-5">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-100 dark:border-slate-700 space-y-5">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
-                <ClipboardList className="h-4 w-4 text-blue-500" />
+              <button
+                type="button"
+                onClick={toggleBudget}
+                className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2 text-left"
+                aria-expanded={budgetOpen}
+              >
+                {budgetOpen
+                  ? <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
+                  : <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />}
+                <ClipboardList className="h-4 w-4 text-blue-500 shrink-0" />
                 Orçamento do mês
-              </h2>
+              </button>
               <div className="flex items-center gap-3">
                 <SaveIndicator status={saveStatus} error={saveError} />
+                {budgetOpen && (
                 <button
                   type="button"
                   onClick={() => setTemplateOpen(v => !v)}
@@ -577,10 +597,22 @@ function PlanningPage() {
                   <Sparkles className="h-3.5 w-3.5" />
                   Usar template
                 </button>
+                )}
               </div>
             </div>
 
-            {templateOpen && (
+            {/* Recolhido: só o resultado da conta do mês */}
+            {!budgetOpen && (
+              <div className={cn(
+                'flex justify-between text-sm font-semibold -mt-2',
+                free >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500',
+              )}>
+                <span>{free >= 0 ? 'Livre para planejar' : 'Planejado além da receita'}</span>
+                <span className="tabular-nums">{fmt(Math.abs(free))}</span>
+              </div>
+            )}
+
+            {budgetOpen && templateOpen && (
               <div className="grid grid-cols-2 gap-2 pb-2 border-b border-slate-100 dark:border-slate-700">
                 {PLAN_TEMPLATES.map(tpl => {
                   const colorMap: Record<string, string> = {
@@ -616,6 +648,7 @@ function PlanningPage() {
               </div>
             )}
 
+            {budgetOpen && (<>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
@@ -664,6 +697,7 @@ function PlanningPage() {
                 <span className="tabular-nums">{fmt(Math.abs(free))}</span>
               </div>
             </div>
+            </>)}
           </div>
 
           {/* Categorias: onde se planeja. O acompanhamento fica na tabela abaixo. */}

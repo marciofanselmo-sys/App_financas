@@ -66,7 +66,9 @@ export function PeriodFilter({ month, year, onMonthChange, onYearChange }: Perio
         <button
           type="button"
           onClick={() => setPickerOpen(o => !o)}
-          className="flex items-center gap-1.5 px-2 py-1.5 text-sm font-semibold text-[#0B2D6B] dark:text-slate-200 hover:text-[#2563EB] dark:hover:text-blue-400 transition-colors min-w-[130px] justify-center"
+          // flex-1: quando o filtro ocupa a largura toda (celular), o mês fica
+          // no centro e as setas vão para as pontas.
+          className="flex-1 flex items-center gap-1.5 px-2 py-1.5 text-sm font-semibold text-[#0B2D6B] dark:text-slate-200 hover:text-[#2563EB] dark:hover:text-blue-400 transition-colors min-w-[130px] justify-center"
         >
           <span>{MONTHS[month - 1]}</span>
           <span className="font-normal text-[#93A5C1] dark:text-slate-500">{year}</span>
