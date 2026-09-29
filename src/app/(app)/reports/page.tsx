@@ -59,7 +59,7 @@ const REPORT_TYPES: { id: ReportType; label: string; icon: React.ElementType }[]
 const now = new Date()
 
 // ── Tokens de estilo reutilizados ─────────────────────────────────────────────
-const card  = 'bg-white dark:bg-[#111c2d] print:bg-white border border-slate-100 dark:border-white/[0.06] print:border-slate-200 rounded-xl p-4'
+const card  = 'bg-white dark:bg-[#111c2d] print:bg-white border border-slate-100 dark:border-white/[0.06] print:border-slate-200 rounded-xl p-3 sm:p-4 print:p-4'
 const table = 'border border-slate-100 dark:border-white/[0.06] print:border-slate-200 rounded-xl overflow-x-auto print:overflow-visible [&_td.text-right]:whitespace-nowrap [&_th]:whitespace-nowrap'
 const thead = 'bg-slate-50 dark:bg-slate-700/40 print:bg-slate-50'
 const th    = 'text-xs font-semibold text-slate-500 dark:text-slate-400 print:text-slate-500 uppercase tracking-wide'
@@ -70,13 +70,14 @@ const secTitle = 'text-sm font-bold text-slate-600 dark:text-slate-300 print:tex
 // ── Cabeçalho do relatório ────────────────────────────────────────────────────
 function ReportHeader({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <div className="mb-6 pb-4 border-b-2 border-slate-200 dark:border-slate-600 print:border-slate-200">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 print:text-slate-800">{title}</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 print:text-slate-500 mt-0.5">{subtitle}</p>
+    <div className="mb-4 sm:mb-6 print:mb-6 pb-3 sm:pb-4 print:pb-4 border-b-2 border-slate-200 dark:border-slate-600 print:border-slate-200">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-base sm:text-xl print:text-xl font-bold text-slate-800 dark:text-slate-100 print:text-slate-800">{title}</h2>
+          <p className="text-xs sm:text-sm print:text-sm text-slate-500 dark:text-slate-400 print:text-slate-500 mt-0.5">{subtitle}</p>
         </div>
-        <div className="text-right text-xs text-slate-400 print:text-slate-400">
+        {/* Marca e data só interessam no PDF e no computador */}
+        <div className="hidden sm:block print:block text-right text-xs text-slate-400 print:text-slate-400 shrink-0">
           <p className="font-heading font-bold text-[#0B2D6B] dark:text-slate-300 print:text-slate-600">NOBLI</p>
           <p>Gerado em {new Date().toLocaleDateString('pt-BR')}</p>
         </div>
@@ -306,22 +307,22 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
       />
 
       {/* Cards de resumo */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         <div className={card}>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Receitas</p>
-          <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 print:text-emerald-600 mt-1">{fmt(income)}</p>
+          <p className="text-base sm:text-lg print:text-lg font-bold text-emerald-600 dark:text-emerald-400 print:text-emerald-600 mt-1">{fmt(income)}</p>
         </div>
         <div className={card}>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Despesas</p>
-          <p className="text-lg font-bold text-red-500 mt-1">{fmt(expenses)}</p>
+          <p className="text-base sm:text-lg print:text-lg font-bold text-red-500 mt-1">{fmt(expenses)}</p>
         </div>
         <div className={card}>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Saldo</p>
-          <p className={`text-lg font-bold mt-1 ${balance >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500'}`}>{fmt(balance)}</p>
+          <p className={`text-base sm:text-lg print:text-lg font-bold mt-1 ${balance >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500'}`}>{fmt(balance)}</p>
         </div>
         <div className={card}>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Saúde</p>
-          <p className="text-lg font-bold text-purple-500 mt-1">{score}/100</p>
+          <p className="text-base sm:text-lg print:text-lg font-bold text-purple-500 mt-1">{score}/100</p>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">{scoreLabel}</p>
         </div>
       </div>
@@ -496,18 +497,19 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
         previousYear={year - 1}
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {/* No celular: receitas e despesas lado a lado, saldo na linha inteira */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 print:grid-cols-3 gap-2 sm:gap-3 [&>*:nth-child(3)]:col-span-2 sm:[&>*:nth-child(3)]:col-span-1 print:[&>*:nth-child(3)]:col-span-1">
         <div className={card}>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Receitas totais</p>
-          <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 print:text-emerald-600 mt-1">{fmt(totalIncome)}</p>
+          <p className="text-base sm:text-lg print:text-lg font-bold text-emerald-600 dark:text-emerald-400 print:text-emerald-600 mt-1">{fmt(totalIncome)}</p>
         </div>
         <div className={card}>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Despesas totais</p>
-          <p className="text-lg font-bold text-red-500 mt-1">{fmt(totalExpenses)}</p>
+          <p className="text-base sm:text-lg print:text-lg font-bold text-red-500 mt-1">{fmt(totalExpenses)}</p>
         </div>
         <div className={card}>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Saldo anual</p>
-          <p className={`text-lg font-bold mt-1 ${totalBalance >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500'}`}>{fmt(totalBalance)}</p>
+          <p className={`text-base sm:text-lg print:text-lg font-bold mt-1 ${totalBalance >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500'}`}>{fmt(totalBalance)}</p>
         </div>
       </div>
 
@@ -596,11 +598,11 @@ function InstallmentsReport({ boardId, excludeBoardIds }: { boardId: string; exc
       <div className="grid grid-cols-2 gap-3">
         <div className={card}>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Compromisso / mês</p>
-          <p className="text-lg font-bold text-violet-600 dark:text-violet-400 print:text-violet-600 mt-1">{fmt(monthly)}</p>
+          <p className="text-base sm:text-lg print:text-lg font-bold text-violet-600 dark:text-violet-400 print:text-violet-600 mt-1">{fmt(monthly)}</p>
         </div>
         <div className={card}>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Total comprometido</p>
-          <p className="text-lg font-bold text-slate-800 dark:text-slate-100 print:text-slate-800 mt-1">{fmt(total)}</p>
+          <p className="text-base sm:text-lg print:text-lg font-bold text-slate-800 dark:text-slate-100 print:text-slate-800 mt-1">{fmt(total)}</p>
         </div>
       </div>
 
@@ -711,11 +713,11 @@ function FixedChargesReport({ boardId, excludeBoardIds }: { boardId: string; exc
       <div className="grid grid-cols-2 gap-3">
         <div className={card}>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Total fixo / mês</p>
-          <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 print:text-emerald-600 mt-1">{fmt(totalMonthly)}</p>
+          <p className="text-base sm:text-lg print:text-lg font-bold text-emerald-600 dark:text-emerald-400 print:text-emerald-600 mt-1">{fmt(totalMonthly)}</p>
         </div>
         <div className={card}>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Estimativa anual</p>
-          <p className="text-lg font-bold text-slate-800 dark:text-slate-100 print:text-slate-800 mt-1">{fmt(totalMonthly * 12)}</p>
+          <p className="text-base sm:text-lg print:text-lg font-bold text-slate-800 dark:text-slate-100 print:text-slate-800 mt-1">{fmt(totalMonthly * 12)}</p>
         </div>
       </div>
 
@@ -813,19 +815,19 @@ function InvestmentsReport({ boardId }: { boardId: string }) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className={card}>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Patrimônio total</p>
-          <p className="text-lg font-bold text-blue-600 dark:text-blue-400 print:text-blue-600 mt-1">{fmt(totals.patrimonio)}</p>
+          <p className="text-base sm:text-lg print:text-lg font-bold text-blue-600 dark:text-blue-400 print:text-blue-600 mt-1">{fmt(totals.patrimonio)}</p>
         </div>
         <div className={card}>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Total investido</p>
-          <p className="text-lg font-bold text-slate-700 dark:text-slate-200 print:text-slate-700 mt-1">{fmt(totals.investido)}</p>
+          <p className="text-base sm:text-lg print:text-lg font-bold text-slate-700 dark:text-slate-200 print:text-slate-700 mt-1">{fmt(totals.investido)}</p>
         </div>
         <div className={card}>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Saldo disponível</p>
-          <p className="text-lg font-bold text-slate-700 dark:text-slate-200 print:text-slate-700 mt-1">{fmt(totals.saldo)}</p>
+          <p className="text-base sm:text-lg print:text-lg font-bold text-slate-700 dark:text-slate-200 print:text-slate-700 mt-1">{fmt(totals.saldo)}</p>
         </div>
         <div className={card}>
           <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Rendimentos previstos</p>
-          <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 print:text-emerald-600 mt-1">{fmt(totals.proventos)}</p>
+          <p className="text-base sm:text-lg print:text-lg font-bold text-emerald-600 dark:text-emerald-400 print:text-emerald-600 mt-1">{fmt(totals.proventos)}</p>
         </div>
       </div>
 
@@ -901,26 +903,28 @@ function ReportsPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
-      <div className="print:hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
+      <div className="print:hidden flex items-start sm:items-center justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Relatórios</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Visualize e exporte relatórios do período desejado</p>
         </div>
         {podeExportar ? (
           podeVer && (
-            <Button onClick={() => window.print()} size="lg" className="gap-2 shrink-0">
-              <Printer className="h-5 w-5" />
-              Exportar PDF
+            <Button onClick={() => window.print()} className="gap-2 shrink-0 h-9 sm:h-10 px-3 sm:px-4">
+              <Printer className="h-4 w-4 sm:h-5 sm:w-5" />
+              <span className="sm:hidden">PDF</span>
+              <span className="hidden sm:inline">Exportar PDF</span>
             </Button>
           )
         ) : (
           <Link
             href="/settings/assinatura"
             title="Salvar relatórios em PDF está no plano Anual"
-            className="inline-flex items-center gap-2 shrink-0 rounded-xl border border-slate-200 dark:border-white/[0.08] px-4 h-10 text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-blue-600 hover:border-blue-300 transition-colors"
+            className="inline-flex items-center gap-2 shrink-0 rounded-xl border border-slate-200 dark:border-white/[0.08] px-3 sm:px-4 h-9 sm:h-10 text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-blue-600 hover:border-blue-300 transition-colors"
           >
             <Lock className="h-4 w-4" />
-            Exportar PDF
+            <span className="sm:hidden">PDF</span>
+            <span className="hidden sm:inline">Exportar PDF</span>
           </Link>
         )}
       </div>
@@ -962,12 +966,15 @@ function ReportsPage() {
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Período e conta na mesma linha, também no celular */}
+        <div className="flex items-center gap-2">
           {type === 'mensal' && (
-            <PeriodFilter month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
+            <div className="shrink-0">
+              <PeriodFilter month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
+            </div>
           )}
           {type === 'anual' && (
-            <div className="flex items-center gap-1 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl shadow-sm">
+            <div className="shrink-0 flex items-center gap-1 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl shadow-sm">
               <button
                 onClick={() => setYear(y => y - 1)}
                 className="flex items-center justify-center h-9 w-9 rounded-l-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors"
@@ -986,7 +993,7 @@ function ReportsPage() {
           <select
             value={boardId}
             onChange={e => setBoardId(e.target.value)}
-            className="h-9 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] px-3 text-sm font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+            className="flex-1 min-w-0 sm:flex-none h-9 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] px-3 text-sm font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
           >
             <option value="all">Todas as contas</option>
             {boards.filter(b => type === 'investimentos' ? b.is_investment : !b.is_investment).map(b => (
