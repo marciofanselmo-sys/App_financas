@@ -264,14 +264,16 @@ export default function AnalyticsPage() {
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Entradas, saídas e distribuição por categoria</p>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-2">
-          <PeriodFilter month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
+        {/* Filters — mês e conta na mesma linha, também no celular */}
+        <div className="flex items-center gap-2">
+          <div className="shrink-0">
+            <PeriodFilter month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
+          </div>
 
           <select
             value={boardId}
             onChange={e => setBoardId(e.target.value)}
-            className="h-9 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] px-3 text-sm font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+            className="flex-1 min-w-0 sm:flex-none h-9 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] px-3 text-sm font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
           >
             <option value="all">Todas as contas</option>
             {boards.filter(b => !b.is_investment).map(b => (
@@ -281,42 +283,40 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Summary cards */}
+      {/* Summary cards — lado a lado também no celular; lá o ícone some
+          para os três valores caberem */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {[1, 2, 3].map(i => <div key={i} className="h-24 bg-white dark:bg-slate-800 rounded-xl animate-pulse shadow-sm" />)}
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
+          {[1, 2, 3].map(i => <div key={i} className="h-16 sm:h-24 bg-white dark:bg-slate-800 rounded-xl animate-pulse shadow-sm" />)}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-100 dark:border-slate-700 flex items-center gap-4">
-            <div className="h-10 w-10 rounded-full bg-green-50 dark:bg-green-900/30 flex items-center justify-center shrink-0">
-              <TrendingUp className="h-5 w-5 text-green-500" />
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
+          {([
+            { label: 'Entradas', short: 'Entradas', value: totalIncome, icon: TrendingUp, iconCls: 'bg-green-50 dark:bg-green-900/30 text-green-500', valueCls: 'text-green-600' },
+            { label: 'Saídas', short: 'Saídas', value: totalExpenses, icon: TrendingDown, iconCls: 'bg-red-50 dark:bg-red-900/30 text-red-500', valueCls: 'text-red-500' },
+            // Saldo: azul quando positivo, vermelho quando negativo (padrão do app).
+            {
+              label: 'Saldo do período', short: 'Saldo', value: balance, icon: Wallet,
+              iconCls: balance >= 0 ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-500' : 'bg-red-50 dark:bg-red-900/30 text-red-500',
+              valueCls: balance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500',
+            },
+          ] as const).map(card => (
+            <div
+              key={card.label}
+              className="bg-white dark:bg-slate-800 rounded-xl px-2 py-3 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-700 flex items-center justify-center sm:justify-start gap-4 min-w-0"
+            >
+              <div className={`hidden sm:flex h-10 w-10 rounded-full items-center justify-center shrink-0 ${card.iconCls}`}>
+                <card.icon className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 text-center sm:text-left">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  <span className="sm:hidden">{card.short}</span>
+                  <span className="hidden sm:inline">{card.label}</span>
+                </p>
+                <p className={`text-[13px] sm:text-xl font-bold tabular-nums truncate ${card.valueCls}`}>{fmt(card.value)}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Entradas</p>
-              <p className="text-xl font-bold text-green-600">{fmt(totalIncome)}</p>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-100 dark:border-slate-700 flex items-center gap-4">
-            <div className="h-10 w-10 rounded-full bg-red-50 dark:bg-red-900/30 flex items-center justify-center shrink-0">
-              <TrendingDown className="h-5 w-5 text-red-500" />
-            </div>
-            <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Saídas</p>
-              <p className="text-xl font-bold text-red-500">{fmt(totalExpenses)}</p>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-100 dark:border-slate-700 flex items-center gap-4">
-            <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${balance >= 0 ? 'bg-blue-50 dark:bg-blue-900/30' : 'bg-orange-50 dark:bg-orange-900/30'}`}>
-              <Wallet className={`h-5 w-5 ${balance >= 0 ? 'text-blue-500' : 'text-orange-500'}`} />
-            </div>
-            <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Saldo do período</p>
-              <p className={`text-xl font-bold ${balance >= 0 ? 'text-blue-600' : 'text-orange-500'}`}>{fmt(balance)}</p>
-            </div>
-          </div>
+          ))}
         </div>
       )}
 
