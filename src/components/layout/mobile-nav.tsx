@@ -22,7 +22,7 @@ const PRIMARY = [
   { href: '/dashboard',    label: 'Dashboard',    icon: LayoutDashboard },
   { href: '/transactions', label: 'Contas',         icon: ArrowLeftRight  },
   { href: '/planning',    label: 'Planejamento',   icon: CalendarCheck   },
-  { href: '/goals',       label: 'Metas',          icon: Target          },
+  { href: '/analytics',   label: 'Análise',        icon: BarChart2       },
 ]
 
 // Menu "Mais": o que não cabe na barra de baixo, nas mesmas seções do menu
@@ -34,7 +34,7 @@ const SECTIONS: { label: string; items: NavLink[] }[] = [
   {
     label: 'Acompanhar',
     items: [
-      { href: '/analytics',   label: 'Análise',         icon: BarChart2  },
+      { href: '/goals',       label: 'Metas',           icon: Target     },
       { href: '/reports',     label: 'Relatórios',      icon: FileText   },
       { href: '/investments', label: 'Investimentos',   icon: PiggyBank  },
       { href: '/recurring',   label: 'Cartões & Parc.', icon: CreditCard },
@@ -121,13 +121,13 @@ export function MobileNav() {
           </div>
 
           {/* Seções — rola quando a tela é baixa */}
-          <div className="max-h-[calc(100dvh-64px-140px)] overflow-y-auto px-3 pt-2 pb-1">
+          <div className="max-h-[calc(100dvh-64px-140px)] overflow-y-auto px-4 pt-3 pb-2 space-y-4">
             {sections.map(section => (
-              <div key={section.label} className="pb-2">
-                <p className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              <div key={section.label}>
+                <p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                   {section.label}
                 </p>
-                <div className="grid grid-cols-3 gap-0.5">
+                <div className="grid grid-cols-3 gap-2">
                   {section.items.map(({ href, label, icon: Icon }) => {
                     const active = pathname === href
                     return (
@@ -135,12 +135,14 @@ export function MobileNav() {
                         key={href}
                         href={href}
                         className={cn(
-                          'flex flex-col items-center gap-1.5 py-2.5 px-1 rounded-xl text-[11px] font-medium transition-all',
+                          'flex flex-col items-center justify-center gap-2 min-h-[76px] py-3 px-1 rounded-2xl text-[11px] font-medium transition-all',
+                          // Cada item é um bloco com fundo leve: separa um do
+                          // outro sem precisar de borda.
                           active
                             ? 'bg-[#E8F2FF] dark:bg-blue-500/15 text-[#2563EB] dark:text-blue-400'
                             : isLocked(href)
-                              ? 'text-slate-400 dark:text-slate-600 hover:bg-slate-50 dark:hover:bg-white/5'
-                              : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-[#0B2D6B] dark:hover:text-slate-200'
+                              ? 'bg-slate-50/60 dark:bg-white/[0.02] text-slate-400 dark:text-slate-600'
+                              : 'bg-slate-50 dark:bg-white/[0.04] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/[0.07] hover:text-[#0B2D6B] dark:hover:text-slate-100'
                         )}
                       >
                         <Icon className={cn('h-5 w-5', active && 'text-[#2563EB] dark:text-blue-400')} />
@@ -154,7 +156,7 @@ export function MobileNav() {
           </div>
 
           {/* Bottom row: theme + logout */}
-          <div className="flex items-center gap-2 px-4 pb-4 pt-1 border-t border-slate-100 dark:border-white/[0.06]">
+          <div className="flex items-center gap-2 px-4 py-3 border-t border-slate-100 dark:border-white/[0.06]">
             <div className="flex-1">
               <ThemeToggle />
             </div>
