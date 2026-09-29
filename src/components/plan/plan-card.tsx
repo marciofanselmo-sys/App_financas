@@ -35,9 +35,13 @@ export function PlanCard({ tier, atual = false, cta }: {
   return (
     <div
       className={cn(
+        // Todos os cartões têm exatamente a mesma caixa: o destaque é o anel
+        // azul e a etiqueta, não um tamanho diferente. O deslocamento que o
+        // cartão em destaque tinha (-mt-2/pb-7) deixava um dos quatro maior
+        // que os outros, e o desalinhamento chamava mais atenção do que o
+        // próprio destaque.
         'nobli-card p-5 flex flex-col relative',
-        atual && 'ring-2 ring-blue-500',
-        !atual && destaque && 'ring-2 ring-blue-500 lg:-mt-2 lg:pb-7',
+        (atual || destaque) && 'ring-2 ring-blue-500',
       )}
     >
       <div className="flex items-center justify-between gap-2 min-h-[22px]">
