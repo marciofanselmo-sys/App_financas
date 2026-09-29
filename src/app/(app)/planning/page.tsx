@@ -175,6 +175,43 @@ function TableRow({ label, planned, actual, actualClass, higherIsBetter = false,
   )
 }
 
+// Celular: a tabela de 5 colunas não cabe, então cada item vira duas linhas —
+// realizado de planejado em cima, barra e diferença embaixo.
+function MobileRow({ label, planned, actual, actualClass, higherIsBetter = false, strong = false, sub = false }: {
+  label: string; planned: number; actual: number; actualClass: string
+  higherIsBetter?: boolean; strong?: boolean; sub?: boolean
+}) {
+  const diff = actual - planned
+  const pct = planned > 0 ? (actual / planned) * 100 : 0
+  const bar = higherIsBetter
+    ? (pct >= 100 ? 'bg-emerald-500' : pct >= 80 ? 'bg-amber-500' : 'bg-red-500')
+    : (pct > 100 ? 'bg-red-500' : pct > 90 ? 'bg-amber-500' : 'bg-emerald-500')
+  const text = higherIsBetter
+    ? (diff >= 0 ? { t: `Atingido${diff > 0 ? ` · +${fmt(diff)}` : ''}`, c: 'text-emerald-600 dark:text-emerald-400' }
+                 : { t: `Faltam ${fmt(-diff)}`, c: pct >= 80 ? 'text-amber-500' : 'text-red-500' })
+    : (diff <= 0 ? { t: `Sobram ${fmt(-diff)}`, c: pct > 90 ? 'text-amber-500' : 'text-emerald-600 dark:text-emerald-400' }
+                 : { t: `Passou ${fmt(diff)}`, c: 'text-red-500' })
+  return (
+    <div className={cn('py-3 pr-4', sub ? 'pl-9' : 'pl-5')}>
+      <div className="flex items-baseline justify-between gap-3">
+        <span className={cn('text-sm truncate', strong ? 'font-semibold text-slate-700 dark:text-slate-200' : sub ? 'text-xs text-slate-500 dark:text-slate-400' : 'text-slate-600 dark:text-slate-300')}>
+          {label}
+        </span>
+        <span className="text-xs tabular-nums whitespace-nowrap shrink-0">
+          <span className={cn('font-semibold', actual > 0 ? actualClass : 'text-slate-400')}>{fmt(actual)}</span>
+          <span className="text-slate-400 dark:text-slate-500"> de {fmt(planned)}</span>
+        </span>
+      </div>
+      <div className="flex items-center gap-3 mt-1.5">
+        <div className="flex-1 h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+          <div className={cn('h-full rounded-full', bar)} style={{ width: `${Math.min(100, pct)}%` }} />
+        </div>
+        <span className={cn('text-[11px] font-semibold tabular-nums whitespace-nowrap', text.c)}>{text.t}</span>
+      </div>
+    </div>
+  )
+}
+
 function PlanningPage() {
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
@@ -766,7 +803,39 @@ function PlanningPage() {
               </div>
             ) : (
               <>
-              <div className="overflow-x-auto">
+              {/* Celular: lista em duas linhas por item */}
+              <div className="sm:hidden divide-y divide-slate-100 dark:divide-slate-700/60">
+                {incomeNum > 0 && (
+                  <MobileRow label="Receita" strong planned={incomeNum} actual={actualIncome} actualClass="text-green-600 dark:text-green-400" higherIsBetter />
+                )}
+                {tableRows.map(r => (
+                  <Fragment key={r.cat.id}>
+                    <MobileRow label={r.cat.name} planned={r.planned} actual={r.actual} actualClass="text-red-500" />
+                    {r.kids
+                      .filter(k => parseNum(categoryLimits[subKey(k.name)] ?? '') > 0)
+                      .map(k => (
+                        <MobileRow
+                          key={k.id}
+                          label={k.name}
+                          sub
+                          planned={parseNum(categoryLimits[subKey(k.name)] ?? '')}
+                          actual={actual.byCategory[k.name] ?? 0}
+                          actualClass="text-red-500"
+                        />
+                      ))}
+                  </Fragment>
+                ))}
+                {investNum > 0 && (
+                  <MobileRow label="Investir (aportes)" strong planned={investNum} actual={investActual} actualClass="text-blue-600 dark:text-blue-400" higherIsBetter />
+                )}
+                {totalPlanned > 0 && (
+                  <div className="bg-slate-50 dark:bg-slate-700/30">
+                    <MobileRow label="Total Despesas" strong planned={totalPlanned} actual={actualPlanned} actualClass="text-red-500" />
+                  </div>
+                )}
+              </div>
+
+              <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-slate-100 dark:border-slate-700">
@@ -823,7 +892,7 @@ function PlanningPage() {
                 </table>
               </div>
               {untracked > 0 && totalPlanned > 0 && (
-                <p className="text-xs text-slate-400 dark:text-slate-500 px-6 py-3 border-t border-slate-100 dark:border-slate-700">
+                <p className="text-xs text-slate-400 dark:text-slate-500 px-5 sm:px-6 py-3 border-t border-slate-100 dark:border-slate-700">
                   + {fmt(untracked)} em categorias sem limite, fora do &ldquo;Total Despesas&rdquo;. Gasto total do mês: {fmt(actual.total)}.
                 </p>
               )}
