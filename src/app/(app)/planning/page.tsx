@@ -574,9 +574,11 @@ function PlanningPage() {
     setPillar('futuro', pr.futuro)
   }
 
-  const incomeChange = prevPlan && prevPlan.expected_income > 0 && incomeNum > 0
+  // Só aparece quando a renda mudou de fato (arredondado, "+0%" não diz nada).
+  const incomeChangeRaw = prevPlan && prevPlan.expected_income > 0 && incomeNum > 0
     ? ((incomeNum - prevPlan.expected_income) / prevPlan.expected_income) * 100
     : null
+  const incomeChange = incomeChangeRaw !== null && Math.abs(incomeChangeRaw) >= 0.5 ? incomeChangeRaw : null
   const summaryIncome = incomeNum > 0 ? incomeNum : actualIncome
   const projected = summaryIncome - actual.total
 
