@@ -264,7 +264,7 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
                 </SelectContent>
               </Select>
               <p className="text-[11px] text-slate-400">
-                Escolhendo o cartão, o app registra o pagamento nele também — assim a fatura aparece como paga.
+                Escolhendo o cartão, as próximas importações registram o pagamento nele também — assim a fatura aparece como paga. Salvar a regra só marca o que já existe; nenhum saldo muda.
               </p>
             </div>
 
@@ -279,7 +279,7 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
                 <span className="text-xs text-slate-600 dark:text-slate-300">
                   <strong className="font-semibold">Só quando encontrar a entrada do mesmo valor</strong> nessa conta, em até 5 dias.
                   <span className="block text-slate-400 mt-0.5">
-                    Ligue quando o banco de destino mostra o dinheiro chegando (ex.: PIX entre suas contas). Deixe desligado para fatura de cartão cujo extrato não traz o pagamento — aí o app lança a entrada.
+                    Ligue quando o banco de destino mostra o dinheiro chegando (ex.: PIX entre suas contas). Deixe desligado para fatura de cartão cujo extrato não traz o pagamento — nas próximas importações, o app lança a entrada no cartão.
                   </span>
                 </span>
               </label>

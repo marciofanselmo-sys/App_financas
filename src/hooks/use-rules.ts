@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Category, TransactionType } from '@/types'
 import { isCategoryUsableForDate } from '@/lib/special-category-filter'
-import { buildCounterpartLeg, findPairedEntry } from '@/lib/internal-counterpart'
+import { findPairedEntry } from '@/lib/internal-counterpart'
 
 export type MatchType = 'contains' | 'starts_with' | 'ends_with' | 'exact'
 
@@ -278,8 +278,14 @@ export interface InternalApplyResult {
  *
  * Com conta de destino, marca o PAR inteiro: a saída e, no destino, a entrada
  * que o próprio banco lançou (o "Pix recebido" no C6 de um PIX que saiu do
- * Itaú). Só quando o banco não lança essa entrada (fatura do C6) o app a cria.
- * Sem casar a entrada, o mesmo dinheiro continuava contando como receita.
+ * Itaú). Sem casar a entrada, o mesmo dinheiro continuava contando como receita.
+ *
+ * NUNCA cria lançamento: aplicar no histórico só marca, então o saldo de
+ * nenhuma conta muda. Antes (29–30/09/2026) criava a entrada no destino para
+ * pagamentos sem par — salvar a regra da fatura do C6 lançou créditos de
+ * faturas cujas compras nunca foram importadas e deixou o cartão positivo.
+ * A entrada da fatura (C6 não traz o pagamento) continua sendo criada só na
+ * importação, quando pagamento e fatura chegam juntos.
  *
  * Devolve em `undo` o estado anterior de cada linha alterada — os Ajustes sugeridos
  * usam isso para o botão "Desfazer".
@@ -322,7 +328,6 @@ export async function applyInternalRule(
   const destTxs = target ? txs.filter(t => t.board_id === target && !t.counterpart_of_id) : []
   const used = new Set<string>()
   const pairedEntries: TxForInternal[] = []
-  const needLeg: TxForInternal[] = []
   const unpaired: TxForInternal[] = []
   const outsToMark: TxForInternal[] = []
   for (const t of withTarget) {
@@ -337,13 +342,12 @@ export async function applyInternalRule(
       unpaired.push(t)
     } else {
       outsToMark.push(t)
-      needLeg.push(t)
     }
   }
   const count = plain.length + outsToMark.length
 
   if (opts.dryRun || count === 0) {
-    return { count, skipped: unpaired.length, paired: pairedEntries.length, legs: needLeg.length }
+    return { count, skipped: unpaired.length, paired: pairedEntries.length, legs: 0 }
   }
 
   const undo: InternalUndo = { changed: [], legIds: [] }
@@ -374,22 +378,7 @@ export async function applyInternalRule(
     pairedEntries.forEach(remember)
   }
 
-  const legs = needLeg.map(t => buildCounterpartLeg(
-    {
-      id: t.id, description: t.description, amount: Number(t.amount), date: t.date, type: t.type,
-      category: t.category, counterpartBoardId: target!,
-    },
-    user.id,
-    crypto.randomUUID(),
-  ))
-  if (legs.length > 0) {
-    const { error } = await supabase.from('transactions').insert(legs)
-    if (error) {
-      return { count, paired: pairedEntries.length, legs: 0, undo, error: `Lançamentos marcados, mas não deu para creditar a conta de destino: ${error.message}` }
-    }
-    undo.legIds.push(...legs.map(l => l.id as string))
-  }
-  return { count, skipped: unpaired.length, paired: pairedEntries.length, legs: legs.length, undo }
+  return { count, skipped: unpaired.length, paired: pairedEntries.length, legs: 0, undo }
 }
 
 /** Volta cada linha ao estado de antes e apaga as entradas que o app criou. */

@@ -18,6 +18,7 @@ export interface SuggestionTx {
   is_internal?: boolean | null
   counterpart_board_id?: string | null
   counterpart_of_id?: string | null
+  created_at?: string
 }
 
 export interface SuggestionRule {
@@ -169,4 +170,42 @@ export function findPairSuggestions(
   }
   // O que mais distorce os números primeiro.
   return result.sort((a, b) => (b.expenseThisYear + b.incomeThisYear) - (a.expenseThisYear + a.incomeThisYear))
+}
+
+// ── Créditos lançados depois do fato ────────────────────────────────────────
+
+/**
+ * Entre 29 e 30/09/2026, salvar uma regra "Entre minhas contas" com destino
+ * aplicava no histórico E lançava a entrada no destino para pagamentos sem
+ * par. Na fatura do C6, isso creditou o cartão por pagamentos de faturas
+ * cujas compras nunca foram importadas — o saldo do cartão ficou positivo.
+ *
+ * Esses créditos têm uma assinatura: são pernas geradas (counterpart_of_id) e
+ * foram criadas muito depois do próprio pagamento. A perna da importação nasce
+ * junto com o pagamento; a do backfill de 13/09 é anterior às regras.
+ */
+export const RULES_RELEASE = '2026-09-29'
+const LATE_GAP_MS = 60 * 60 * 1000
+
+export interface LateCreditGroup {
+  boardId: string
+  credits: SuggestionTx[]
+  total: number
+}
+
+export function findLateCredits(txs: (SuggestionTx & { created_at?: string })[]): LateCreditGroup[] {
+  const byId = new Map(txs.map(t => [t.id, t]))
+  const groups = new Map<string, LateCreditGroup>()
+  for (const leg of txs) {
+    if (!leg.counterpart_of_id || !leg.created_at || !leg.board_id) continue
+    if (leg.created_at < RULES_RELEASE) continue
+    const payment = byId.get(leg.counterpart_of_id)
+    if (!payment?.created_at) continue
+    if (+new Date(leg.created_at) - +new Date(payment.created_at) < LATE_GAP_MS) continue
+    const g = groups.get(leg.board_id) ?? { boardId: leg.board_id, credits: [], total: 0 }
+    g.credits.push(leg)
+    g.total += (leg.type === 'receita' ? 1 : -1) * Number(leg.amount)
+    groups.set(leg.board_id, g)
+  }
+  return [...groups.values()].map(g => ({ ...g, credits: g.credits.sort((a, b) => b.date.localeCompare(a.date)) }))
 }

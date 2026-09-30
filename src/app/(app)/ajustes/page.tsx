@@ -4,11 +4,11 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { ArrowLeftRight, ArrowRight, Check, CheckCircle2, ChevronRight, Lightbulb, Loader2, Undo2, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ArrowRight, Check, CheckCircle2, ChevronRight, Lightbulb, Loader2, Undo2, X } from 'lucide-react'
 import { withPlan } from '@/components/plan/with-plan'
 import { useAdjustments } from '@/hooks/use-adjustments'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
-import { PairSuggestion, SuggestionTx } from '@/lib/data-suggestions'
+import { LateCreditGroup, PairSuggestion, SuggestionTx } from '@/lib/data-suggestions'
 import { PAIRING_TOLERANCE_DAYS } from '@/lib/internal-counterpart'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -250,8 +250,84 @@ function SuggestionCard({ s, name, busy, onApply, onSnooze, onDismiss }: {
   )
 }
 
+/**
+ * Créditos que o app lançou por engano ao salvar uma regra (29–30/09/2026).
+ * Remoção em dois cliques, com a lista à vista — é o único lugar da tela que
+ * apaga lançamentos.
+ */
+function LateCreditsCard({ groups, name, onRemove }: {
+  groups: LateCreditGroup[]
+  name: (id: string) => string
+  onRemove: (ids: string[]) => Promise<void>
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const all = groups.flatMap(g => g.credits)
+  return (
+    <div className="rounded-2xl border border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-800 overflow-hidden">
+      <div className="px-4 pt-4 pb-3 flex items-start gap-3 border-b border-slate-100 dark:border-slate-700">
+        <div className="h-8 w-8 rounded-lg bg-red-50 dark:bg-red-900/20 flex items-center justify-center shrink-0">
+          <AlertTriangle className="h-4 w-4 text-red-500" />
+        </div>
+        <div className="min-w-0">
+          <p className="font-semibold text-slate-800 dark:text-slate-100">Entradas lançadas por engano ao salvar uma regra</p>
+          <p className="text-xs text-slate-400 mt-0.5">Isso mudou o saldo {groups.length === 1 ? 'desta conta' : 'destas contas'} — e não deveria</p>
+        </div>
+      </div>
+      <div className="px-4 py-4 space-y-4 text-sm text-slate-600 dark:text-slate-300">
+        <p>
+          Ao salvar uma regra &ldquo;Entre minhas contas&rdquo; com conta de destino, o app lançava nessa conta a entrada de pagamentos
+          antigos que não tinham par. Para faturas cujas compras não estão no app, isso criou créditos que não existem no banco.
+          Já corrigimos o app: salvar uma regra agora só marca lançamentos, nunca cria.
+        </p>
+        {groups.map(g => (
+          <div key={g.boardId}>
+            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">
+              {name(g.boardId)} · {plural(g.credits.length, 'entrada', 'entradas')} · saldo alterado em{' '}
+              <span className={g.total >= 0 ? 'text-green-600' : 'text-red-500'}>{g.total >= 0 ? '+' : '−'}{fmt(Math.abs(g.total))}</span>
+            </p>
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700/60 max-h-64 overflow-y-auto">
+              {g.credits.map(c => (
+                <div key={c.id} className="px-3 py-1.5 flex items-center gap-3 text-xs">
+                  <span className="w-16 shrink-0 text-slate-400">{fmtShort(c.date)}</span>
+                  <span className="flex-1 min-w-0 truncate">{c.description}</span>
+                  <span className="shrink-0 text-[11px] text-slate-400 hidden sm:inline">lançada em {c.created_at ? fmtShort(c.created_at.slice(0, 10)) : '—'}</span>
+                  <span className="shrink-0 tabular-nums font-medium">{fmt(Number(c.amount))}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+        <p className="text-xs text-slate-500">
+          <strong>Remover</strong> apaga só essas {all.length} entradas criadas pelo app. Os pagamentos originais continuam na conta de
+          origem, fora das somas, e o saldo {groups.length === 1 ? 'da conta volta' : 'das contas volta'} a ser o de antes.
+        </p>
+      </div>
+      <div className="px-4 py-3 bg-slate-50 dark:bg-slate-700/30 border-t border-slate-100 dark:border-slate-700 flex flex-wrap gap-2 justify-end items-center">
+        {confirming ? (
+          <>
+            <span className="text-xs text-slate-500 mr-auto">Remover {plural(all.length, 'entrada', 'entradas')}? Não dá para desfazer.</span>
+            <Button variant="outline" size="sm" onClick={() => setConfirming(false)} disabled={busy}>Cancelar</Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={busy}
+              className="gap-1.5"
+              onClick={async () => { setBusy(true); await onRemove(all.map(c => c.id)); setBusy(false); setConfirming(false) }}
+            >
+              {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Confirmar remoção
+            </Button>
+          </>
+        ) : (
+          <Button size="sm" variant="destructive" onClick={() => setConfirming(true)}>Remover {plural(all.length, 'entrada', 'entradas')}</Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function AdjustmentsPage() {
-  const { suggestions, hiddenSuggestions, unhide, applied, loading, error, decisionsLocal, apply, undo, snooze, dismiss } = useAdjustments()
+  const { lateCredits, removeLateCredits, suggestions, hiddenSuggestions, unhide, applied, loading, error, decisionsLocal, apply, undo, snooze, dismiss } = useAdjustments()
   const { boards } = useTransactionBoards()
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [banner, setBanner] = useState<Banner | null>(null)
@@ -309,6 +385,19 @@ function AdjustmentsPage() {
           )}
           <button onClick={() => setBanner(null)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
         </div>
+      )}
+
+      {!loading && lateCredits.length > 0 && (
+        <LateCreditsCard
+          groups={lateCredits}
+          name={name}
+          onRemove={async ids => {
+            const { error: e, removed } = await removeLateCredits(ids)
+            setBanner(e
+              ? { kind: 'error', text: `Não deu para remover: ${e}` }
+              : { kind: 'ok', text: `${plural(removed, 'entrada removida', 'entradas removidas')}. O saldo voltou ao que era antes.` })
+          }}
+        />
       )}
 
       {error ? (

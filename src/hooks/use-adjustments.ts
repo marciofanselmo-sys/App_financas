@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { logSafeError } from '@/lib/supabase-error'
 import { todayISO } from '@/utils/local-date'
-import { findPairSuggestions, isCreditCardBoard, PairSuggestion, SuggestionRule, SuggestionTx } from '@/lib/data-suggestions'
+import { findLateCredits, findPairSuggestions, isCreditCardBoard, PairSuggestion, SuggestionRule, SuggestionTx } from '@/lib/data-suggestions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { applyInternalRule, undoInternalChanges, InternalUndo, useRules } from '@/hooks/use-rules'
 
@@ -65,7 +65,7 @@ export function useAdjustments() {
     for (let from = 0; ; from += PAGE) {
       const { data, error: e } = await supabase
         .from('transactions')
-        .select('id, description, amount, date, type, board_id, is_internal, counterpart_board_id, counterpart_of_id')
+        .select('id, description, amount, date, type, board_id, is_internal, counterpart_board_id, counterpart_of_id, created_at')
         .eq('user_id', user.id)
         .order('date')
         .range(from, from + PAGE - 1)
@@ -236,12 +236,32 @@ export function useAdjustments() {
     return {}
   }
 
+  const lateCredits = useMemo(() => findLateCredits(txs), [txs])
+
+  /**
+   * Apaga SÓ as entradas que o app criou depois do fato (pernas geradas,
+   * listadas na tela antes). O pagamento original continua, fora das somas.
+   */
+  async function removeLateCredits(ids: string[]): Promise<{ error?: string; removed: number }> {
+    const allowed = new Set(lateCredits.flatMap(g => g.credits.map(c => c.id)))
+    const safe = ids.filter(id => allowed.has(id))
+    if (safe.length === 0) return { removed: 0 }
+    const supabase = createClient()
+    const { data, error: e } = await supabase.from('transactions').delete()
+      .in('id', safe).not('counterpart_of_id', 'is', null).select('id')
+    if (e) return { error: e.message, removed: 0 }
+    await load()
+    return { removed: data?.length ?? 0 }
+  }
+
   /** "Mostrar de novo": apaga a decisão de esconder. */
   function unhide(key: string) {
     return removeDecision(key)
   }
 
   return {
+    lateCredits,
+    removeLateCredits,
     suggestions,
     hiddenSuggestions,
     unhide,
