@@ -21,7 +21,7 @@ import { extractPdfText } from '@/utils/extract-pdf-text'
 import { selectAllPages } from '@/lib/supabase/select-all'
 import { reportError } from '@/lib/error-reporter'
 import { loadSavedMapping, saveMapping, guessSignConvention, type CsvMapping, type SignConvention } from '@/lib/csv-mapping-memory'
-import { findCounterpartBoard, hasExistingLeg, buildCounterpartLeg, legTypeFor } from '@/lib/internal-counterpart'
+import { findCounterpartBoard, findPairedEntry, buildCounterpartLeg, legTypeFor } from '@/lib/internal-counterpart'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { parseMercadoPagoPDF, isMercadoPagoPDF, countMercadoPagoCandidates } from '@/utils/parse-mercadopago-pdf'
 import { parseInterInvoicePDF, isInterInvoicePDF, countInterInvoiceCandidates } from '@/utils/parse-inter-pdf'
@@ -1029,6 +1029,38 @@ function shiftDays(date: string, days: number): string {
             : findCounterpartBoard(r.description, boards, origin, r.type),
         }
       })
+      // Entrada que chega DEPOIS da saída: o extrato do C6 importado depois do
+      // Itaú. A saída já está marcada apontando para esta conta; a entrada do
+      // mesmo valor (até 3 dias) é a outra metade e também não pode somar.
+      const incoming = tracking.filter(t => t.row.type === 'receita' && !t.internal)
+      if (incoming.length > 0) {
+        const inBoards = [...new Set(incoming.map(t => t.row.board_id ?? boardId).filter(Boolean))] as string[]
+        const inDates = incoming.map(t => t.row.date).sort()
+        const from = shiftDays(inDates[0], -3), to = shiftDays(inDates[inDates.length - 1], 3)
+        const [{ data: outs }, { data: settled }] = await Promise.all([
+          supabase.from('transactions').select('id, counterpart_board_id, amount, date')
+            .eq('user_id', user.id).eq('type', 'despesa').in('counterpart_board_id', inBoards)
+            .gte('date', from).lte('date', to),
+          // Entradas já resolvidas no destino: a perna gerada pelo app e as
+          // já marcadas. Cada uma consome a sua saída antes do pareamento.
+          supabase.from('transactions').select('board_id, amount, date, counterpart_of_id, is_internal')
+            .eq('user_id', user.id).eq('type', 'receita').in('board_id', inBoards)
+            .gte('date', from).lte('date', to),
+        ])
+        const candidates = (outs ?? []).map(o => ({ id: o.id, board_id: o.counterpart_board_id, amount: Number(o.amount), date: o.date, type: 'despesa' as const }))
+        const used = new Set<string>()
+        for (const e of settled ?? []) {
+          if (e.counterpart_of_id) { used.add(e.counterpart_of_id); continue }
+          if (!e.is_internal) continue
+          const out = findPairedEntry(candidates, e.board_id, Number(e.amount), e.date, 'despesa', used)
+          if (out) used.add(out.id)
+        }
+        for (const t of incoming) {
+          const out = findPairedEntry(candidates, (t.row.board_id ?? boardId)!, t.row.amount, t.row.date, 'despesa', used)
+          if (out) { used.add(out.id); t.internal = true }
+        }
+      }
+
       const payload = tracking.map(({ id, row, counterpart, internal }) => ({
         id,
         user_id: user.id,
@@ -1071,16 +1103,35 @@ function shiftDays(date: string, days: number): string {
           const dates = withDestination.map(t => t.row.date).sort()
           const { data: existingLegs } = await supabase
             .from('transactions')
-            .select('board_id, amount, date, type')
+            .select('id, board_id, amount, date, type, is_internal, counterpart_of_id')
             .eq('user_id', user.id)
             .in('board_id', destIds)
             .gte('date', shiftDays(dates[0], -3))
             .lte('date', shiftDays(dates[dates.length - 1], 3))
 
-          const legs = withDestination
-            .filter(t => !hasExistingLeg(
-              existingLegs ?? [], t.counterpart!.id, t.row.amount, t.row.date, legTypeFor(t.row.type),
-            ))
+          // Se o banco já lançou a entrada no destino (Inter lista o pagamento
+          // recebido), ela vira a outra metade do par e para de contar como
+          // receita; só sem ela o app cria a perna.
+          const usedLegs = new Set<string>()
+          const toMark: string[] = []
+          const withoutEntry = withDestination.filter(t => {
+            const entry = findPairedEntry(
+              (existingLegs ?? []).filter(e => !e.counterpart_of_id),
+              t.counterpart!.id, t.row.amount, t.row.date, legTypeFor(t.row.type), usedLegs,
+            )
+            if (!entry) return true
+            usedLegs.add(entry.id)
+            if (!entry.is_internal) toMark.push(entry.id)
+            return false
+          })
+          if (toMark.length > 0) {
+            const { error: markError } = await supabase.from('transactions').update({ is_internal: true }).in('id', toMark)
+            if (markError && !firstErrorMessage) {
+              firstErrorMessage = `Transações importadas, mas não foi possível marcar a entrada na conta de destino: ${markError.message}`
+            }
+          }
+
+          const legs = withoutEntry
             .map(t => buildCounterpartLeg(
               {
                 id: t.id,

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Category, TransactionType } from '@/types'
 import { isCategoryUsableForDate } from '@/lib/special-category-filter'
-import { buildCounterpartLeg, hasExistingLeg } from '@/lib/internal-counterpart'
+import { buildCounterpartLeg, findPairedEntry } from '@/lib/internal-counterpart'
 
 export type MatchType = 'contains' | 'starts_with' | 'ends_with' | 'exact'
 
@@ -252,22 +252,41 @@ interface TxForInternal {
   counterpart_board_id: string | null; counterpart_of_id: string | null
 }
 
+/** O que uma aplicação mudou, para poder desfazer (valores ANTERIORES). */
+export interface InternalUndo {
+  changed: { id: string; is_internal: boolean; counterpart_board_id: string | null }[]
+  legIds: string[]
+}
+
+export interface InternalApplyResult {
+  count: number    // saídas que a regra pegou
+  paired: number   // entradas do banco no destino que passaram a não somar
+  legs: number     // entradas criadas pelo app no destino (banco não lança)
+  error?: string
+  undo?: InternalUndo
+}
+
 /**
  * Aplica a regra "Entre minhas contas" no que JÁ está no banco — é isso que
  * a detecção da importação não fazia: pagamentos importados antes dela
  * continuavam somando como gasto. Com `dryRun`, só conta quantos casariam
  * (para a tela mostrar "encontrei N" antes de salvar).
  *
- * Com conta de destino, também credita o destino (a "perna" do pagamento),
- * pulando quando ela já existe — gerada antes ou vinda do extrato do banco.
+ * Com conta de destino, marca o PAR inteiro: a saída e, no destino, a entrada
+ * que o próprio banco lançou (o "Pix recebido" no C6 de um PIX que saiu do
+ * Itaú). Só quando o banco não lança essa entrada (fatura do C6) o app a cria.
+ * Sem casar a entrada, o mesmo dinheiro continuava contando como receita.
+ *
+ * Devolve em `undo` o estado anterior de cada linha alterada — os Ajustes sugeridos
+ * usam isso para o botão "Desfazer".
  */
 export async function applyInternalRule(
   rule: InternalRuleFields,
   opts: { dryRun?: boolean } = {},
-): Promise<{ count: number; legs: number; error?: string }> {
+): Promise<InternalApplyResult> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { count: 0, legs: 0 }
+  if (!user) return { count: 0, paired: 0, legs: 0 }
 
   const txs: TxForInternal[] = []
   const PAGE = 1000
@@ -281,7 +300,7 @@ export async function applyInternalRule(
       const friendly = error.code === '42703'
         ? 'Falta atualizar o banco: rode a migração migration_rules_internal.sql no Supabase.'
         : error.message
-      return { count: 0, legs: 0, error: friendly }
+      return { count: 0, paired: 0, legs: 0, error: friendly }
     }
     if (!data?.length) break
     txs.push(...(data as TxForInternal[]))
@@ -290,44 +309,96 @@ export async function applyInternalRule(
 
   // A perna gerada pelo app nunca é alvo: ela já é a outra ponta.
   const matches = txs.filter(t => !t.counterpart_of_id && matchesInternalRule(t, rule))
-  if (opts.dryRun || matches.length === 0) return { count: matches.length, legs: 0 }
-
+  const target = rule.target_board_id ?? null
   const withTarget = matches.filter(t => internalRuleTarget(rule, t))
   const plain = matches.filter(t => !internalRuleTarget(rule, t))
 
-  if (plain.length > 0) {
-    const { error } = await supabase.from('transactions').update({ is_internal: true }).in('id', plain.map(t => t.id))
-    if (error) return { count: 0, legs: 0, error: error.message }
-  }
-  if (withTarget.length > 0) {
-    const { error } = await supabase
-      .from('transactions')
-      .update({ is_internal: true, counterpart_board_id: rule.target_board_id })
-      .in('id', withTarget.map(t => t.id))
-    if (error) return { count: plain.length, legs: 0, error: error.message }
+  // Pareamento no destino, calculado antes de gravar (serve também à prévia).
+  const alreadyGenerated = new Set(txs.filter(t => t.counterpart_of_id).map(t => t.counterpart_of_id))
+  const destTxs = target ? txs.filter(t => t.board_id === target && !t.counterpart_of_id) : []
+  const used = new Set<string>()
+  const pairedEntries: TxForInternal[] = []
+  const needLeg: TxForInternal[] = []
+  for (const t of withTarget) {
+    if (alreadyGenerated.has(t.id)) continue
+    const entry = findPairedEntry(destTxs, target!, Number(t.amount), t.date, 'receita', used)
+    if (entry) {
+      used.add(entry.id)
+      if (!entry.is_internal) pairedEntries.push(entry)
+    } else {
+      needLeg.push(t)
+    }
   }
 
-  // Credita o destino, sem duplicar.
-  const alreadyGenerated = new Set(txs.filter(t => t.counterpart_of_id).map(t => t.counterpart_of_id))
-  const destTxs = txs.filter(t => t.board_id === rule.target_board_id)
-  const legs = withTarget
-    .filter(t => !alreadyGenerated.has(t.id))
-    .filter(t => !hasExistingLeg(destTxs, rule.target_board_id!, Number(t.amount), t.date, 'receita'))
-    .map(t => buildCounterpartLeg(
-      {
-        id: t.id, description: t.description, amount: Number(t.amount), date: t.date, type: t.type,
-        category: t.category, counterpartBoardId: rule.target_board_id!,
-      },
-      user.id,
-      crypto.randomUUID(),
-    ))
+  if (opts.dryRun || matches.length === 0) {
+    return { count: matches.length, paired: pairedEntries.length, legs: needLeg.length }
+  }
+
+  const undo: InternalUndo = { changed: [], legIds: [] }
+  const remember = (t: TxForInternal) =>
+    undo.changed.push({ id: t.id, is_internal: !!t.is_internal, counterpart_board_id: t.counterpart_board_id })
+
+  const plainToMark = plain.filter(t => !t.is_internal)
+  if (plainToMark.length > 0) {
+    const { error } = await supabase.from('transactions').update({ is_internal: true }).in('id', plainToMark.map(t => t.id))
+    if (error) return { count: 0, paired: 0, legs: 0, error: error.message, undo }
+    plainToMark.forEach(remember)
+  }
+  const targetToMark = withTarget.filter(t => !t.is_internal || t.counterpart_board_id !== target)
+  if (targetToMark.length > 0) {
+    const { error } = await supabase
+      .from('transactions')
+      .update({ is_internal: true, counterpart_board_id: target })
+      .in('id', targetToMark.map(t => t.id))
+    if (error) return { count: matches.length, paired: 0, legs: 0, error: error.message, undo }
+    targetToMark.forEach(remember)
+  }
+
+  if (pairedEntries.length > 0) {
+    const { error } = await supabase.from('transactions').update({ is_internal: true }).in('id', pairedEntries.map(t => t.id))
+    if (error) {
+      return { count: matches.length, paired: 0, legs: 0, undo, error: `Saídas marcadas, mas não deu para marcar as entradas na conta de destino: ${error.message}` }
+    }
+    pairedEntries.forEach(remember)
+  }
+
+  const legs = needLeg.map(t => buildCounterpartLeg(
+    {
+      id: t.id, description: t.description, amount: Number(t.amount), date: t.date, type: t.type,
+      category: t.category, counterpartBoardId: target!,
+    },
+    user.id,
+    crypto.randomUUID(),
+  ))
   if (legs.length > 0) {
     const { error } = await supabase.from('transactions').insert(legs)
     if (error) {
-      return { count: matches.length, legs: 0, error: `Lançamentos marcados, mas não deu para creditar a conta de destino: ${error.message}` }
+      return { count: matches.length, paired: pairedEntries.length, legs: 0, undo, error: `Lançamentos marcados, mas não deu para creditar a conta de destino: ${error.message}` }
     }
+    undo.legIds.push(...legs.map(l => l.id as string))
   }
-  return { count: matches.length, legs: legs.length }
+  return { count: matches.length, paired: pairedEntries.length, legs: legs.length, undo }
+}
+
+/** Volta cada linha ao estado de antes e apaga as entradas que o app criou. */
+export async function undoInternalChanges(undo: InternalUndo): Promise<{ error?: string }> {
+  const supabase = createClient()
+  // Agrupa por estado anterior: um update por combinação, não um por linha.
+  const groups = new Map<string, string[]>()
+  for (const c of undo.changed) {
+    const k = JSON.stringify([c.is_internal, c.counterpart_board_id])
+    groups.set(k, [...(groups.get(k) ?? []), c.id])
+  }
+  for (const [k, ids] of groups) {
+    const [is_internal, counterpart_board_id] = JSON.parse(k) as [boolean, string | null]
+    const { error } = await supabase.from('transactions').update({ is_internal, counterpart_board_id }).in('id', ids)
+    if (error) return { error: error.message }
+  }
+  if (undo.legIds.length > 0) {
+    const { error } = await supabase.from('transactions').delete().in('id', undo.legIds)
+    if (error) return { error: error.message }
+  }
+  return {}
 }
 
 /**

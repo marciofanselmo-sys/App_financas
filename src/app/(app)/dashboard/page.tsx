@@ -11,6 +11,7 @@ import { useRecurringDecisions } from '@/hooks/use-recurring-decisions'
 import { SummaryCards } from '@/components/dashboard/summary-cards'
 import { DiagnosticCard } from '@/components/dashboard/diagnostic-card'
 import { TopCategoriesBar } from '@/components/dashboard/top-categories-bar'
+import { AdjustmentsBanner } from '@/components/dashboard/adjustments-banner'
 import { useCategories } from '@/hooks/use-categories'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
 import { BoardSummaryCard } from '@/components/dashboard/board-summary-card'
@@ -220,6 +221,8 @@ export default function DashboardPage() {
         title="Dashboard"
         subtitle="Patrimônio acumulado + fluxo do mês"
       />
+
+      <AdjustmentsBanner />
 
       {/* Patrimônio e composição não dependem do mês — ficam acima do filtro */}
       <MacroOverview overview={patrimony} loading={boardsLoading || patrimonyLoading} />

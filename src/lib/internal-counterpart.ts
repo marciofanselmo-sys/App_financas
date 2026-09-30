@@ -124,6 +124,37 @@ export function hasExistingLeg(
   )
 }
 
+/**
+ * A entrada que o PRÓPRIO BANCO lançou no destino para este pagamento — o
+ * "Pix recebido" no C6 de um PIX que saiu do Itaú, o "PAGAMENTO DE FATURA" no
+ * cartão Inter. Sem casar essa linha, a saída saía das somas mas a entrada
+ * continuava contando como receita: o mesmo dinheiro virava renda.
+ *
+ * Mesmo critério de hasExistingLeg (valor exato em centavos, até 3 dias) e
+ * nunca a mesma linha para dois pagamentos (`used`). Prefere a data mais
+ * próxima quando há mais de uma candidata.
+ */
+export function findPairedEntry<T extends ExistingLeg & { id: string }>(
+  existing: T[],
+  boardId: string,
+  amount: number,
+  date: string,
+  legType: 'receita' | 'despesa',
+  used: Set<string>,
+): T | null {
+  const cents = Math.round(amount * 100)
+  const candidates = existing
+    .filter(e =>
+      !used.has(e.id) &&
+      e.board_id === boardId &&
+      e.type === legType &&
+      Math.round(Number(e.amount) * 100) === cents &&
+      daysApart(e.date, date) <= PAIRING_TOLERANCE_DAYS,
+    )
+    .sort((a, b) => daysApart(a.date, date) - daysApart(b.date, date))
+  return candidates[0] ?? null
+}
+
 export interface PaymentRow {
   id: string
   description: string

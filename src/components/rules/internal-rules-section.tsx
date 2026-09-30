@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { ArrowLeftRight, CheckCircle2, Pencil, Plus, ToggleLeft, ToggleRight, Trash2, X } from 'lucide-react'
 import { CategorizationRule, MatchType, applyInternalRule } from '@/hooks/use-rules'
 import { TransactionBoard } from '@/types'
@@ -27,7 +28,7 @@ interface FormState {
 
 const EMPTY: FormState = { keyword: '', matchType: 'contains', scope: '', target: '' }
 
-type Result = { count: number; legs: number; error?: string }
+type Result = { count: number; legs: number; paired?: number; error?: string }
 
 /**
  * Regras "Entre minhas contas": em vez de categorizar, marcam o lançamento para
@@ -128,6 +129,9 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
           <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 ml-9">
             Lançamentos que só mudam dinheiro de lugar — como pagar a fatura do cartão pela conta corrente. Continuam na conta e no saldo, mas não somam em gastos, entradas, categorias, relatórios nem planejamento.
           </p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 ml-9">
+            Não sabe o que colocar aqui? Em <Link href="/ajustes" className="text-blue-600 dark:text-blue-400 hover:underline">Ajustes sugeridos</Link> o app cruza seus lançamentos e propõe as regras.
+          </p>
         </div>
         <Button size="sm" variant="outline" onClick={openCreate} className="gap-1.5 shrink-0">
           <Plus className="h-3.5 w-3.5" /> Nova
@@ -151,6 +155,7 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
                 result.count === 0
                   ? 'Nenhum lançamento anterior combinou — a regra vale para as próximas importações.'
                   : `${result.count} lançamento${result.count === 1 ? '' : 's'} deixa${result.count === 1 ? '' : 'm'} de somar nos gastos.` +
+                    (result.paired ? ` Na conta de destino, ${result.paired} entrada${result.paired === 1 ? '' : 's'} do mesmo valor deixa${result.paired === 1 ? '' : 'm'} de contar como receita.` : '') +
                     (result.legs > 0 ? ` A conta de destino recebeu ${result.legs} crédito${result.legs === 1 ? '' : 's'} que faltava${result.legs === 1 ? '' : 'm'}.` : '')
               )}
             </p>

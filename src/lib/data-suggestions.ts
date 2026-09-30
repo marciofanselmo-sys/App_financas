@@ -1,0 +1,142 @@
+import { findPairedEntry } from '@/lib/internal-counterpart'
+
+/**
+ * Ajustes sugeridos: o app cruza os lançamentos e propõe correções que o usuário não
+ * saberia procurar — a regra "Entre minhas contas" existe, mas fica escondida
+ * em Regras automáticas.
+ *
+ * Só cálculo, nada grava aqui. Aplicar/desfazer mora na tela Ajustes sugeridos.
+ */
+
+export interface SuggestionTx {
+  id: string
+  description: string
+  amount: number
+  date: string
+  type: 'receita' | 'despesa'
+  board_id: string | null
+  is_internal?: boolean | null
+  counterpart_board_id?: string | null
+  counterpart_of_id?: string | null
+}
+
+export interface SuggestionRule {
+  id: string
+  keyword: string
+  match_type: string
+  action?: string
+  scope_board_id?: string | null
+  target_board_id?: string | null
+}
+
+export interface PairSuggestion {
+  kind: 'internal-pair'
+  key: string
+  originBoardId: string
+  targetBoardId: string
+  /** Texto da saída, como vira a regra (maiúsculas). */
+  keyword: string
+  /** Regra "Entre minhas contas" com esse texto que já existe (será completada). */
+  existingRule: SuggestionRule | null
+  /** Saídas + a entrada do mesmo valor no destino, mais recentes primeiro. */
+  pairs: { out: SuggestionTx; entry: SuggestionTx }[]
+  /** Textos das entradas no destino (para o usuário reconhecer). */
+  entryTexts: string[]
+  /** Saídas com esse texto na origem que ainda somam — a regra pega todas. */
+  outflowsStillCounting: number
+  entriesStillCounting: number
+  /** Quanto ainda soma, no ano corrente, de cada lado. */
+  year: number
+  expenseThisYear: number
+  incomeThisYear: number
+  /** A saída já está fora das somas; só a entrada no destino ainda conta. */
+  onlyEntryMissing: boolean
+}
+
+export type Suggestion = PairSuggestion
+
+const isInternal = (t: SuggestionTx) => !!t.is_internal || !!t.counterpart_board_id || !!t.counterpart_of_id
+const norm = (s: string) => s.trim().toUpperCase()
+
+/** Pares abaixo disso podem ser coincidência de valor (compra × PIX de terceiro). */
+const MIN_REPEATS = 2
+
+/**
+ * Dinheiro que só mudou de lugar entre duas contas do usuário e ainda soma:
+ * uma saída numa conta e, em até 3 dias, uma entrada do MESMO valor noutra.
+ *
+ * Trava contra coincidência: o texto da saída precisa se repetir em pelo menos
+ * MIN_REPEATS pares entre as mesmas duas contas. Nos dados reais que motivaram
+ * isto, 7 "pares" eram compras no cartão × PIX recebidos de terceiros — cada
+ * um com texto diferente, então nenhum vira sugestão.
+ */
+export function findPairSuggestions(
+  txs: SuggestionTx[],
+  rules: SuggestionRule[],
+  now = new Date(),
+): PairSuggestion[] {
+  const year = now.getFullYear()
+  const candidates = txs.filter(t => !t.counterpart_of_id && t.board_id)
+  const entries = candidates.filter(t => t.type === 'receita')
+  const outflows = candidates
+    .filter(t => t.type === 'despesa')
+    .sort((a, b) => a.date.localeCompare(b.date))
+
+  // Um pareamento por entrada: a mesma linha nunca serve para duas saídas.
+  const used = new Set<string>()
+  const groups = new Map<string, { origin: string; target: string; keyword: string; pairs: { out: SuggestionTx; entry: SuggestionTx }[] }>()
+  for (const out of outflows) {
+    const others = entries.filter(e => e.board_id !== out.board_id)
+    // findPairedEntry filtra por conta; tentamos cada conta de destino possível.
+    const boards = [...new Set(others.map(e => e.board_id!))]
+    let best: SuggestionTx | null = null
+    for (const b of boards) {
+      const e = findPairedEntry(others, b, Number(out.amount), out.date, 'receita', used)
+      if (e && (!best || Math.abs(+new Date(e.date) - +new Date(out.date)) < Math.abs(+new Date(best.date) - +new Date(out.date)))) best = e
+    }
+    if (!best) continue
+    used.add(best.id)
+    const keyword = norm(out.description)
+    const key = `pair|${out.board_id}|${best.board_id}|${keyword}`
+    const g = groups.get(key) ?? { origin: out.board_id!, target: best.board_id!, keyword, pairs: [] }
+    g.pairs.push({ out, entry: best })
+    groups.set(key, g)
+  }
+
+  const result: PairSuggestion[] = []
+  for (const [key, g] of groups) {
+    if (g.pairs.length < MIN_REPEATS) continue
+    const pendingPairs = g.pairs.filter(p => !isInternal(p.out) || !isInternal(p.entry))
+    if (pendingPairs.length === 0) continue
+
+    // A regra vai pegar TODA saída com esse texto na conta de origem, não só
+    // as que têm par — a contagem mostrada precisa dizer isso.
+    const sameText = outflows.filter(t => t.board_id === g.origin && norm(t.description).includes(g.keyword))
+    const inYear = (t: SuggestionTx) => t.date.startsWith(String(year))
+    const outStill = sameText.filter(t => !isInternal(t))
+    const entryStill = g.pairs.map(p => p.entry).filter(e => !isInternal(e))
+
+    const existingRule = rules.find(r =>
+      r.action === 'internal' && norm(r.keyword) === g.keyword && (!r.scope_board_id || r.scope_board_id === g.origin),
+    ) ?? null
+
+    result.push({
+      kind: 'internal-pair',
+      key,
+      originBoardId: g.origin,
+      targetBoardId: g.target,
+      keyword: g.keyword,
+      existingRule,
+      pairs: [...g.pairs].sort((a, b) => b.out.date.localeCompare(a.out.date)),
+      entryTexts: [...new Set(g.pairs.map(p => p.entry.description.trim()))].slice(0, 2),
+      outflowsStillCounting: outStill.length,
+      entriesStillCounting: entryStill.length,
+      year,
+      expenseThisYear: outStill.filter(inYear).reduce((s, t) => s + Number(t.amount), 0),
+      incomeThisYear: entryStill.filter(inYear).reduce((s, t) => s + Number(t.amount), 0),
+      onlyEntryMissing: outStill.length === 0,
+    })
+  }
+  // O que mais distorce os números primeiro.
+  return result.sort((a, b) => (b.expenseThisYear + b.incomeThisYear) - (a.expenseThisYear + a.incomeThisYear))
+}

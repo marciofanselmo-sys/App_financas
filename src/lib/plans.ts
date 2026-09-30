@@ -51,6 +51,7 @@ export const ROUTE_FEATURE: Record<string, Feature> = {
   '/recurring':      'recurring',
   '/fixos':          'recurring',
   '/settings/rules': 'rules',
+  '/ajustes':        'rules',
 }
 
 export interface PlanDefinition {
