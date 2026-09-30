@@ -19,6 +19,7 @@ export interface SuggestionTx {
   counterpart_board_id?: string | null
   counterpart_of_id?: string | null
   created_at?: string
+  category?: string
 }
 
 export interface SuggestionRule {
@@ -28,6 +29,7 @@ export interface SuggestionRule {
   action?: string
   scope_board_id?: string | null
   target_board_id?: string | null
+  pair_sides?: 'both' | 'out' | 'in'
 }
 
 export interface PairSuggestion {
@@ -133,7 +135,15 @@ export function findPairSuggestions(
     // O par tem que ser o padrão daquele texto, não a exceção.
     const withText = outflows.filter(t => t.board_id === g.origin && norm(t.description).includes(g.keyword))
     if (g.pairs.length / withText.length < MIN_PAIRED_SHARE) continue
-    const pendingPairs = g.pairs.filter(p => !isInternal(p.out) || !isInternal(p.entry))
+
+    const existingRule = rules.find(r =>
+      r.action === 'internal' && norm(r.keyword) === g.keyword && (!r.scope_board_id || r.scope_board_id === g.origin),
+    ) ?? null
+    // Regra já com destino e lado escolhido: só o lado escolhido precisa estar
+    // fora das somas — o outro soma de propósito (ex.: PIX da conta PJ).
+    const sides = existingRule?.target_board_id === g.target ? existingRule.pair_sides ?? 'both' : 'both'
+    const pendingPairs = g.pairs.filter(p =>
+      (sides !== 'in' && !isInternal(p.out)) || (sides !== 'out' && !isInternal(p.entry)))
     if (pendingPairs.length === 0) continue
 
     // A regra sugerida exige o par (require_pair): só as saídas com entrada
@@ -145,10 +155,6 @@ export function findPairSuggestions(
     const inYear = (t: SuggestionTx) => t.date.startsWith(String(year))
     const outStill = g.pairs.map(p => p.out).filter(o => !isInternal(o))
     const entryStill = g.pairs.map(p => p.entry).filter(e => !isInternal(e))
-
-    const existingRule = rules.find(r =>
-      r.action === 'internal' && norm(r.keyword) === g.keyword && (!r.scope_board_id || r.scope_board_id === g.origin),
-    ) ?? null
 
     result.push({
       kind: 'internal-pair',

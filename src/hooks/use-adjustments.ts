@@ -6,7 +6,7 @@ import { logSafeError } from '@/lib/supabase-error'
 import { todayISO } from '@/utils/local-date'
 import { findLateCredits, findPairSuggestions, isCreditCardBoard, PairSuggestion, SuggestionRule, SuggestionTx } from '@/lib/data-suggestions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
-import { applyInternalRule, undoInternalChanges, InternalUndo, useRules } from '@/hooks/use-rules'
+import { applyInternalRule, undoInternalChanges, InternalUndo, PairSides, useRules } from '@/hooks/use-rules'
 
 /** O que foi aplicado, com o necessário para desfazer. */
 export interface AppliedAdjustment {
@@ -16,10 +16,12 @@ export interface AppliedAdjustment {
   marked: number
   paired: number
   legs: number
+  restored?: number
+  sides?: PairSides
   appliedAt: string
   rule:
     | { kind: 'created'; id: string }
-    | { kind: 'updated'; id: string; prev: { scope_board_id: string | null; target_board_id: string | null; active: boolean; require_pair: boolean } }
+    | { kind: 'updated'; id: string; prev: { scope_board_id: string | null; target_board_id: string | null; active: boolean; require_pair: boolean; pair_sides: PairSides } }
   tx: InternalUndo
 }
 
@@ -65,7 +67,7 @@ export function useAdjustments() {
     for (let from = 0; ; from += PAGE) {
       const { data, error: e } = await supabase
         .from('transactions')
-        .select('id, description, amount, date, type, board_id, is_internal, counterpart_board_id, counterpart_of_id, created_at')
+        .select('id, description, amount, date, type, category, board_id, is_internal, counterpart_board_id, counterpart_of_id, created_at')
         .eq('user_id', user.id)
         .order('date')
         .range(from, from + PAGE - 1)
@@ -167,7 +169,7 @@ export function useAdjustments() {
     return saveDecision({ key: s.key, status: 'dismissed' })
   }
 
-  async function apply(s: PairSuggestion): Promise<{ error?: string; result?: AppliedAdjustment }> {
+  async function apply(s: PairSuggestion, sides: PairSides = 'both'): Promise<{ error?: string; result?: AppliedAdjustment }> {
     const fields = {
       keyword: s.keyword,
       match_type: 'contains' as const,
@@ -176,6 +178,7 @@ export function useAdjustments() {
       // Valor + data provam o par: saída com o mesmo texto sem a entrada no
       // destino continua somando.
       require_pair: true,
+      pair_sides: sides,
     }
     let rule: AppliedAdjustment['rule']
     if (s.existingRule) {
@@ -185,8 +188,9 @@ export function useAdjustments() {
         target_board_id: current?.target_board_id ?? null,
         active: current?.active ?? true,
         require_pair: current?.require_pair ?? false,
+        pair_sides: current?.pair_sides ?? 'both',
       }
-      const r = await updateRule(s.existingRule.id, { scope_board_id: s.originBoardId, target_board_id: s.targetBoardId, active: true, require_pair: true })
+      const r = await updateRule(s.existingRule.id, { scope_board_id: s.originBoardId, target_board_id: s.targetBoardId, active: true, require_pair: true, pair_sides: sides })
       if (!r.ok || r.error === 'partial') {
         return { error: 'Não foi possível atualizar a regra existente. Rode a migração migration_rules_internal.sql no Supabase e tente de novo.' }
       }
@@ -211,6 +215,8 @@ export function useAdjustments() {
       marked: res.count,
       paired: res.paired,
       legs: res.legs,
+      restored: res.restored,
+      sides,
       appliedAt: new Date().toISOString(),
       rule,
       tx: res.undo ?? { changed: [], legIds: [] },
@@ -254,12 +260,26 @@ export function useAdjustments() {
     return { removed: data?.length ?? 0 }
   }
 
+  /**
+   * Categoria de UM lançamento, direto da lista de pares. Só ele muda — não
+   * cria regra nem mexe em outros com o mesmo texto ("Pix recebido de…" vem
+   * igual de qualquer banco).
+   */
+  async function setCategory(id: string, category: string): Promise<{ error?: string }> {
+    const supabase = createClient()
+    const { error: e } = await supabase.from('transactions').update({ category }).eq('id', id)
+    if (e) return { error: e.message }
+    setTxs(prev => prev.map(t => (t.id === id ? { ...t, category } : t)))
+    return {}
+  }
+
   /** "Mostrar de novo": apaga a decisão de esconder. */
   function unhide(key: string) {
     return removeDecision(key)
   }
 
   return {
+    setCategory,
     lateCredits,
     removeLateCredits,
     suggestions,

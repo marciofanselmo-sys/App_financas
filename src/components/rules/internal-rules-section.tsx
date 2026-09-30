@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeftRight, CheckCircle2, Pencil, Plus, ToggleLeft, ToggleRight, Trash2, X } from 'lucide-react'
-import { CategorizationRule, MatchType, applyInternalRule } from '@/hooks/use-rules'
+import { CategorizationRule, MatchType, PairSides, applyInternalRule } from '@/hooks/use-rules'
 import { TransactionBoard } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,9 +25,16 @@ interface FormState {
   scope: string   // '' = qualquer conta
   target: string  // '' = nenhuma (conta fora do app, ou só não somar)
   requirePair: boolean
+  sides: PairSides
 }
 
-const EMPTY: FormState = { keyword: '', matchType: 'contains', scope: '', target: '', requirePair: false }
+const EMPTY: FormState = { keyword: '', matchType: 'contains', scope: '', target: '', requirePair: false, sides: 'both' }
+
+const SIDE_LABELS: Record<PairSides, string> = {
+  both: 'A saída e a entrada',
+  out: 'Só a saída (a entrada é receita)',
+  in: 'Só a entrada (a saída é gasto)',
+}
 
 type Result = { count: number; legs: number; paired?: number; error?: string }
 
@@ -65,20 +72,20 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
     let cancelled = false
     const t = setTimeout(async () => {
       const r = await applyInternalRule(
-        { keyword, match_type: form.matchType, scope_board_id: form.scope || null, target_board_id: form.target || null, require_pair: !!form.target && form.requirePair },
+        { keyword, match_type: form.matchType, scope_board_id: form.scope || null, target_board_id: form.target || null, require_pair: !!form.target && form.requirePair, pair_sides: form.target ? form.sides : 'both' },
         { dryRun: true },
       )
       if (!cancelled) setPreview(r.error ? null : { count: r.count, skipped: r.skipped ?? 0, paired: r.paired })
     }, 400)
     return () => { cancelled = true; clearTimeout(t) }
-  }, [formOpen, form.keyword, form.matchType, form.scope, form.target, form.requirePair])
+  }, [formOpen, form.keyword, form.matchType, form.scope, form.target, form.requirePair, form.sides])
 
   function openCreate() {
     setEditing(null); setForm(EMPTY); setPreview(null); setFormOpen(true)
   }
   function openEdit(r: CategorizationRule) {
     setEditing(r)
-    setForm({ keyword: r.keyword, matchType: r.match_type, scope: r.scope_board_id ?? '', target: r.target_board_id ?? '', requirePair: !!r.require_pair })
+    setForm({ keyword: r.keyword, matchType: r.match_type, scope: r.scope_board_id ?? '', target: r.target_board_id ?? '', requirePair: !!r.require_pair, sides: r.pair_sides ?? 'both' })
     setPreview(null)
     setFormOpen(true)
   }
@@ -93,6 +100,9 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
       scope_board_id: form.scope || null,
       target_board_id: form.target || null,
       require_pair: !!form.target && form.requirePair,
+      // Sempre enviado: sem ele, salvar reaplicaria "os dois lados" e marcaria
+      // de novo o lado que o usuário escolheu deixar somando.
+      pair_sides: form.target ? form.sides : 'both' as PairSides,
     }
     if (editing) {
       const r = await updateRule(editing.id, fields)
@@ -196,6 +206,7 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
                     {scope ? `Em ${scope}` : 'Em qualquer conta'}
                     {target ? ` → ${target}` : ' · só não soma'}
                     {target && rule.require_pair ? ' · só com a entrada correspondente' : ''}
+                    {target && rule.pair_sides && rule.pair_sides !== 'both' ? ` · não soma: ${rule.pair_sides === 'out' ? 'só a saída' : 'só a entrada'}` : ''}
                   </p>
                 </div>
                 <div className="flex gap-1 shrink-0">
@@ -267,6 +278,18 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
                 Escolhendo o cartão, as próximas importações registram o pagamento nele também — assim a fatura aparece como paga. Salvar a regra só marca o que já existe; nenhum saldo muda.
               </p>
             </div>
+
+            {form.target && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">O que não soma</Label>
+                <Select value={form.sides} onValueChange={v => setForm(f => ({ ...f, sides: (v ?? 'both') as PairSides }))} items={SIDE_LABELS}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.entries(SIDE_LABELS) as [PairSides, string][]).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {form.target && (
               <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 dark:border-slate-700 p-3 cursor-pointer">

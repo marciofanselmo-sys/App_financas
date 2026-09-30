@@ -1023,8 +1023,11 @@ function shiftDays(date: string, days: number): string {
         return {
           id: uid(),
           row: r,
-          internal: !!internalRule,
+          // 'in' (só a entrada não soma): a saída continua sendo gasto.
+          internal: !!internalRule && !(ruleTarget && internalRule.pair_sides === 'in'),
           requirePair: !!(ruleTarget && internalRule?.require_pair),
+          /** Qual lado do par não soma (regra com destino). */
+          sides: (ruleTarget ? internalRule?.pair_sides ?? 'both' : 'both') as 'both' | 'out' | 'in',
           counterpart: ruleTarget
             ? boards.find(b => b.id === ruleTarget) ?? null
             : findCounterpartBoard(r.description, boards, origin, r.type),
@@ -1055,13 +1058,18 @@ function shiftDays(date: string, days: number): string {
           const entry = findPairedEntry(native, t.counterpart!.id, t.row.amount, t.row.date, legTypeFor(t.row.type), usedEntries)
           if (entry) {
             usedEntries.add(entry.id)
-            t.entry = { id: entry.id, is_internal: entry.is_internal }
-          } else if (t.requirePair) {
-            t.internal = false
-            t.counterpart = null
+            // 'out': a entrada é renda de verdade (PIX da conta PJ) e segue somando.
+            if (t.sides !== 'out') t.entry = { id: entry.id, is_internal: entry.is_internal }
+          } else if (t.requirePair || t.sides !== 'both') {
+            // Sem a entrada não há par para marcar; e só a fatura ('both')
+            // ganha a entrada lançada pelo app.
+            if (t.requirePair) t.internal = false
+            if (t.requirePair || t.sides === 'in') t.counterpart = null
           } else {
             t.needLeg = true
           }
+          // 'in': a saída soma; sem destino gravado ela não conta como movimentação.
+          if (t.sides === 'in') t.counterpart = null
         }
       }
 
@@ -1076,9 +1084,11 @@ function shiftDays(date: string, days: number): string {
         const inBoards = [...new Set(incoming.map(t => t.row.board_id ?? boardId).filter(Boolean))] as string[]
         const inDates = incoming.map(t => t.row.date).sort()
         const from = shiftDays(inDates[0], -PAIRING_TOLERANCE_DAYS), to = shiftDays(inDates[inDates.length - 1], PAIRING_TOLERANCE_DAYS)
-        const waitingRules = rules.filter(r => isInternalRule(r) && r.active && r.require_pair && r.target_board_id && inBoards.includes(r.target_board_id))
+        // Saídas ainda sem marca que uma regra deixou esperando por esta entrada:
+        // com require_pair, ou com 'in' (só a entrada não soma, a saída nunca é marcada).
+        const waitingRules = rules.filter(r => isInternalRule(r) && r.active && (r.require_pair || r.pair_sides === 'in') && r.target_board_id && inBoards.includes(r.target_board_id))
         const [{ data: outs }, { data: settled }, { data: waiting }] = await Promise.all([
-          supabase.from('transactions').select('id, counterpart_board_id, amount, date')
+          supabase.from('transactions').select('id, description, board_id, counterpart_board_id, amount, date')
             .eq('user_id', user.id).eq('type', 'despesa').in('counterpart_board_id', inBoards)
             .gte('date', from).lte('date', to),
           // Entradas já resolvidas no destino: a perna gerada pelo app e as
@@ -1093,10 +1103,13 @@ function shiftDays(date: string, days: number): string {
             : Promise.resolve({ data: [] as { id: string; description: string; board_id: string | null; amount: number; date: string }[] }),
         ])
         const candidates = [
-          ...(outs ?? []).map(o => ({ id: o.id, board_id: o.counterpart_board_id, amount: Number(o.amount), date: o.date, type: 'despesa' as const, waiting: false })),
+          ...(outs ?? []).map(o => ({
+            id: o.id, board_id: o.counterpart_board_id, amount: Number(o.amount), date: o.date, type: 'despesa' as const, waiting: false,
+            sides: findInternalRule(o.description, o.board_id, rules)?.pair_sides ?? 'both',
+          })),
           ...(waiting ?? []).flatMap(o => {
             const rule = waitingRules.find(r => matchesInternalRule(o, r))
-            return rule ? [{ id: o.id, board_id: rule.target_board_id!, amount: Number(o.amount), date: o.date, type: 'despesa' as const, waiting: true }] : []
+            return rule ? [{ id: o.id, board_id: rule.target_board_id!, amount: Number(o.amount), date: o.date, type: 'despesa' as const, waiting: true, sides: rule.pair_sides ?? 'both' }] : []
           }),
         ]
         const used = new Set<string>()
@@ -1111,8 +1124,8 @@ function shiftDays(date: string, days: number): string {
           const out = findPairedEntry(candidates, target, t.row.amount, t.row.date, 'despesa', used)
           if (!out) continue
           used.add(out.id)
-          t.internal = true
-          if (out.waiting) pendingOuts.push({ id: out.id, target })
+          if (out.sides !== 'out') t.internal = true
+          if (out.waiting && out.sides !== 'in') pendingOuts.push({ id: out.id, target })
         }
       }
 

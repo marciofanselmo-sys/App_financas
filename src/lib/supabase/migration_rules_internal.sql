@@ -40,3 +40,8 @@ alter table categorization_rules
 -- "PIX TRANSF" pode ir para outra pessoa). Desligado para a fatura do C6, cujo
 -- extrato do cartão não traz o pagamento — ali o app cria a entrada.
 alter table categorization_rules add column if not exists require_pair boolean not null default false;
+
+-- pair_sides (30/09/2026): qual lado do par não soma. 'out' = só a saída (PIX
+-- da conta PJ para a pessoal: não é gasto, mas é renda quando chega); 'in' =
+-- só a entrada; 'both' = os dois (fatura do cartão).
+alter table categorization_rules add column if not exists pair_sides text not null default 'both' check (pair_sides in ('both', 'out', 'in'));

@@ -9,6 +9,12 @@ import { withPlan } from '@/components/plan/with-plan'
 import { useAdjustments } from '@/hooks/use-adjustments'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { LateCreditGroup, PairSuggestion, SuggestionTx } from '@/lib/data-suggestions'
+import { PairSides } from '@/hooks/use-rules'
+import { useCategories } from '@/hooks/use-categories'
+import { categoriesForDate } from '@/lib/special-category-filter'
+import { CategoryOptions } from '@/components/categories/category-options'
+import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Category } from '@/types'
 import { PAIRING_TOLERANCE_DAYS } from '@/lib/internal-counterpart'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -57,23 +63,89 @@ function RuleField({ label, value, changedFrom }: { label: string; value: React.
   )
 }
 
-function SuggestionCard({ s, name, busy, onApply, onSnooze, onDismiss }: {
+/** Categoria de um lançamento, editável ali mesmo. Muda só aquele lançamento. */
+function CategoryPicker({ tx, categories, onChange }: {
+  tx: SuggestionTx
+  categories: Category[]
+  onChange: (id: string, category: string) => Promise<void>
+}) {
+  const [saving, setSaving] = useState(false)
+  const usable = categoriesForDate(categories, tx.date).filter(c => c.type === tx.type || c.type === 'ambos')
+  return (
+    <div className="flex items-center gap-1 mt-1">
+      <Select
+        value={tx.category ?? ''}
+        onValueChange={async v => {
+          if (!v || v === tx.category) return
+          setSaving(true); await onChange(tx.id, v); setSaving(false)
+        }}
+        disabled={saving}
+      >
+        <SelectTrigger className="h-6 text-[11px] px-2 w-auto max-w-[180px] border-dashed">
+          <SelectValue placeholder="Categoria" />
+        </SelectTrigger>
+        <SelectContent>
+          <CategoryOptions list={usable} all={categories} className="text-xs" />
+        </SelectContent>
+      </Select>
+      {saving && <Loader2 className="h-3 w-3 animate-spin text-slate-400" />}
+    </div>
+  )
+}
+
+/** Um lado do par: marcado = não soma. */
+function SideToggle({ on, set, title, hint }: { on: boolean; set: (v: boolean) => void; title: React.ReactNode; hint: string }) {
+  return (
+    <label className={cn('flex items-start gap-2.5 rounded-lg border p-3 cursor-pointer', on ? 'border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-900/15' : 'border-slate-200 dark:border-slate-700')}>
+      <input type="checkbox" checked={on} onChange={e => set(e.target.checked)} className="mt-0.5 h-4 w-4 accent-blue-600" />
+      <span className="text-sm">
+        <span className="font-medium text-slate-700 dark:text-slate-200">{title}</span>
+        <span className="block text-xs text-slate-400 mt-0.5">{hint}</span>
+      </span>
+    </label>
+  )
+}
+
+function SuggestionCard({ s, name, busy, categories, onApply, onSetCategory, onSnooze, onDismiss }: {
   s: PairSuggestion
   name: (id: string) => string
   busy: boolean
-  onApply: () => void
+  categories: Category[]
+  onApply: (sides: PairSides) => void
+  onSetCategory: (id: string, category: string) => Promise<void>
   onSnooze: () => void
   onDismiss: () => void
 }) {
   const [showAll, setShowAll] = useState(false)
   const [showUnpaired, setShowUnpaired] = useState(false)
+  const existing = s.existingRule
+  const startSides = existing?.target_board_id === s.targetBoardId ? existing.pair_sides ?? 'both' : 'both'
+  const [outOn, setOutOn] = useState(startSides !== 'in')
+  const [inOn, setInOn] = useState(startSides !== 'out')
+  const sides: PairSides | null = outOn && inOn ? 'both' : outOn ? 'out' : inOn ? 'in' : null
   const origin = name(s.originBoardId)
   const target = name(s.targetBoardId)
-  const outsCounting = s.pairs.map(p => p.out).filter(counts)
-  const entriesCounting = s.pairs.map(p => p.entry).filter(counts)
+  const outs = s.pairs.map(p => p.out)
+  const entries = s.pairs.map(p => p.entry)
   const shown = showAll ? s.pairs : s.pairs.slice(0, SHOWN)
-  const existing = s.existingRule
   const code = (t: string) => <code className="text-xs bg-slate-100 dark:bg-slate-700 px-1 py-0.5 rounded">{t}</code>
+
+  // O que acontece com cada lado, conforme a escolha.
+  const sideRows = (list: SuggestionTx[], on: boolean, one: string, many: string, where: string, kind: 'despesa' | 'receita') => {
+    const counting = list.filter(counts)
+    const marked = list.filter(t => !counts(t))
+    const rows: { text: string; value: number; after: string }[] = []
+    if (on && counting.length) rows.push({ text: `${plural(counting.length, one, many)} em ${where} somando como ${kind}`, value: sum(counting), after: 'saem das somas' })
+    if (on && marked.length) rows.push({ text: `${plural(marked.length, one, many)} em ${where} já fora das somas`, value: sum(marked), after: 'ficam como estão' })
+    if (!on && marked.length) rows.push({ text: `${plural(marked.length, one, many)} em ${where} hoje fora das somas`, value: sum(marked), after: `voltam a somar como ${kind}` })
+    if (!on && counting.length) rows.push({ text: `${plural(counting.length, one, many)} em ${where} somando como ${kind}`, value: sum(counting), after: 'continuam somando' })
+    return rows
+  }
+  const impact = [
+    ...sideRows(outs, outOn, 'saída', 'saídas', origin, 'despesa'),
+    ...sideRows(entries, inOn, 'entrada', 'entradas', target, 'receita'),
+  ]
+  const sideText = sides === 'both' ? 'a saída e a entrada' : sides === 'out' ? 'só a saída — a entrada continua somando como receita' : sides === 'in' ? 'só a entrada — a saída continua somando como despesa' : '—'
 
   return (
     <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
@@ -87,23 +159,19 @@ function SuggestionCard({ s, name, busy, onApply, onSnooze, onDismiss }: {
             <p className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5 flex-wrap">
               {origin} <ArrowRight className="h-3.5 w-3.5 text-slate-400" /> {target}
             </p>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {s.onlyEntryMissing
-                ? 'A saída já está fora das somas, mas a entrada do outro lado ainda conta como receita'
-                : 'Dinheiro entre suas contas contando como gasto e como ganho'}
-            </p>
+            <p className="text-xs text-slate-400 mt-0.5">Dinheiro entre suas contas que pode estar contando como gasto e como ganho</p>
           </div>
         </div>
         {(s.expenseThisYear > 0 || s.incomeThisYear > 0) && (
           <div className="flex flex-wrap gap-2 mt-3 ml-11">
             {s.expenseThisYear > 0 && (
               <span className="text-xs rounded-lg bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 px-2 py-1">
-                <strong>{fmt(s.expenseThisYear)}</strong> a mais em despesas em {s.year}
+                Saídas somando: <strong>{fmt(s.expenseThisYear)}</strong> em {s.year}
               </span>
             )}
             {s.incomeThisYear > 0 && (
               <span className="text-xs rounded-lg bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 px-2 py-1">
-                <strong>{fmt(s.incomeThisYear)}</strong> a mais em receitas em {s.year}
+                Entradas somando: <strong>{fmt(s.incomeThisYear)}</strong> em {s.year}
               </span>
             )}
           </div>
@@ -131,7 +199,26 @@ function SuggestionCard({ s, name, busy, onApply, onSnooze, onDismiss }: {
           )}
         </Section>
 
-        <Section n={2} title={existing ? 'A regra que vou completar' : 'A regra que vou criar'}>
+        <Section n={2} title="Escolha o que não deve somar">
+          <div className="space-y-2">
+            <SideToggle
+              on={outOn}
+              set={setOutOn}
+              title={<>A saída em {origin} não é gasto</>}
+              hint="Ex.: pagar a fatura do cartão, mandar dinheiro para você mesmo."
+            />
+            <SideToggle
+              on={inOn}
+              set={setInOn}
+              title={<>A entrada em {target} não é receita</>}
+              hint="Desmarque se esse dinheiro é renda de verdade para você — ex.: PIX da sua conta PJ para a pessoal."
+            />
+            {!sides && <p className="text-xs text-amber-600">Marque pelo menos um dos lados.</p>}
+          </div>
+          <p className="text-xs text-slate-400 mt-1.5">A escolha vale para todos os pares desta regra, inclusive os das próximas importações.</p>
+        </Section>
+
+        <Section n={3} title={existing ? 'A regra que vou completar' : 'A regra que vou criar'}>
           <div className="rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-1 divide-y divide-slate-100 dark:divide-slate-700/60">
             <RuleField label="Tipo" value={<>Entre minhas contas <span className="text-slate-400">(não soma)</span></>} />
             <RuleField label="Texto da saída" value={<>contém {code(existing?.keyword ?? s.keyword)}</>} />
@@ -141,16 +228,16 @@ function SuggestionCard({ s, name, busy, onApply, onSnooze, onDismiss }: {
               value={target}
               changedFrom={existing && existing.target_board_id !== s.targetBoardId ? (existing.target_board_id ? name(existing.target_board_id) : 'nenhuma') : undefined}
             />
+            <RuleField label="Não soma" value={sideText} />
             <RuleField
               label="Condição"
               value={<>só quando existir a entrada do mesmo valor em {target}, em até {PAIRING_TOLERANCE_DAYS} dias</>}
-              changedFrom={existing ? 'qualquer saída com o texto' : undefined}
             />
           </div>
           <p className="text-xs text-slate-400 mt-1.5">Fica salva em Regras automáticas → Entre minhas contas. Importações futuras já chegam marcadas.</p>
         </Section>
 
-        <Section n={3} title="O que muda nos seus números">
+        <Section n={4} title="O que muda nos seus números">
           <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
             <table className="w-full text-xs">
               <thead className="bg-slate-50 dark:bg-slate-700/40 text-slate-500 dark:text-slate-400">
@@ -161,20 +248,13 @@ function SuggestionCard({ s, name, busy, onApply, onSnooze, onDismiss }: {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
-                {outsCounting.length > 0 && (
-                  <tr>
-                    <td className="px-3 py-2">{plural(outsCounting.length, 'saída', 'saídas')} em {origin} <span className="text-red-500">somando como despesa</span></td>
-                    <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{fmt(sum(outsCounting))}</td>
-                    <td className="px-3 py-2 text-slate-500">saem das somas</td>
+                {impact.map((r, i) => (
+                  <tr key={i}>
+                    <td className="px-3 py-2">{r.text}</td>
+                    <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{fmt(r.value)}</td>
+                    <td className="px-3 py-2 text-slate-500">{r.after}</td>
                   </tr>
-                )}
-                {entriesCounting.length > 0 && (
-                  <tr>
-                    <td className="px-3 py-2">{plural(entriesCounting.length, 'entrada', 'entradas')} em {target} <span className="text-green-600">somando como receita</span></td>
-                    <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{fmt(sum(entriesCounting))}</td>
-                    <td className="px-3 py-2 text-slate-500">saem das somas</td>
-                  </tr>
-                )}
+                ))}
                 {s.unpairedOutflows.length > 0 && (
                   <tr>
                     <td className="px-3 py-2">{plural(s.unpairedOutflows.length, 'saída', 'saídas')} com o mesmo texto <strong>sem</strong> entrada em {target}</td>
@@ -185,23 +265,26 @@ function SuggestionCard({ s, name, busy, onApply, onSnooze, onDismiss }: {
               </tbody>
             </table>
           </div>
-          <p className="text-xs text-slate-400 mt-1.5">Valores de todo o histórico. O que já está fora das somas não é mexido.</p>
+          <p className="text-xs text-slate-400 mt-1.5">Valores de todo o histórico dos pares encontrados.</p>
         </Section>
 
-        <Section n={4} title={`Os ${s.pairs.length} pares encontrados`}>
+        <Section n={5} title={`Os ${s.pairs.length} pares encontrados`}>
+          <p className="text-xs text-slate-400 mb-1.5">Confira a categoria de cada lançamento e corrija aqui se precisar — muda só aquele lançamento.</p>
           <div className="rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700/60">
             {shown.map(({ out, entry }) => (
-              <div key={out.id} className="px-3 py-2 flex items-center gap-3">
-                <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+              <div key={out.id} className="px-3 py-2 flex items-start gap-3">
+                <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
                   <div className="min-w-0">
                     <p className="text-[11px] text-slate-400">Saiu · {fmtShort(out.date)} · {origin}</p>
                     <p className="text-xs text-slate-700 dark:text-slate-200 truncate">{out.description}</p>
                     <Status tx={out} kind="despesa" />
+                    <CategoryPicker tx={out} categories={categories} onChange={onSetCategory} />
                   </div>
                   <div className="min-w-0">
                     <p className="text-[11px] text-slate-400">Entrou · {fmtShort(entry.date)} · {target}</p>
                     <p className="text-xs text-slate-700 dark:text-slate-200 truncate">{entry.description}</p>
                     <Status tx={entry} kind="receita" />
+                    <CategoryPicker tx={entry} categories={categories} onChange={onSetCategory} />
                   </div>
                 </div>
                 <span className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200 shrink-0">{fmt(Number(out.amount))}</span>
@@ -234,15 +317,15 @@ function SuggestionCard({ s, name, busy, onApply, onSnooze, onDismiss }: {
           )}
         </Section>
 
-        <Section n={5} title="O que não muda">
-          Nenhum lançamento é apagado nem muda de valor ou categoria. Todos continuam no extrato, com uma tarja cinza &ldquo;Entre contas&rdquo;, e o saldo de cada conta fica igual. Dá para desfazer depois.
+        <Section n={6} title="O que não muda">
+          Nenhum lançamento é apagado nem muda de valor. Todos continuam no extrato — os que não somam ganham uma tarja cinza &ldquo;Entre contas&rdquo; — e o saldo de cada conta fica igual. Dá para desfazer depois.
         </Section>
       </div>
 
       <div className="px-4 py-3 bg-slate-50 dark:bg-slate-700/30 border-t border-slate-100 dark:border-slate-700 flex flex-wrap gap-2 justify-end">
         <Button variant="ghost" size="sm" onClick={onDismiss} disabled={busy} className="text-slate-500">Não sugerir de novo</Button>
         <Button variant="outline" size="sm" onClick={onSnooze} disabled={busy}>Agora não</Button>
-        <Button size="sm" onClick={onApply} disabled={busy} className="gap-1.5">
+        <Button size="sm" onClick={() => sides && onApply(sides)} disabled={busy || !sides} className="gap-1.5">
           {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Aplicar
         </Button>
       </div>
@@ -327,15 +410,16 @@ function LateCreditsCard({ groups, name, onRemove }: {
 }
 
 function AdjustmentsPage() {
-  const { lateCredits, removeLateCredits, suggestions, hiddenSuggestions, unhide, applied, loading, error, decisionsLocal, apply, undo, snooze, dismiss } = useAdjustments()
+  const { categories } = useCategories()
+  const { setCategory, lateCredits, removeLateCredits, suggestions, hiddenSuggestions, unhide, applied, loading, error, decisionsLocal, apply, undo, snooze, dismiss } = useAdjustments()
   const { boards } = useTransactionBoards()
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [banner, setBanner] = useState<Banner | null>(null)
   const name = (id: string) => boards.find(b => b.id === id)?.name.trim() ?? 'conta excluída'
 
-  async function handleApply(s: PairSuggestion) {
+  async function handleApply(s: PairSuggestion, sides: PairSides) {
     setBusyKey(s.key); setBanner(null)
-    const { error: e, result } = await apply(s)
+    const { error: e, result } = await apply(s, sides)
     setBusyKey(null)
     if (e && !result) { setBanner({ kind: 'error', text: e }); return }
     const total = (result?.marked ?? 0) + (result?.paired ?? 0)
@@ -344,6 +428,7 @@ function AdjustmentsPage() {
       text: e
         ? `Aplicado em parte: ${e}`
         : `Pronto: ${plural(total, 'lançamento deixou', 'lançamentos deixaram')} de somar em gastos e entradas.` +
+          (result?.restored ? ` ${plural(result.restored, 'lançamento voltou', 'lançamentos voltaram')} a somar.` : '') +
           (result?.legs ? ` O app lançou ${plural(result.legs, 'entrada', 'entradas')} que faltava${result.legs === 1 ? '' : 'm'} em ${name(s.targetBoardId)}.` : ''),
       undoKey: s.key,
     })
@@ -426,7 +511,12 @@ function AdjustmentsPage() {
               s={s}
               name={name}
               busy={busyKey === s.key}
-              onApply={() => handleApply(s)}
+              categories={categories}
+              onApply={sides => handleApply(s, sides)}
+              onSetCategory={async (id, category) => {
+                const { error: e } = await setCategory(id, category)
+                if (e) setBanner({ kind: 'error', text: `Não deu para mudar a categoria: ${e}` })
+              }}
               onSnooze={() => snooze(s)}
               onDismiss={() => dismiss(s)}
             />
@@ -467,6 +557,7 @@ function AdjustmentsPage() {
                   <p className="text-sm text-slate-700 dark:text-slate-200 truncate">&ldquo;{a.keyword}&rdquo; — {name(a.originBoardId)} → {name(a.targetBoardId)}</p>
                   <p className="text-xs text-slate-400">
                     {fmtDate(a.appliedAt.slice(0, 10))} · {plural(a.marked + a.paired, 'lançamento', 'lançamentos')} fora das somas
+                    {a.sides && a.sides !== 'both' ? ` · não soma: ${a.sides === 'out' ? 'só a saída' : 'só a entrada'}` : ''}
                   </p>
                 </div>
                 <Button size="sm" variant="ghost" onClick={() => handleUndo(key)} disabled={!!busyKey} className="gap-1.5 shrink-0">

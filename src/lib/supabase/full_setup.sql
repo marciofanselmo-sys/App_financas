@@ -482,6 +482,7 @@ alter table categorization_rules add column if not exists action text not null d
 alter table categorization_rules add column if not exists scope_board_id text;
 alter table categorization_rules add column if not exists target_board_id text;
 alter table categorization_rules add column if not exists require_pair boolean not null default false;
+alter table categorization_rules add column if not exists pair_sides text not null default 'both' check (pair_sides in ('both', 'out', 'in'));
 alter table categorization_rules drop constraint if exists categorization_rules_action_check;
 alter table categorization_rules
   add constraint categorization_rules_action_check check (action in ('categorize', 'internal'));
