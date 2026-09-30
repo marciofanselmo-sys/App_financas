@@ -145,15 +145,15 @@ function ChangeBadge({ value, upIsGood }: { value: number | null; upIsGood: bool
   const good = up === upIsGood
   const Icon = up ? ArrowUpRight : ArrowDownRight
   return (
-    <div className="sm:text-right shrink-0">
+    <div className="text-center lg:text-right shrink-0">
       <p className={cn(
-        'inline-flex items-center gap-0.5 text-[10px] sm:text-xs font-semibold tabular-nums',
+        'inline-flex items-center gap-0.5 text-[10px] lg:text-xs font-semibold tabular-nums',
         good ? 'text-green-600 dark:text-green-400' : 'text-red-500',
       )}>
-        <Icon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+        <Icon className="h-3 w-3 lg:h-3.5 lg:w-3.5" />
         {Math.abs(value).toFixed(0)}%
       </p>
-      <p className="hidden sm:block text-[10px] text-slate-400">vs. mês anterior</p>
+      <p className="hidden lg:block text-[10px] text-slate-400 whitespace-nowrap">vs. mês anterior</p>
     </div>
   )
 }
@@ -391,7 +391,7 @@ export default function AnalyticsPage() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Análise de Gastos</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Entradas, saídas e distribuição por categoria</p>
@@ -436,17 +436,17 @@ export default function AnalyticsPage() {
           ] as const).map(card => (
             <div
               key={card.label}
-              className={cn(cardCls, 'px-2 py-3 sm:p-4 flex flex-col sm:flex-row items-center gap-1 sm:gap-4 min-w-0')}
+              className={cn(cardCls, 'px-2 py-3 sm:p-4 flex flex-col lg:flex-row items-center gap-1 lg:gap-4 min-w-0')}
             >
-              <div className={`hidden sm:flex h-11 w-11 rounded-full items-center justify-center shrink-0 ${card.iconCls}`}>
+              <div className={`hidden lg:flex h-11 w-11 rounded-full items-center justify-center shrink-0 ${card.iconCls}`}>
                 <card.icon className="h-5 w-5" />
               </div>
-              <div className="min-w-0 flex-1 text-center sm:text-left">
+              <div className="min-w-0 w-full lg:w-auto lg:flex-1 text-center lg:text-left">
                 <p className="text-xs text-slate-500 dark:text-slate-400">
                   <span className="sm:hidden">{card.short}</span>
                   <span className="hidden sm:inline">{card.label}</span>
                 </p>
-                <p className={`text-[13px] sm:text-xl font-bold tabular-nums truncate ${card.valueCls}`}>{fmt(card.value)}</p>
+                <p className={`text-[13px] sm:text-lg xl:text-xl font-bold tabular-nums truncate ${card.valueCls}`}>{fmt(card.value)}</p>
               </div>
               {hasPrev && <ChangeBadge value={change(card.value, card.prevValue)} upIsGood={card.upIsGood} />}
             </div>
@@ -503,7 +503,7 @@ export default function AnalyticsPage() {
         <>
           <DailyFlowChart data={dailyFlowData} month={month} year={year} />
 
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] items-start">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
             {/* Despesas por categoria */}
             <section className={cn(cardCls, 'overflow-hidden')}>
               <div className="p-5 pb-2">
@@ -582,7 +582,8 @@ export default function AnalyticsPage() {
               </div>
             </section>
 
-            <div className="space-y-6">
+            {/* Em telas médias os dois quadros ficam lado a lado, abaixo da lista. */}
+            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-1 items-start">
               {/* Distribuição das despesas */}
               {donut.length > 0 && (
                 <section className={cn(cardCls, 'p-5')}>
