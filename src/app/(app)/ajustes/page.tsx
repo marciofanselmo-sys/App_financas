@@ -251,7 +251,7 @@ function SuggestionCard({ s, name, busy, onApply, onSnooze, onDismiss }: {
 }
 
 function AdjustmentsPage() {
-  const { suggestions, applied, loading, error, decisionsLocal, apply, undo, snooze, dismiss } = useAdjustments()
+  const { suggestions, hiddenSuggestions, unhide, applied, loading, error, decisionsLocal, apply, undo, snooze, dismiss } = useAdjustments()
   const { boards } = useTransactionBoards()
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [banner, setBanner] = useState<Banner | null>(null)
@@ -322,8 +322,10 @@ function AdjustmentsPage() {
           icon={CheckCircle2}
           iconColor="text-emerald-500"
           iconBg="bg-emerald-50 dark:bg-emerald-500/15"
-          title="Nada para ajustar agora"
-          description="Não encontrei dinheiro entre suas contas contando como gasto e ganho. A cada importação, o app confere de novo."
+          title={hiddenSuggestions.length > 0 ? 'Nenhuma sugestão nova' : 'Nada para ajustar agora'}
+          description={hiddenSuggestions.length > 0
+            ? 'As que você ocultou estão logo abaixo — dá para trazer de volta e aplicar.'
+            : 'Não encontrei dinheiro entre suas contas contando como gasto e ganho. A cada importação, o app confere de novo.'}
           primaryLabel="Ver minhas regras"
           primaryHref="/settings/rules"
         />
@@ -341,6 +343,29 @@ function AdjustmentsPage() {
             />
           ))}
         </div>
+      )}
+
+      {hiddenSuggestions.length > 0 && (
+        <section className="space-y-2">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-600 dark:text-slate-300">Ocultadas</h2>
+            <p className="text-xs text-slate-400">Sugestões que você escondeu. O problema continua nos dados — elas seguem somando como gasto e ganho.</p>
+          </div>
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700">
+            {hiddenSuggestions.map(({ suggestion: h, reason }) => (
+              <div key={h.key} className="px-4 py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-slate-700 dark:text-slate-200 truncate">&ldquo;{h.keyword}&rdquo; — {name(h.originBoardId)} → {name(h.targetBoardId)}</p>
+                  <p className="text-xs text-slate-400">
+                    {reason.kind === 'snoozed' ? `"Agora não" — volta sozinha em ${fmtDate(reason.until)}` : '"Não sugerir de novo"'}
+                    {h.expenseThisYear + h.incomeThisYear > 0 && ` · ${fmt(h.expenseThisYear + h.incomeThisYear)} a mais em gastos e ganhos de ${h.year}`}
+                  </p>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => unhide(h.key)} className="shrink-0">Mostrar de novo</Button>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {applied.length > 0 && (

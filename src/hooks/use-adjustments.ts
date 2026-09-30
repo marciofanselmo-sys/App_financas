@@ -118,6 +118,13 @@ export function useAdjustments() {
     .map(d => d.key)), [decisions, today])
 
   const suggestions = useMemo(() => allSuggestions.filter(s => !hidden.has(s.key)), [allSuggestions, hidden])
+  // Ocultadas que ainda valem (o problema continua nos dados), com o motivo —
+  // para o usuário poder trazer de volta uma que escondeu sem querer.
+  const hiddenSuggestions = useMemo(() => allSuggestions.flatMap(s => {
+    const d = decisions.find(x => x.key === s.key)
+    if (!d || !hidden.has(s.key)) return []
+    return [{ suggestion: s, reason: d.status === 'snoozed' ? { kind: 'snoozed' as const, until: d.until } : { kind: 'dismissed' as const } }]
+  }), [allSuggestions, decisions, hidden])
   const applied = useMemo(
     () => decisions.filter((d): d is Extract<Decision, { status: 'applied' }> => d.status === 'applied')
       .sort((a, b) => b.undo.appliedAt.localeCompare(a.undo.appliedAt)),
@@ -229,8 +236,15 @@ export function useAdjustments() {
     return {}
   }
 
+  /** "Mostrar de novo": apaga a decisão de esconder. */
+  function unhide(key: string) {
+    return removeDecision(key)
+  }
+
   return {
     suggestions,
+    hiddenSuggestions,
+    unhide,
     applied,
     loading: loading || rulesLoading,
     error,
