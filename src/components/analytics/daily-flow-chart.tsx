@@ -24,8 +24,8 @@ const MONTH_NAMES = [
 
 export function DailyFlowChart({ data, month, year, loading }: DailyFlowChartProps) {
   const [mode, setMode] = useState<FlowMode>('daily')
-  // Começa sempre recolhido ao abrir a tela.
-  const [open, setOpen] = useState(false)
+  // Começa aberto; dá para recolher clicando no título.
+  const [open, setOpen] = useState(true)
   const toggleOpen = () => setOpen(v => !v)
 
   if (loading) {

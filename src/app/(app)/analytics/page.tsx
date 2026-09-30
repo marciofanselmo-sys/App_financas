@@ -4,14 +4,19 @@ import { useState, useMemo } from 'react'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useCategories } from '@/hooks/use-categories'
-import { TrendingDown, TrendingUp, Wallet, BarChart2, Loader2, AlertCircle, CheckCircle2, X, ArrowLeftRight, ChevronRight, ChevronDown, Tag } from 'lucide-react'
+import {
+  TrendingDown, TrendingUp, Wallet, BarChart2, Loader2, AlertCircle, CheckCircle2, X, ArrowLeftRight, ChevronRight, ChevronDown, Tag,
+  ArrowRight, ArrowUpRight, ArrowDownRight, ChartPie, Lightbulb, type LucideIcon,
+  UtensilsCrossed, House, Car, ShoppingCart, HeartPulse, Gamepad2, GraduationCap, Plane, PawPrint, PiggyBank,
+  CreditCard, Receipt, Shirt, Sparkles, Repeat, Zap, Users, Gift, Ellipsis,
+} from 'lucide-react'
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
-import Link from 'next/link'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Transaction } from '@/types'
+import { Category, Transaction } from '@/types'
 import { useRules } from '@/hooks/use-rules'
 import { categoriesForDate } from '@/lib/special-category-filter'
 import { CategoryOptions } from '@/components/categories/category-options'
@@ -20,48 +25,148 @@ import { isInternalMovement, internalTotals } from '@/lib/internal-movement'
 import { installmentLabel } from '@/utils/format-installment'
 import { aggregateDailyFlow } from '@/lib/analytics-charts'
 import { DailyFlowChart } from '@/components/analytics/daily-flow-chart'
+import { cn } from '@/lib/utils'
 
-const CATEGORY_COLORS: Record<string, string> = {
-  'Alimentação':  '#f59e0b',
-  'Transporte':   '#3b82f6',
-  'Moradia':      '#8b5cf6',
-  'Saúde':        '#ef4444',
-  'Educação':     '#ec4899',
-  'Lazer':        '#f97316',
-  'Salário':      '#10b981',
-  'Freelance':    '#06b6d4',
-  'Outros':       '#6b7280',
+// Paleta categórica validada (daltonismo e contraste, claro e escuro). A cor
+// segue a categoria, não a posição: as conhecidas têm cor fixa e as demais
+// pegam pela ordem alfabética entre as categorias de despesa do usuário.
+const PALETTE = ['#d97706', '#7c3aed', '#059669', '#2563eb', '#db2777', '#0891b2', '#dc2626']
+const OTHER_COLOR = '#94a3b8'
+const PREFERRED_SLOT: Record<string, number> = {
+  'alimentação': 0, 'moradia': 1, 'saúde': 2, 'transporte': 3, 'lazer': 4, 'educação': 5, 'compras': 6,
 }
 
-function colorFor(cat: string) {
-  return CATEGORY_COLORS[cat] ?? '#6366f1'
+// Ícone pelo nome da categoria — as categorias não guardam ícone no banco.
+const ICON_RULES: [RegExp, LucideIcon][] = [
+  [/aliment|mercado|restaur|comida|refei|supermerc/, UtensilsCrossed],
+  [/morad|casa|aluguel|condom/, House],
+  [/transport|carro|combust|uber|ve[ií]cul|gasolina/, Car],
+  [/compra|shopping/, ShoppingCart],
+  [/sa[uú]de|farm[aá]c|m[eé]dic|hospital/, HeartPulse],
+  [/lazer|divers|entret/, Gamepad2],
+  [/educa|curso|escola|faculd/, GraduationCap],
+  [/viage|turism/, Plane],
+  [/pet|animal/, PawPrint],
+  [/invest|poupan|reserva/, PiggyBank],
+  [/cart[aã]o|fatura/, CreditCard],
+  [/imposto|taxa|tribut|tarifa/, Receipt],
+  [/roupa|vestu/, Shirt],
+  [/beleza|cuidado|est[eé]tic/, Sparkles],
+  [/assinat|streaming/, Repeat],
+  [/conta|luz|energia|[aá]gua|internet|telefon/, Zap],
+  [/filho|fam[ií]lia/, Users],
+  [/presente|doa[cç]/, Gift],
+  [/outro/, Ellipsis],
+]
+
+function iconFor(cat: string): LucideIcon {
+  const n = cat.toLowerCase()
+  return ICON_RULES.find(([re]) => re.test(n))?.[1] ?? Tag
 }
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 
-// Cabeçalho clicável de cada categoria da lista (despesas e entradas): seta
-// que gira ao abrir, nome e detalhe à esquerda, valor e % à direita — em duas
-// linhas, pra caber no celular sem cortar o valor.
-function CategoryRowHeader({ name, open, detail, pct, value, valueClass }: {
-  name: string
-  open: boolean
-  detail: string
+const MONTH_NAMES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+]
+
+type CategoryTotal = {
+  cat: string
+  total: number
+  count: number
   pct: number
-  value: string
-  valueClass: string
-}) {
+  txs: Transaction[]
+  subs: { name: string; total: number; count: number }[]
+}
+
+// Soma pela categoria-mãe e guarda o detalhe por subcategoria dentro dela.
+// Movimentação entre contas do próprio usuário não é gasto nem ganho.
+function summarize(transactions: Transaction[], categories: Category[]) {
+  let totalIncome = 0
+  let totalExpenses = 0
+  const mothers = motherNameByCategory(categories)
+  type Bucket = { total: number; count: number; txs: Transaction[]; subs: Record<string, { total: number; count: number }> }
+  const expenseMap: Record<string, Bucket> = {}
+  const incomeMap: Record<string, Bucket> = {}
+
+  for (const t of transactions) {
+    if (isInternalMovement(t)) continue
+    const amt = Number(t.amount)
+    const mother = motherOf(t.category, mothers, t.type)
+    const target = t.type === 'receita' ? incomeMap : expenseMap
+    if (t.type === 'receita') totalIncome += amt
+    else totalExpenses += amt
+
+    const bucket = target[mother] ?? (target[mother] = { total: 0, count: 0, txs: [], subs: {} })
+    bucket.total += amt
+    bucket.count += 1
+    bucket.txs.push(t)
+    if (t.category !== mother) {
+      const sub = bucket.subs[t.category] ?? (bucket.subs[t.category] = { total: 0, count: 0 })
+      sub.total += amt
+      sub.count += 1
+    }
+  }
+
+  const toList = (map: Record<string, Bucket>, total: number): CategoryTotal[] =>
+    Object.entries(map)
+      .map(([cat, d]) => ({
+        cat,
+        total: d.total,
+        count: d.count,
+        pct: total > 0 ? (d.total / total) * 100 : 0,
+        txs: [...d.txs].sort((a, b) => b.date.localeCompare(a.date)),
+        subs: Object.entries(d.subs)
+          .map(([name, sd]) => ({ name, total: sd.total, count: sd.count }))
+          .sort((a, b) => b.total - a.total),
+      }))
+      .sort((a, b) => b.total - a.total)
+
+  return {
+    totalIncome,
+    totalExpenses,
+    balance: totalIncome - totalExpenses,
+    expenseByCategory: toList(expenseMap, totalExpenses),
+    incomeByCategory: toList(incomeMap, totalIncome),
+  }
+}
+
+// Variação % contra o mês anterior; sem base de comparação, não mostra nada.
+function change(current: number, previous: number) {
+  if (Math.abs(previous) < 0.005) return null
+  return ((current - previous) / Math.abs(previous)) * 100
+}
+
+function ChangeBadge({ value, upIsGood }: { value: number | null; upIsGood: boolean }) {
+  if (value === null || !isFinite(value)) return null
+  const up = value >= 0
+  const good = up === upIsGood
+  const Icon = up ? ArrowUpRight : ArrowDownRight
   return (
-    <div className="flex items-center gap-2 mb-1.5">
-      <ChevronRight className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate group-hover:underline">{name}</p>
-        <p className="text-[11px] text-slate-400">{detail}</p>
+    <div className="sm:text-right shrink-0">
+      <p className={cn(
+        'inline-flex items-center gap-0.5 text-[10px] sm:text-xs font-semibold tabular-nums',
+        good ? 'text-green-600 dark:text-green-400' : 'text-red-500',
+      )}>
+        <Icon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+        {Math.abs(value).toFixed(0)}%
+      </p>
+      <p className="hidden sm:block text-[10px] text-slate-400">vs. mês anterior</p>
+    </div>
+  )
+}
+
+function CardHeading({ icon: Icon, title, subtitle, extra }: { icon: LucideIcon; title: string; subtitle: string; extra?: React.ReactNode }) {
+  return (
+    <div className="mb-3">
+      <div className="flex items-center gap-2">
+        <Icon className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
+        <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">{title}</h2>
+        {extra}
       </div>
-      <div className="shrink-0 text-right">
-        <p className={`text-sm font-semibold whitespace-nowrap ${valueClass}`}>{value}</p>
-        <p className="text-[11px] text-slate-400">{pct.toFixed(0)}%</p>
-      </div>
+      <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 ml-6">{subtitle}</p>
     </div>
   )
 }
@@ -76,6 +181,7 @@ export default function AnalyticsPage() {
   // Começa sempre recolhido ao abrir a tela.
   const [internalOpen, setInternalOpen] = useState(false)
   const toggleInternal = () => setInternalOpen(v => !v)
+  const [incomeOpen, setIncomeOpen] = useState(false)
 
   const { boards } = useTransactionBoards()
   const { categories } = useCategories()
@@ -90,66 +196,69 @@ export default function AnalyticsPage() {
   const [ruleSyncError, setRuleSyncError] = useState<string | null>(null)
   const [ruleSyncSuccess, setRuleSyncSuccess] = useState<{ category: string; applied: number } | null>(null)
 
-  const { transactions, loading, updateTransaction, refetch } = useTransactions({
-    month,
-    year,
+  const boardFilter = {
     board_id: boardId === 'all' ? undefined : boardId,
     exclude_board_ids: boardId === 'all' ? unpinnedBoardIds : undefined,
-  })
+  }
+  const { transactions, loading, updateTransaction, refetch } = useTransactions({ month, year, ...boardFilter })
+  // Mês anterior, só para a comparação dos cards e o insight.
+  const prevMonth = month === 1 ? 12 : month - 1
+  const prevYear = month === 1 ? year - 1 : year
+  const { transactions: prevTransactions } = useTransactions({ month: prevMonth, year: prevYear, ...boardFilter })
 
-  const { totalIncome, totalExpenses, balance, expenseByCategory, incomeByCategory } = useMemo(() => {
-    let totalIncome = 0
-    let totalExpenses = 0
-    // Soma pela categoria-mãe e guarda o detalhe por subcategoria dentro dela.
-    const mothers = motherNameByCategory(categories)
-    type Bucket = { total: number; count: number; txs: Transaction[]; subs: Record<string, { total: number; count: number }> }
-    const expenseMap: Record<string, Bucket> = {}
-    const incomeMap: Record<string, Bucket> = {}
-
-    for (const t of transactions) {
-      // Movimentação entre contas do próprio usuário não é gasto nem ganho.
-      if (isInternalMovement(t)) continue
-      const amt = Number(t.amount)
-      const mother = motherOf(t.category, mothers, t.type)
-      const target = t.type === 'receita' ? incomeMap : expenseMap
-      if (t.type === 'receita') totalIncome += amt
-      else totalExpenses += amt
-
-      const bucket = target[mother] ?? (target[mother] = { total: 0, count: 0, txs: [], subs: {} })
-      bucket.total += amt
-      bucket.count += 1
-      bucket.txs.push(t)
-      if (t.category !== mother) {
-        const sub = bucket.subs[t.category] ?? (bucket.subs[t.category] = { total: 0, count: 0 })
-        sub.total += amt
-        sub.count += 1
-      }
-    }
-
-    const toList = (map: Record<string, Bucket>, total: number) =>
-      Object.entries(map)
-        .map(([cat, d]) => ({
-          cat,
-          total: d.total,
-          count: d.count,
-          pct: total > 0 ? (d.total / total) * 100 : 0,
-          txs: [...d.txs].sort((a, b) => b.date.localeCompare(a.date)),
-          subs: Object.entries(d.subs)
-            .map(([name, sd]) => ({ name, total: sd.total, count: sd.count }))
-            .sort((a, b) => b.total - a.total),
-        }))
-        .sort((a, b) => b.total - a.total)
-
-    return {
-      totalIncome,
-      totalExpenses,
-      balance: totalIncome - totalExpenses,
-      expenseByCategory: toList(expenseMap, totalExpenses),
-      incomeByCategory: toList(incomeMap, totalIncome),
-    }
-  }, [transactions, categories])
+  const { totalIncome, totalExpenses, balance, expenseByCategory, incomeByCategory } = useMemo(
+    () => summarize(transactions, categories),
+    [transactions, categories],
+  )
+  const prev = useMemo(() => summarize(prevTransactions, categories), [prevTransactions, categories])
+  const hasPrev = prevTransactions.some(t => !isInternalMovement(t))
 
   const maxExpense = expenseByCategory[0]?.total ?? 1
+
+  // Cor por categoria (ver PALETTE).
+  const colorOf = useMemo(() => {
+    const names = [...new Set(
+      categories.filter(c => !c.parent_id && c.type !== 'receita').map(c => c.name),
+    )].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+    const map = new Map<string, string>()
+    let next = 0
+    for (const name of names) {
+      const key = name.toLowerCase()
+      if (key === 'outros') continue
+      const slot = PREFERRED_SLOT[key] ?? next++
+      map.set(name, PALETTE[slot % PALETTE.length])
+    }
+    return (cat: string) => map.get(cat) ?? (cat.toLowerCase() === 'outros' ? OTHER_COLOR : PALETTE[cat.length % PALETTE.length])
+  }, [categories])
+
+  // Rosca: as 6 maiores e o resto somado em "Outros" (junto da própria Outros).
+  const donut = useMemo(() => {
+    const main = expenseByCategory.filter(c => c.cat.toLowerCase() !== 'outros')
+    const top = main.slice(0, 6)
+    const rest = expenseByCategory.filter(c => !top.includes(c)).reduce((s, c) => s + c.total, 0)
+    const items = top.map(c => ({ name: c.cat, value: c.total, color: colorOf(c.cat) }))
+    if (rest > 0.005) items.push({ name: 'Outros', value: rest, color: OTHER_COLOR })
+    return items
+  }, [expenseByCategory, colorOf])
+
+  // Insight: a categoria que mais subiu em reais contra o mês anterior.
+  const insight = useMemo(() => {
+    const prevByCat = new Map(prev.expenseByCategory.map(c => [c.cat, c.total]))
+    let best: { cat: string; pct: number; diff: number } | null = null
+    for (const c of expenseByCategory) {
+      const p = prevByCat.get(c.cat) ?? 0
+      if (p <= 0) continue
+      const diff = c.total - p
+      if (diff > 0.005 && (!best || diff > best.diff)) best = { cat: c.cat, pct: (diff / p) * 100, diff }
+    }
+    return best
+  }, [expenseByCategory, prev])
+  const monthInProgress = month === now.getMonth() + 1 && year === now.getFullYear()
+
+  function openCategory(cat: string) {
+    setExpandedCat(`despesa:${cat}`)
+    setTimeout(() => document.getElementById(`cat-${cat}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
 
   async function handleRecategorize(txId: string, newCategory: string) {
     const tx = transactions.find(t => t.id === txId)
@@ -215,6 +324,25 @@ export default function AnalyticsPage() {
     )
   }
 
+  // Subcategorias em linhas, como nos Relatórios, antes dos lançamentos.
+  function renderSubs(subs: CategoryTotal['subs']) {
+    if (subs.length === 0) return null
+    return (
+      <div className="mt-2 ml-1.5 pl-3 border-l-2 border-slate-100 dark:border-slate-700">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 pt-1 pb-0.5">Subcategorias</p>
+        {subs.map(sub => (
+          <div key={sub.name} className="flex items-center gap-2 py-1">
+            <Tag className="h-3 w-3 text-slate-400 shrink-0" />
+            <span className="flex-1 min-w-0 text-[13px] text-slate-600 dark:text-slate-300 truncate">{sub.name}</span>
+            <span className="text-[11px] text-slate-400 shrink-0">{sub.count} {sub.count === 1 ? 'lançamento' : 'lançamentos'}</span>
+            <span className="text-[13px] font-medium tabular-nums text-slate-700 dark:text-slate-200 shrink-0 w-24 text-right">{fmt(sub.total)}</span>
+          </div>
+        ))}
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 pt-2">Lançamentos</p>
+      </div>
+    )
+  }
+
   // Só para mostrar à parte — nada some sem explicação.
   const internal = useMemo(() => internalTotals(transactions), [transactions])
 
@@ -223,8 +351,10 @@ export default function AnalyticsPage() {
     [transactions, month, year],
   )
 
+  const cardCls = 'bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700'
+
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-6xl mx-auto">
 
       {/* Erro ao sincronizar a regra automática — antes só ia pro console do
           navegador, invisível pro usuário; agora aparece aqui. */}
@@ -295,29 +425,30 @@ export default function AnalyticsPage() {
       ) : (
         <div className="grid grid-cols-3 gap-2 sm:gap-4">
           {([
-            { label: 'Entradas', short: 'Entradas', value: totalIncome, icon: TrendingUp, iconCls: 'bg-green-50 dark:bg-green-900/30 text-green-500', valueCls: 'text-green-600' },
-            { label: 'Saídas', short: 'Saídas', value: totalExpenses, icon: TrendingDown, iconCls: 'bg-red-50 dark:bg-red-900/30 text-red-500', valueCls: 'text-red-500' },
+            { label: 'Entradas', short: 'Entradas', value: totalIncome, prevValue: prev.totalIncome, upIsGood: true, icon: TrendingUp, iconCls: 'bg-green-50 dark:bg-green-900/30 text-green-500', valueCls: 'text-green-600' },
+            { label: 'Saídas', short: 'Saídas', value: totalExpenses, prevValue: prev.totalExpenses, upIsGood: false, icon: TrendingDown, iconCls: 'bg-red-50 dark:bg-red-900/30 text-red-500', valueCls: 'text-red-500' },
             // Saldo: azul quando positivo, vermelho quando negativo (padrão do app).
             {
-              label: 'Saldo do período', short: 'Saldo', value: balance, icon: Wallet,
+              label: 'Saldo do período', short: 'Saldo', value: balance, prevValue: prev.balance, upIsGood: true, icon: Wallet,
               iconCls: balance >= 0 ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-500' : 'bg-red-50 dark:bg-red-900/30 text-red-500',
               valueCls: balance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500',
             },
           ] as const).map(card => (
             <div
               key={card.label}
-              className="bg-white dark:bg-slate-800 rounded-xl px-2 py-3 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-700 flex items-center justify-center sm:justify-start gap-4 min-w-0"
+              className={cn(cardCls, 'px-2 py-3 sm:p-4 flex flex-col sm:flex-row items-center gap-1 sm:gap-4 min-w-0')}
             >
-              <div className={`hidden sm:flex h-10 w-10 rounded-full items-center justify-center shrink-0 ${card.iconCls}`}>
+              <div className={`hidden sm:flex h-11 w-11 rounded-full items-center justify-center shrink-0 ${card.iconCls}`}>
                 <card.icon className="h-5 w-5" />
               </div>
-              <div className="min-w-0 text-center sm:text-left">
+              <div className="min-w-0 flex-1 text-center sm:text-left">
                 <p className="text-xs text-slate-500 dark:text-slate-400">
                   <span className="sm:hidden">{card.short}</span>
                   <span className="hidden sm:inline">{card.label}</span>
                 </p>
                 <p className={`text-[13px] sm:text-xl font-bold tabular-nums truncate ${card.valueCls}`}>{fmt(card.value)}</p>
               </div>
+              {hasPrev && <ChangeBadge value={change(card.value, card.prevValue)} upIsGood={card.upIsGood} />}
             </div>
           ))}
         </div>
@@ -372,157 +503,224 @@ export default function AnalyticsPage() {
         <>
           <DailyFlowChart data={dailyFlowData} month={month} year={year} />
 
-          {/* Expense breakdown */}
-          <section>
-            <div className="mb-4">
-              <div className="flex items-center gap-2">
-                <BarChart2 className="h-4 w-4 text-red-500" />
-                <h2 className="text-base font-semibold text-slate-700 dark:text-slate-200">Despesas por Categoria</h2>
-                {boardId !== 'all' && (
-                  <span className="text-xs text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">
-                    {boards.find(b => b.id === boardId)?.name}
-                  </span>
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] items-start">
+            {/* Despesas por categoria */}
+            <section className={cn(cardCls, 'overflow-hidden')}>
+              <div className="p-5 pb-2">
+                <CardHeading
+                  icon={BarChart2}
+                  title="Despesas por Categoria"
+                  subtitle="Quanto saiu de verdade neste período, agrupado por categoria."
+                  extra={boardId !== 'all' && (
+                    <span className="text-xs text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">
+                      {boards.find(b => b.id === boardId)?.name}
+                    </span>
+                  )}
+                />
+                {expenseByCategory.length === 0 ? (
+                  <p className="text-sm text-slate-400 py-8 text-center">Nenhuma despesa neste período.</p>
+                ) : (
+                  <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                    {expenseByCategory.map(({ cat, total, count, pct, subs, txs }) => {
+                      const open = expandedCat === `despesa:${cat}`
+                      const color = colorOf(cat)
+                      const Icon = iconFor(cat)
+                      const bar = (
+                        <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${(total / maxExpense) * 100}%`, backgroundColor: color }}
+                          />
+                        </div>
+                      )
+                      return (
+                        <div key={cat} id={`cat-${cat}`} className="py-3 scroll-mt-20">
+                          <button
+                            className="w-full text-left group"
+                            onClick={() => setExpandedCat(open ? null : `despesa:${cat}`)}
+                            aria-expanded={open}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div
+                                className="h-9 w-9 rounded-full flex items-center justify-center shrink-0"
+                                style={{ backgroundColor: `${color}1f`, color }}
+                              >
+                                <Icon className="h-4 w-4" />
+                              </div>
+                              <div className="min-w-0 flex-1 sm:flex-none sm:w-48">
+                                <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate group-hover:underline">{cat}</p>
+                                <p className="text-[11px] text-slate-400 truncate">
+                                  {count} {count === 1 ? 'lançamento' : 'lançamentos'}
+                                  {subs.length > 0 && ` · ${subs.length} subcategoria${subs.length === 1 ? '' : 's'}`}
+                                </p>
+                              </div>
+                              <div className="hidden sm:block flex-1 min-w-0">{bar}</div>
+                              <div className="shrink-0 text-right w-24">
+                                <p className="text-sm font-semibold whitespace-nowrap text-red-500 tabular-nums">{fmt(total)}</p>
+                                <p className="text-[11px] text-slate-400">{pct.toFixed(0)}%</p>
+                              </div>
+                              <ChevronRight className={cn('h-4 w-4 text-slate-400 shrink-0 transition-transform', open && 'rotate-90')} />
+                            </div>
+                            <div className="sm:hidden mt-2 ml-12 mr-6">{bar}</div>
+                          </button>
+
+                          {open && (
+                            <>
+                              {renderSubs(subs)}
+                              {renderTxList(txs)}
+                            </>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
                 )}
               </div>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 ml-6">
-                Quanto saiu de verdade neste período, agrupado por categoria. Conta no saldo e no planejamento.
-              </p>
-            </div>
-
-            {expenseByCategory.length === 0 ? (
-              <div className="border border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-8 text-center">
-                <p className="text-sm text-slate-400">Nenhuma despesa neste período.</p>
+              <div className="border-t border-slate-100 dark:border-slate-700 px-5 py-3 bg-slate-50 dark:bg-slate-700/40 flex justify-between items-center">
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total de despesas</span>
+                <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{fmt(totalExpenses)}</span>
               </div>
-            ) : (
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
-                {/* Bar chart section */}
-                <div className="p-5 space-y-3">
-                  {expenseByCategory.map(({ cat, total, count, pct, subs, txs }) => {
-                    const open = expandedCat === `despesa:${cat}`
-                    return (
-                      <div key={cat}>
-                        <button
-                          className="w-full text-left group"
-                          onClick={() => setExpandedCat(open ? null : `despesa:${cat}`)}
-                        >
-                          <CategoryRowHeader
-                            name={cat}
-                            open={open}
-                            detail={`${count} ${count === 1 ? 'lançamento' : 'lançamentos'}${subs.length > 0 ? ` · ${subs.length} subcategoria${subs.length === 1 ? '' : 's'}` : ''}`}
-                            pct={pct}
-                            value={fmt(total)}
-                            valueClass="text-red-500"
+            </section>
+
+            <div className="space-y-6">
+              {/* Distribuição das despesas */}
+              {donut.length > 0 && (
+                <section className={cn(cardCls, 'p-5')}>
+                  <CardHeading icon={ChartPie} title="Distribuição das despesas" subtitle={`Total: ${fmt(totalExpenses)}`} />
+                  <div className="flex items-center gap-4">
+                    <div className="relative h-36 w-36 shrink-0 [&_path]:stroke-white dark:[&_path]:stroke-slate-800">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={donut}
+                            dataKey="value"
+                            nameKey="name"
+                            innerRadius="60%"
+                            outerRadius="100%"
+                            strokeWidth={2}
+                            startAngle={90}
+                            endAngle={-270}
+                            isAnimationActive={false}
+                          >
+                            {donut.map(d => <Cell key={d.name} fill={d.color} />)}
+                          </Pie>
+                          <Tooltip
+                            formatter={(value) => fmt(Number(value))}
+                            contentStyle={{ borderRadius: 12, fontSize: 12 }}
                           />
-                          <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all duration-500"
-                              style={{
-                                width: `${(total / maxExpense) * 100}%`,
-                                backgroundColor: colorFor(cat),
-                              }}
-                            />
-                          </div>
-                        </button>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <ul className="flex-1 min-w-0 space-y-1.5">
+                      {donut.map(d => (
+                        <li key={d.name} className="flex items-center gap-2 text-xs">
+                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                          <span className="flex-1 min-w-0 truncate text-slate-600 dark:text-slate-300">{d.name}</span>
+                          <span className="tabular-nums text-slate-500 dark:text-slate-400">
+                            {totalExpenses > 0 ? ((d.value / totalExpenses) * 100).toFixed(0) : 0}%
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </section>
+              )}
 
-                        {open && (
-                          <>
-                            {/* Subcategorias em linhas, como nos Relatórios. */}
-                            {subs.length > 0 && (
-                              <div className="mt-2 ml-1.5 pl-3 border-l-2 border-slate-100 dark:border-slate-700">
-                                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 pt-1 pb-0.5">Subcategorias</p>
-                                {subs.map(sub => (
-                                  <div key={sub.name} className="flex items-center gap-2 py-1">
-                                    <Tag className="h-3 w-3 text-slate-400 shrink-0" />
-                                    <span className="flex-1 min-w-0 text-[13px] text-slate-600 dark:text-slate-300 truncate">{sub.name}</span>
-                                    <span className="text-[11px] text-slate-400 shrink-0">{sub.count} {sub.count === 1 ? 'lançamento' : 'lançamentos'}</span>
-                                    <span className="text-[13px] font-medium tabular-nums text-slate-700 dark:text-slate-200 shrink-0 w-24 text-right">{fmt(sub.total)}</span>
-                                  </div>
-                                ))}
-                                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 pt-2">Lançamentos</p>
-                              </div>
-                            )}
-                            {renderTxList(txs)}
-                          </>
-                        )}
-                      </div>
-                    )
-                  })}
+              {/* Insight do mês */}
+              <section className="rounded-xl border border-blue-100 dark:border-blue-800/50 bg-blue-50/70 dark:bg-blue-900/20 p-5">
+                <div className="flex items-start gap-3">
+                  <div className="h-9 w-9 rounded-full bg-white dark:bg-blue-900/40 flex items-center justify-center shrink-0 shadow-sm">
+                    <Lightbulb className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Insight do mês</h2>
+                    <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
+                      {!hasPrev ? (
+                        <>Ainda não há lançamentos de {MONTH_NAMES[prevMonth - 1].toLowerCase()} para comparar.</>
+                      ) : insight ? (
+                        <>
+                          Seus gastos com <strong>{insight.cat}</strong> aumentaram {insight.pct.toFixed(0)}% ({fmt(insight.diff)} a mais)
+                          em relação a {MONTH_NAMES[prevMonth - 1].toLowerCase()}. Que tal revisar os últimos lançamentos dessa categoria?
+                        </>
+                      ) : (
+                        <>Nenhuma categoria gastou mais que em {MONTH_NAMES[prevMonth - 1].toLowerCase()}. Continue assim!</>
+                      )}
+                    </p>
+                    {hasPrev && monthInProgress && (
+                      <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">
+                        O mês ainda está em andamento — a comparação é com o mês anterior inteiro.
+                      </p>
+                    )}
+                    {insight && (
+                      <button
+                        type="button"
+                        onClick={() => openCategory(insight.cat)}
+                        className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-blue-200 dark:border-blue-700 bg-white dark:bg-transparent px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                      >
+                        Ver detalhes <ArrowRight className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
+              </section>
+            </div>
+          </div>
 
-                {/* Totals footer */}
-                <div className="border-t border-slate-100 dark:border-slate-700 px-5 py-3 bg-slate-50 dark:bg-slate-700/40 flex justify-between items-center">
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total de despesas</span>
-                  <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{fmt(totalExpenses)}</span>
-                </div>
-              </div>
-            )}
-          </section>
-
-          {/* Income breakdown */}
+          {/* Entradas por categoria — recolhida por padrão */}
           {incomeByCategory.length > 0 && (
-            <section>
-              <div className="mb-4">
-                <div className="flex items-center gap-2">
-                  <BarChart2 className="h-4 w-4 text-green-500" />
-                  <h2 className="text-base font-semibold text-slate-700 dark:text-slate-200">Entradas por Categoria</h2>
+            <section className={cn(cardCls, 'overflow-hidden')}>
+              <button
+                type="button"
+                onClick={() => setIncomeOpen(v => !v)}
+                aria-expanded={incomeOpen}
+                className="w-full text-left flex items-center gap-2 p-5"
+              >
+                <ChevronRight className={cn('h-4 w-4 text-slate-400 shrink-0 transition-transform', incomeOpen && 'rotate-90')} />
+                <BarChart2 className="h-4 w-4 text-green-600 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Entradas por Categoria</h2>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Quanto entrou de verdade neste período, agrupado por categoria.</p>
                 </div>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 ml-6">
-                  Quanto entrou de verdade neste período, agrupado por categoria. Conta no saldo e no planejamento.
-                </p>
-              </div>
+                <span className="text-sm font-semibold text-green-600 tabular-nums shrink-0">{fmt(totalIncome)}</span>
+              </button>
 
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
-                <div className="p-5 space-y-3">
+              {incomeOpen && (
+                <div className="px-5 pb-5 space-y-3">
                   {incomeByCategory.map(({ cat, total, count, pct, txs }) => {
                     const maxIncome = incomeByCategory[0]?.total ?? 1
                     const open = expandedCat === `receita:${cat}`
                     return (
                       <div key={cat}>
-                      <button
-                        className="w-full text-left group"
-                        onClick={() => setExpandedCat(open ? null : `receita:${cat}`)}
-                      >
-                        <CategoryRowHeader
-                          name={cat}
-                          open={open}
-                          detail={`${count} ${count === 1 ? 'lançamento' : 'lançamentos'}`}
-                          pct={pct}
-                          value={fmt(total)}
-                          valueClass="text-green-600"
-                        />
-                        <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-green-500 transition-all duration-500"
-                            style={{ width: `${(total / maxIncome) * 100}%` }}
-                          />
-                        </div>
-                      </button>
-                      {open && renderTxList(txs)}
+                        <button
+                          className="w-full text-left group"
+                          onClick={() => setExpandedCat(open ? null : `receita:${cat}`)}
+                        >
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <ChevronRight className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate group-hover:underline">{cat}</p>
+                              <p className="text-[11px] text-slate-400">{count} {count === 1 ? 'lançamento' : 'lançamentos'}</p>
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <p className="text-sm font-semibold whitespace-nowrap text-green-600">{fmt(total)}</p>
+                              <p className="text-[11px] text-slate-400">{pct.toFixed(0)}%</p>
+                            </div>
+                          </div>
+                          <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-green-500 transition-all duration-500"
+                              style={{ width: `${(total / maxIncome) * 100}%` }}
+                            />
+                          </div>
+                        </button>
+                        {open && renderTxList(txs)}
                       </div>
                     )
                   })}
                 </div>
-                <div className="border-t border-slate-100 dark:border-slate-700 px-5 py-3 bg-slate-50 dark:bg-slate-700/40 flex justify-between items-center">
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total de entradas</span>
-                  <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{fmt(totalIncome)}</span>
-                </div>
-              </div>
+              )}
             </section>
           )}
-
-          {/* Quick link to recurring */}
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 rounded-xl p-4 flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold text-blue-800 dark:text-blue-300">Ver parcelamentos ativos</p>
-              <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">Parcelas em andamento com barra de progresso e data de término</p>
-            </div>
-            <Link
-              href="/recurring"
-              className="shrink-0 text-sm font-medium text-blue-700 dark:text-blue-300 hover:underline"
-            >
-              Ir para Recorrências →
-            </Link>
-          </div>
         </>
       )}
 
