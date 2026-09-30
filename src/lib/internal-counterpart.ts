@@ -85,7 +85,7 @@ export function findCounterpartBoard(
 }
 
 /** Dias de tolerância entre o pagamento sair e aparecer no extrato do destino. */
-const PAIRING_TOLERANCE_DAYS = 3
+export const PAIRING_TOLERANCE_DAYS = 5
 
 function daysApart(a: string, b: string): number {
   const ms = Math.abs(new Date(`${a}T12:00:00`).getTime() - new Date(`${b}T12:00:00`).getTime())
@@ -130,7 +130,7 @@ export function hasExistingLeg(
  * cartão Inter. Sem casar essa linha, a saída saía das somas mas a entrada
  * continuava contando como receita: o mesmo dinheiro virava renda.
  *
- * Mesmo critério de hasExistingLeg (valor exato em centavos, até 3 dias) e
+ * Mesmo critério de hasExistingLeg (valor exato em centavos, até PAIRING_TOLERANCE_DAYS dias) e
  * nunca a mesma linha para dois pagamentos (`used`). Prefere a data mais
  * próxima quando há mais de uma candidata.
  */

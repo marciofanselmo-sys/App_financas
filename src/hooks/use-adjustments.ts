@@ -18,7 +18,7 @@ export interface AppliedAdjustment {
   appliedAt: string
   rule:
     | { kind: 'created'; id: string }
-    | { kind: 'updated'; id: string; prev: { scope_board_id: string | null; target_board_id: string | null; active: boolean } }
+    | { kind: 'updated'; id: string; prev: { scope_board_id: string | null; target_board_id: string | null; active: boolean; require_pair: boolean } }
   tx: InternalUndo
 }
 
@@ -163,6 +163,9 @@ export function useAdjustments() {
       match_type: 'contains' as const,
       scope_board_id: s.originBoardId,
       target_board_id: s.targetBoardId,
+      // Valor + data provam o par: saída com o mesmo texto sem a entrada no
+      // destino continua somando.
+      require_pair: true,
     }
     let rule: AppliedAdjustment['rule']
     if (s.existingRule) {
@@ -171,9 +174,12 @@ export function useAdjustments() {
         scope_board_id: current?.scope_board_id ?? null,
         target_board_id: current?.target_board_id ?? null,
         active: current?.active ?? true,
+        require_pair: current?.require_pair ?? false,
       }
-      const r = await updateRule(s.existingRule.id, { scope_board_id: s.originBoardId, target_board_id: s.targetBoardId, active: true })
-      if (!r.ok || r.error === 'partial') return { error: 'Não foi possível atualizar a regra existente.' }
+      const r = await updateRule(s.existingRule.id, { scope_board_id: s.originBoardId, target_board_id: s.targetBoardId, active: true, require_pair: true })
+      if (!r.ok || r.error === 'partial') {
+        return { error: 'Não foi possível atualizar a regra existente. Rode a migração migration_rules_internal.sql no Supabase e tente de novo.' }
+      }
       rule = { kind: 'updated', id: s.existingRule.id, prev }
       // A regra existente guarda o próprio tipo de correspondência.
       fields.match_type = (current?.match_type ?? 'contains') as 'contains'

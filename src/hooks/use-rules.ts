@@ -28,6 +28,9 @@ export interface CategorizationRule {
   scope_board_id?: string | null
   // Só para 'internal': conta que recebe o dinheiro — o app credita ela.
   target_board_id?: string | null
+  // Só para 'internal' com destino: marca a saída apenas quando o destino tem
+  // a entrada do mesmo valor (até 5 dias). Sem ela, a saída continua somando.
+  require_pair?: boolean
 }
 
 export const isInternalRule = (r: Pick<CategorizationRule, 'action'>) => r.action === 'internal'
@@ -212,7 +215,7 @@ export async function applyRuleToExisting(
 
 // ── Regra "Entre minhas contas" ─────────────────────────────────────────────
 
-type InternalRuleFields = Pick<CategorizationRule, 'keyword' | 'match_type' | 'scope_board_id' | 'target_board_id'> & { active?: boolean }
+type InternalRuleFields = Pick<CategorizationRule, 'keyword' | 'match_type' | 'scope_board_id' | 'target_board_id' | 'require_pair'> & { active?: boolean }
 
 export function matchesInternalRule(
   tx: { description: string; board_id?: string | null },
@@ -259,7 +262,8 @@ export interface InternalUndo {
 }
 
 export interface InternalApplyResult {
-  count: number    // saídas que a regra pegou
+  count: number    // saídas que a regra pegou (marcadas)
+  skipped?: number // saídas com o texto, mas sem entrada no destino (require_pair): seguem somando
   paired: number   // entradas do banco no destino que passaram a não somar
   legs: number     // entradas criadas pelo app no destino (banco não lança)
   error?: string
@@ -319,19 +323,27 @@ export async function applyInternalRule(
   const used = new Set<string>()
   const pairedEntries: TxForInternal[] = []
   const needLeg: TxForInternal[] = []
+  const unpaired: TxForInternal[] = []
+  const outsToMark: TxForInternal[] = []
   for (const t of withTarget) {
-    if (alreadyGenerated.has(t.id)) continue
+    if (alreadyGenerated.has(t.id)) { outsToMark.push(t); continue }
     const entry = findPairedEntry(destTxs, target!, Number(t.amount), t.date, 'receita', used)
     if (entry) {
       used.add(entry.id)
+      outsToMark.push(t)
       if (!entry.is_internal) pairedEntries.push(entry)
+    } else if (rule.require_pair) {
+      // Sem a entrada no destino não há prova de que foi para a sua conta.
+      unpaired.push(t)
     } else {
+      outsToMark.push(t)
       needLeg.push(t)
     }
   }
+  const count = plain.length + outsToMark.length
 
-  if (opts.dryRun || matches.length === 0) {
-    return { count: matches.length, paired: pairedEntries.length, legs: needLeg.length }
+  if (opts.dryRun || count === 0) {
+    return { count, skipped: unpaired.length, paired: pairedEntries.length, legs: needLeg.length }
   }
 
   const undo: InternalUndo = { changed: [], legIds: [] }
@@ -344,20 +356,20 @@ export async function applyInternalRule(
     if (error) return { count: 0, paired: 0, legs: 0, error: error.message, undo }
     plainToMark.forEach(remember)
   }
-  const targetToMark = withTarget.filter(t => !t.is_internal || t.counterpart_board_id !== target)
+  const targetToMark = outsToMark.filter(t => !t.is_internal || t.counterpart_board_id !== target)
   if (targetToMark.length > 0) {
     const { error } = await supabase
       .from('transactions')
       .update({ is_internal: true, counterpart_board_id: target })
       .in('id', targetToMark.map(t => t.id))
-    if (error) return { count: matches.length, paired: 0, legs: 0, error: error.message, undo }
+    if (error) return { count, paired: 0, legs: 0, error: error.message, undo }
     targetToMark.forEach(remember)
   }
 
   if (pairedEntries.length > 0) {
     const { error } = await supabase.from('transactions').update({ is_internal: true }).in('id', pairedEntries.map(t => t.id))
     if (error) {
-      return { count: matches.length, paired: 0, legs: 0, undo, error: `Saídas marcadas, mas não deu para marcar as entradas na conta de destino: ${error.message}` }
+      return { count, paired: 0, legs: 0, undo, error: `Saídas marcadas, mas não deu para marcar as entradas na conta de destino: ${error.message}` }
     }
     pairedEntries.forEach(remember)
   }
@@ -373,11 +385,11 @@ export async function applyInternalRule(
   if (legs.length > 0) {
     const { error } = await supabase.from('transactions').insert(legs)
     if (error) {
-      return { count: matches.length, paired: pairedEntries.length, legs: 0, undo, error: `Lançamentos marcados, mas não deu para creditar a conta de destino: ${error.message}` }
+      return { count, paired: pairedEntries.length, legs: 0, undo, error: `Lançamentos marcados, mas não deu para creditar a conta de destino: ${error.message}` }
     }
     undo.legIds.push(...legs.map(l => l.id as string))
   }
-  return { count: matches.length, paired: pairedEntries.length, legs: legs.length, undo }
+  return { count, skipped: unpaired.length, paired: pairedEntries.length, legs: legs.length, undo }
 }
 
 /** Volta cada linha ao estado de antes e apaga as entradas que o app criou. */
@@ -450,7 +462,7 @@ export function useRules() {
   async function createRule(
     keyword: string,
     category: string,
-    extra?: Partial<Pick<CategorizationRule, 'match_type' | 'board_id' | 'action' | 'scope_board_id' | 'target_board_id'>>
+    extra?: Partial<Pick<CategorizationRule, 'match_type' | 'board_id' | 'action' | 'scope_board_id' | 'target_board_id' | 'require_pair'>>
   ) {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -465,7 +477,12 @@ export function useRules() {
       board_id: extra?.board_id ?? null,
       active: true,
       ...(extra?.action === 'internal'
-        ? { action: 'internal', scope_board_id: extra.scope_board_id ?? null, target_board_id: extra.target_board_id ?? null }
+        ? {
+            action: 'internal', scope_board_id: extra.scope_board_id ?? null, target_board_id: extra.target_board_id ?? null,
+            // Só envia quando ligado: banco sem a coluna nova continua criando
+            // as regras de sempre.
+            ...(extra.require_pair ? { require_pair: true } : {}),
+          }
         : {}),
     }
     let res = await supabase
@@ -507,7 +524,7 @@ export function useRules() {
 
   async function updateRule(
     id: string,
-    data: Partial<Pick<CategorizationRule, 'keyword' | 'match_type' | 'category' | 'board_id' | 'active' | 'scope_board_id' | 'target_board_id'>>
+    data: Partial<Pick<CategorizationRule, 'keyword' | 'match_type' | 'category' | 'board_id' | 'active' | 'scope_board_id' | 'target_board_id' | 'require_pair'>>
   ): Promise<{ ok: boolean; error?: string }> {
     const supabase = createClient()
 

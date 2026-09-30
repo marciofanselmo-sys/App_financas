@@ -481,6 +481,7 @@ alter table transactions
 alter table categorization_rules add column if not exists action text not null default 'categorize';
 alter table categorization_rules add column if not exists scope_board_id text;
 alter table categorization_rules add column if not exists target_board_id text;
+alter table categorization_rules add column if not exists require_pair boolean not null default false;
 alter table categorization_rules drop constraint if exists categorization_rules_action_check;
 alter table categorization_rules
   add constraint categorization_rules_action_check check (action in ('categorize', 'internal'));

@@ -42,9 +42,14 @@ export interface PairSuggestion {
   pairs: { out: SuggestionTx; entry: SuggestionTx }[]
   /** Textos das entradas no destino (para o usuário reconhecer). */
   entryTexts: string[]
-  /** Saídas com esse texto na origem que ainda somam — a regra pega todas. */
+  /** Saídas com par que ainda somam como despesa (a regra vai tirar). */
   outflowsStillCounting: number
   entriesStillCounting: number
+  /**
+   * Saídas com o mesmo texto na origem SEM entrada correspondente no destino.
+   * A regra sugerida usa require_pair: essas continuam somando.
+   */
+  unpairedOutflows: SuggestionTx[]
   /** Quanto ainda soma, no ano corrente, de cada lado. */
   year: number
   expenseThisYear: number
@@ -63,7 +68,7 @@ const MIN_REPEATS = 2
 
 /**
  * Dinheiro que só mudou de lugar entre duas contas do usuário e ainda soma:
- * uma saída numa conta e, em até 3 dias, uma entrada do MESMO valor noutra.
+ * uma saída numa conta e, em até 5 dias, uma entrada do MESMO valor noutra.
  *
  * Trava contra coincidência: o texto da saída precisa se repetir em pelo menos
  * MIN_REPEATS pares entre as mesmas duas contas. Nos dados reais que motivaram
@@ -109,11 +114,14 @@ export function findPairSuggestions(
     const pendingPairs = g.pairs.filter(p => !isInternal(p.out) || !isInternal(p.entry))
     if (pendingPairs.length === 0) continue
 
-    // A regra vai pegar TODA saída com esse texto na conta de origem, não só
-    // as que têm par — a contagem mostrada precisa dizer isso.
-    const sameText = outflows.filter(t => t.board_id === g.origin && norm(t.description).includes(g.keyword))
+    // A regra sugerida exige o par (require_pair): só as saídas com entrada
+    // do mesmo valor no destino saem das somas. As demais com o mesmo texto
+    // são mostradas à parte, para o usuário ver o que NÃO vai mudar.
+    const pairedOutIds = new Set(g.pairs.map(p => p.out.id))
+    const unpaired = outflows.filter(t =>
+      t.board_id === g.origin && !pairedOutIds.has(t.id) && !isInternal(t) && norm(t.description).includes(g.keyword))
     const inYear = (t: SuggestionTx) => t.date.startsWith(String(year))
-    const outStill = sameText.filter(t => !isInternal(t))
+    const outStill = g.pairs.map(p => p.out).filter(o => !isInternal(o))
     const entryStill = g.pairs.map(p => p.entry).filter(e => !isInternal(e))
 
     const existingRule = rules.find(r =>
@@ -131,6 +139,7 @@ export function findPairSuggestions(
       entryTexts: [...new Set(g.pairs.map(p => p.entry.description.trim()))].slice(0, 2),
       outflowsStillCounting: outStill.length,
       entriesStillCounting: entryStill.length,
+      unpairedOutflows: unpaired.sort((a, b) => b.date.localeCompare(a.date)),
       year,
       expenseThisYear: outStill.filter(inYear).reduce((s, t) => s + Number(t.amount), 0),
       incomeThisYear: entryStill.filter(inYear).reduce((s, t) => s + Number(t.amount), 0),

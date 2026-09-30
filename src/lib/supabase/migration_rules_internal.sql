@@ -33,3 +33,10 @@ alter table categorization_rules add column if not exists target_board_id text;
 alter table categorization_rules drop constraint if exists categorization_rules_action_check;
 alter table categorization_rules
   add constraint categorization_rules_action_check check (action in ('categorize', 'internal'));
+
+-- require_pair (30/09/2026): só marca a saída quando existe, na conta de
+-- destino, uma entrada do MESMO valor em até 3 dias. Valor + data provam que
+-- o dinheiro foi para a sua outra conta; o texto sozinho não prova (o mesmo
+-- "PIX TRANSF" pode ir para outra pessoa). Desligado para a fatura do C6, cujo
+-- extrato do cartão não traz o pagamento — ali o app cria a entrada.
+alter table categorization_rules add column if not exists require_pair boolean not null default false;

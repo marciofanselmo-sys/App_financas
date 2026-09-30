@@ -24,9 +24,10 @@ interface FormState {
   matchType: MatchType
   scope: string   // '' = qualquer conta
   target: string  // '' = nenhuma (conta fora do app, ou só não somar)
+  requirePair: boolean
 }
 
-const EMPTY: FormState = { keyword: '', matchType: 'contains', scope: '', target: '' }
+const EMPTY: FormState = { keyword: '', matchType: 'contains', scope: '', target: '', requirePair: false }
 
 type Result = { count: number; legs: number; paired?: number; error?: string }
 
@@ -46,7 +47,7 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<CategorizationRule | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY)
-  const [preview, setPreview] = useState<number | null>(null)
+  const [preview, setPreview] = useState<{ count: number; skipped: number; paired: number } | null>(null)
   const [saving, setSaving] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<CategorizationRule | null>(null)
@@ -61,20 +62,20 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
     let cancelled = false
     const t = setTimeout(async () => {
       const r = await applyInternalRule(
-        { keyword, match_type: form.matchType, scope_board_id: form.scope || null, target_board_id: form.target || null },
+        { keyword, match_type: form.matchType, scope_board_id: form.scope || null, target_board_id: form.target || null, require_pair: !!form.target && form.requirePair },
         { dryRun: true },
       )
-      if (!cancelled) setPreview(r.error ? null : r.count)
+      if (!cancelled) setPreview(r.error ? null : { count: r.count, skipped: r.skipped ?? 0, paired: r.paired })
     }, 400)
     return () => { cancelled = true; clearTimeout(t) }
-  }, [formOpen, form.keyword, form.matchType, form.scope, form.target])
+  }, [formOpen, form.keyword, form.matchType, form.scope, form.target, form.requirePair])
 
   function openCreate() {
     setEditing(null); setForm(EMPTY); setPreview(null); setFormOpen(true)
   }
   function openEdit(r: CategorizationRule) {
     setEditing(r)
-    setForm({ keyword: r.keyword, matchType: r.match_type, scope: r.scope_board_id ?? '', target: r.target_board_id ?? '' })
+    setForm({ keyword: r.keyword, matchType: r.match_type, scope: r.scope_board_id ?? '', target: r.target_board_id ?? '', requirePair: !!r.require_pair })
     setPreview(null)
     setFormOpen(true)
   }
@@ -88,6 +89,7 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
       match_type: form.matchType,
       scope_board_id: form.scope || null,
       target_board_id: form.target || null,
+      require_pair: !!form.target && form.requirePair,
     }
     if (editing) {
       const r = await updateRule(editing.id, fields)
@@ -190,6 +192,7 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
                   <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate">
                     {scope ? `Em ${scope}` : 'Em qualquer conta'}
                     {target ? ` → ${target}` : ' · só não soma'}
+                    {target && rule.require_pair ? ' · só com a entrada correspondente' : ''}
                   </p>
                 </div>
                 <div className="flex gap-1 shrink-0">
@@ -262,11 +265,34 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
               </p>
             </div>
 
+            {form.target && (
+              <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 dark:border-slate-700 p-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.requirePair}
+                  onChange={e => setForm(f => ({ ...f, requirePair: e.target.checked }))}
+                  className="mt-0.5 h-4 w-4 accent-blue-600"
+                />
+                <span className="text-xs text-slate-600 dark:text-slate-300">
+                  <strong className="font-semibold">Só quando encontrar a entrada do mesmo valor</strong> nessa conta, em até 5 dias.
+                  <span className="block text-slate-400 mt-0.5">
+                    Ligue quando o banco de destino mostra o dinheiro chegando (ex.: PIX entre suas contas). Deixe desligado para fatura de cartão cujo extrato não traz o pagamento — aí o app lança a entrada.
+                  </span>
+                </span>
+              </label>
+            )}
+
             {preview !== null && (
               <p className="text-xs rounded-lg bg-slate-50 dark:bg-slate-700/40 text-slate-600 dark:text-slate-300 px-3 py-2">
-                {preview === 0
+                {preview.count === 0
                   ? 'Nenhum lançamento já importado combina com isso.'
-                  : `Encontrei ${preview} lançamento${preview === 1 ? '' : 's'} que ${preview === 1 ? 'vai' : 'vão'} deixar de somar nos gastos.`}
+                  : `Encontrei ${preview.count} lançamento${preview.count === 1 ? '' : 's'} que ${preview.count === 1 ? 'vai' : 'vão'} deixar de somar nos gastos` +
+                    (preview.paired > 0 ? `, e ${preview.paired} entrada${preview.paired === 1 ? '' : 's'} do mesmo valor no destino que deixa${preview.paired === 1 ? '' : 'm'} de contar como receita.` : '.')}
+                {preview.skipped > 0 && (
+                  <span className="block mt-1 text-slate-400">
+                    {preview.skipped} com esse texto não {preview.skipped === 1 ? 'tem' : 'têm'} a entrada no destino e {preview.skipped === 1 ? 'continua' : 'continuam'} somando.
+                  </span>
+                )}
               </p>
             )}
 
