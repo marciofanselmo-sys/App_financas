@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { MoreVertical, Pencil, Trash2, ArrowRightLeft, ArrowLeftRight, RefreshCw, Tag, Sparkles, X as XIcon, CircleSlash, CircleCheck } from 'lucide-react'
+import { MoreVertical, MoreHorizontal, ChevronDown, Pencil, Trash2, ArrowRightLeft, ArrowLeftRight, RefreshCw, Tag, Sparkles, X as XIcon, CircleSlash, CircleCheck, TrendingUp, TrendingDown } from 'lucide-react'
 import { Transaction, TransactionBoard, Category } from '@/types'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
@@ -17,6 +17,7 @@ import { categoryOptions } from '@/lib/category-tree'
 import { useEvents } from '@/hooks/use-events'
 import { installmentLabel } from '@/utils/format-installment'
 import { isInternalMovement } from '@/lib/internal-movement'
+import { todayISO } from '@/utils/local-date'
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
@@ -65,6 +66,11 @@ interface TransactionTableProps {
   onBulkEventChange?: (ids: string[], eventId: string | null) => Promise<void>
   onBulkMove?: (ids: string[], boardId: string) => Promise<void>
   onBulkDelete?: (ids: string[]) => Promise<void>
+  /** "Mais ações": valem só para as selecionadas, nada propaga por descrição. */
+  onBulkTypeChange?: (ids: string[], type: 'receita' | 'despesa') => Promise<void>
+  onBulkInternal?: (ids: string[], internal: boolean) => Promise<void>
+  onBulkRecurring?: (ids: string[], recurring: boolean) => Promise<void>
+  onBulkAddTag?: (ids: string[], tag: string) => Promise<void>
   /**
    * Saldo da conta antes e depois de tirar estas transações dela. A tabela só
    * conhece as linhas visíveis (filtradas por mês), então o cálculo vem de
@@ -76,6 +82,7 @@ interface TransactionTableProps {
 export function TransactionTable({
   transactions, onEdit, onDelete, onMove, onToggleRecurring, onToggleInternal, boards, currentBoardId,
   categories, onBulkCategoryChange, onBulkEventChange, onBulkMove, onBulkDelete, balanceImpactOf,
+  onBulkTypeChange, onBulkInternal, onBulkRecurring, onBulkAddTag,
 }: TransactionTableProps) {
   const { events } = useEvents()
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -95,6 +102,19 @@ export function TransactionTable({
   const [bulkMoving, setBulkMoving] = useState(false)
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  // Ação de "Mais ações" aguardando confirmação.
+  const [moreAction, setMoreAction] = useState<null | {
+    title: string
+    body: string
+    /** Quantas das selecionadas a ação realmente toca. */
+    count: number
+    needsTag?: boolean
+    /** Só na mudança de tipo: inverte o sinal, então o saldo da conta muda. */
+    impact?: { before: number; after: number } | null
+    run: (tag?: string) => Promise<void>
+  }>(null)
+  const [moreTag, setMoreTag] = useState('')
+  const [moreRunning, setMoreRunning] = useState(false)
   // Só calcula com um diálogo de massa aberto: o cálculo percorre o histórico
   // inteiro da conta, e não há por que rodar a cada seleção de checkbox.
   const bulkImpact = useMemo(
@@ -169,6 +189,85 @@ export function TransactionTable({
     await onBulkDelete(Array.from(selected))
     setBulkDeleting(false)
     setBulkDeleteOpen(false)
+    setSelected(new Set())
+  }
+
+  // Monta as opções de "Mais ações" a partir do que está selecionado.
+  const hasMoreActions = !!(onBulkTypeChange || onBulkInternal || onBulkRecurring || onBulkAddTag)
+  function openMore(kind: 'receita' | 'despesa' | 'internal' | 'external' | 'fix' | 'unfix' | 'tag') {
+    const ids = Array.from(selected)
+    const sel = selectedTransactions
+    // A perna que o app lançou (pagamento recebido no cartão) segue a marca do
+    // pagamento; não entra nas ações de "não somar".
+    const own = sel.filter(t => !t.counterpart_of_id).map(t => t.id)
+    const n = (k: number) => `${k} lançamento${k === 1 ? '' : 's'}`
+    const keep = 'O saldo das contas não muda.'
+    switch (kind) {
+      case 'receita':
+      case 'despesa': {
+        // Inverter o tipo inverte o sinal no saldo: uma despesa de R$ 100 que
+        // vira receita muda o saldo em +R$ 200. Mesmo critério do saldo da
+        // conta (só até hoje), mostrado antes de confirmar como no Excluir.
+        const changing = sel.filter(t => t.type !== kind)
+        const today = todayISO()
+        const delta = changing.filter(t => t.date <= today)
+          .reduce((acc, t) => acc + (kind === 'receita' ? 2 : -2) * Number(t.amount), 0)
+        const before = balanceImpactOf?.([])?.before
+        setMoreAction({
+          title: `Mudar tipo para ${kind === 'receita' ? 'Receita' : 'Despesa'}`,
+          body: `${n(changing.length)} passam a ser ${kind === 'receita' ? 'receita (entrada)' : 'despesa (saída)'}. Vale só para os selecionados — outros lançamentos com a mesma descrição não mudam. Isso muda o saldo da conta.`,
+          count: changing.length,
+          impact: before === undefined ? null : { before, after: before + delta },
+          run: async () => { await onBulkTypeChange!(changing.map(t => t.id), kind) },
+        })
+        break
+      }
+      case 'internal':
+        setMoreAction({
+          title: 'Não somar (entre minhas contas)',
+          body: `${n(own.length)} deixam de somar em gastos e entradas (Dashboard, Análise, Relatórios, Planejamento). Continuam no extrato com a tarja "Entre contas". ${keep}`,
+          count: own.length,
+          run: async () => { await onBulkInternal!(own, true) },
+        })
+        break
+      case 'external':
+        setMoreAction({
+          title: 'Voltar a somar',
+          body: `${n(own.length)} voltam a somar em gastos e entradas. Só a marca "não soma" sai — nenhum lançamento é criado ou apagado. ${keep}`,
+          count: own.length,
+          run: async () => { await onBulkInternal!(own, false) },
+        })
+        break
+      case 'fix':
+      case 'unfix':
+        setMoreAction({
+          title: kind === 'fix' ? 'Fixar' : 'Tirar de fixo',
+          body: kind === 'fix'
+            ? `${n(ids.length)} entram na aba Recorrências como gasto fixo, igual ao botão "Fixar" de cada linha. ${keep}`
+            : `${n(ids.length)} saem da aba Recorrências. ${keep}`,
+          count: ids.length,
+          run: async () => { await onBulkRecurring!(ids, kind === 'fix') },
+        })
+        break
+      case 'tag':
+        setMoreTag('')
+        setMoreAction({
+          title: 'Adicionar etiqueta',
+          body: `A etiqueta é acrescentada aos ${n(ids.length)} — as etiquetas que eles já têm continuam. ${keep}`,
+          count: ids.length,
+          needsTag: true,
+          run: async (tag?: string) => { await onBulkAddTag!(ids, tag ?? '') },
+        })
+        break
+    }
+  }
+
+  async function runMore() {
+    if (!moreAction) return
+    setMoreRunning(true)
+    await moreAction.run(moreTag)
+    setMoreRunning(false)
+    setMoreAction(null)
     setSelected(new Set())
   }
 
@@ -288,6 +387,37 @@ export function TransactionTable({
               <Trash2 className="h-3.5 w-3.5" />
               Excluir
             </Button>
+          )}
+
+          {hasMoreActions && (
+            <DropdownMenu>
+              <DropdownMenuTrigger className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                <MoreHorizontal className="h-3.5 w-3.5" /> Mais ações <ChevronDown className="h-3.5 w-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {onBulkTypeChange && (
+                  <>
+                    <DropdownMenuItem onClick={() => openMore('receita')}><TrendingUp className="h-4 w-4 mr-2" />Mudar tipo para Receita</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => openMore('despesa')}><TrendingDown className="h-4 w-4 mr-2" />Mudar tipo para Despesa</DropdownMenuItem>
+                  </>
+                )}
+                {onBulkInternal && (
+                  <>
+                    <DropdownMenuItem onClick={() => openMore('internal')}><CircleSlash className="h-4 w-4 mr-2" />Não somar (entre minhas contas)</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => openMore('external')}><CircleCheck className="h-4 w-4 mr-2" />Voltar a somar</DropdownMenuItem>
+                  </>
+                )}
+                {onBulkRecurring && (
+                  <>
+                    <DropdownMenuItem onClick={() => openMore('fix')}><RefreshCw className="h-4 w-4 mr-2" />Fixar</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => openMore('unfix')}><RefreshCw className="h-4 w-4 mr-2 opacity-50" />Tirar de fixo</DropdownMenuItem>
+                  </>
+                )}
+                {onBulkAddTag && (
+                  <DropdownMenuItem onClick={() => openMore('tag')}><Tag className="h-4 w-4 mr-2" />Adicionar etiqueta…</DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
 
           <button
@@ -582,6 +712,42 @@ export function TransactionTable({
             <Button variant="outline" onClick={() => setBulkDeleteOpen(false)} disabled={bulkDeleting}>Cancelar</Button>
             <Button variant="destructive" onClick={applyBulkDelete} disabled={bulkDeleting}>
               {bulkDeleting ? 'Excluindo...' : `Excluir ${selected.size} transaç${selected.size !== 1 ? 'ões' : 'ão'}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmação de "Mais ações" */}
+      <Dialog open={!!moreAction} onOpenChange={v => { if (!v && !moreRunning) setMoreAction(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{moreAction?.title}</DialogTitle>
+            <DialogDescription>{moreAction?.body}</DialogDescription>
+          </DialogHeader>
+          {moreAction?.needsTag && (
+            <div className="space-y-1.5">
+              <Label htmlFor="bulk-tag" className="text-xs">Etiqueta</Label>
+              <input
+                id="bulk-tag"
+                value={moreTag}
+                onChange={e => setMoreTag(e.target.value)}
+                placeholder="Ex.: viagem, reembolso"
+                autoFocus
+                className="w-full h-9 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 text-sm"
+              />
+            </div>
+          )}
+          {moreAction?.impact && <BalanceImpact impact={moreAction.impact} />}
+          {moreAction && moreAction.count === 0 && (
+            <p className="text-xs text-amber-600">Nenhum dos selecionados precisa desta ação — já estão assim, ou são entradas que o app lançou para um pagamento (elas seguem a marca do pagamento).</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMoreAction(null)} disabled={moreRunning}>Cancelar</Button>
+            <Button
+              onClick={runMore}
+              disabled={moreRunning || !moreAction || moreAction.count === 0 || (!!moreAction.needsTag && !moreTag.trim())}
+            >
+              {moreRunning ? 'Aplicando...' : `Aplicar em ${moreAction?.count ?? 0}`}
             </Button>
           </DialogFooter>
         </DialogContent>

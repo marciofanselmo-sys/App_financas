@@ -8,7 +8,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useCategories } from '@/hooks/use-categories'
-import { useRules, applyTypeToExisting, setTransactionInternal } from '@/hooks/use-rules'
+import { useRules, applyTypeToExisting, setTransactionInternal, setTransactionsInternal } from '@/hooks/use-rules'
 import { isInternalMovement } from '@/lib/internal-movement'
 import { usePositionImport } from '@/hooks/use-position-import'
 import { TransactionTable } from '@/components/transactions/transaction-table'
@@ -279,6 +279,62 @@ export default function BoardDetailPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     await supabase.from('transactions').delete().eq('user_id', user.id).in('id', ids)
+    refetch()
+  }
+
+  // ── Ações em massa de "Mais ações" ────────────────────────────────────────
+  // Valem SÓ para as linhas selecionadas: diferente da edição de uma por uma,
+  // nada propaga para outros lançamentos com a mesma descrição.
+
+  async function handleBulkTypeChange(ids: string[], type: 'receita' | 'despesa') {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { error } = await supabase.from('transactions').update({ type }).eq('user_id', user.id).in('id', ids)
+    if (error) setRuleSyncError(`Não foi possível mudar o tipo: ${error.message}`)
+    refetch()
+  }
+
+  // Só a marca "não soma" — nunca cria nem apaga lançamento (saldo intacto).
+  async function handleBulkInternal(ids: string[], internal: boolean) {
+    const { error } = await setTransactionsInternal(ids, internal)
+    if (error) {
+      setRuleSyncError(error.includes('is_internal')
+        ? 'Falta atualizar o banco: rode a migração migration_rules_internal.sql no Supabase.'
+        : error)
+    }
+    refetch()
+  }
+
+  // Mesmo efeito do botão "Fixar" de cada linha, para várias de uma vez.
+  async function handleBulkRecurring(ids: string[], recurring: boolean) {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { error } = await supabase.from('transactions').update({ is_recurring: recurring }).eq('user_id', user.id).in('id', ids)
+    if (error) { setRuleSyncError(`Não foi possível ${recurring ? 'fixar' : 'tirar de fixo'}: ${error.message}`); refetch(); return }
+    // Limpa a decisão de Recorrências, igual ao botão de uma linha (14.12).
+    const keys = [...new Set(transactions.filter(t => ids.includes(t.id))
+      .map(t => decisionKey(t.type, t.description.toLowerCase().trim())))]
+    if (keys.length > 0) {
+      const { error: decisionError } = await supabase.from('recurring_decisions')
+        .delete().eq('user_id', user.id).in('description_key', keys)
+      if (decisionError) logSafeError('bulkRecurring.clearDecision', decisionError)
+    }
+    refetch()
+  }
+
+  // Acrescenta a etiqueta sem apagar as que cada lançamento já tem.
+  async function handleBulkAddTag(ids: string[], tag: string) {
+    const supabase = createClient()
+    // Mesmo formato da edição de uma por uma (minúsculas).
+    const clean = tag.trim().toLowerCase()
+    if (!clean) return
+    const targets = transactions.filter(t => ids.includes(t.id) && !(t.tags ?? []).includes(clean))
+    const results = await Promise.all(targets.map(t =>
+      supabase.from('transactions').update({ tags: [...(t.tags ?? []), clean] }).eq('id', t.id)))
+    const failed = results.find(r => r.error)
+    if (failed?.error) setRuleSyncError(`Não foi possível adicionar a etiqueta: ${failed.error.message}`)
     refetch()
   }
 
@@ -572,6 +628,10 @@ export default function BoardDetailPage() {
           onBulkEventChange={handleBulkEventChange}
           onBulkMove={handleBulkMove}
           onBulkDelete={handleBulkDelete}
+          onBulkTypeChange={handleBulkTypeChange}
+          onBulkInternal={handleBulkInternal}
+          onBulkRecurring={handleBulkRecurring}
+          onBulkAddTag={handleBulkAddTag}
           balanceImpactOf={balanceImpactOf}
         />
       )}

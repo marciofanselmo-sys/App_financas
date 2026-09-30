@@ -415,24 +415,25 @@ export async function undoInternalChanges(undo: InternalUndo): Promise<{ error?:
 }
 
 /**
- * Marca/desmarca UM lançamento como "Entre minhas contas" (edição manual).
- * Desmarcar também desfaz o crédito que o app tinha gerado no destino — senão
- * o dinheiro continuaria "entrando" no cartão por um pagamento que agora é
- * gasto comum.
+ * Marca/desmarca lançamentos como "Entre minhas contas" (edição manual, um ou
+ * vários). Só mexe na marca "não soma" — NUNCA cria nem apaga lançamento, então
+ * o saldo de nenhuma conta muda. (Antes, desmarcar apagava o crédito que o app
+ * tinha lançado no cartão, e o saldo do cartão mudava; decisão do dono em
+ * 30/09/2026: só a exclusão pode mudar saldo.)
+ *
+ * A perna gerada pelo app (counterpart_of_id) fica de fora: ela é a outra
+ * ponta de um pagamento e segue a marca dele.
  */
-export async function setTransactionInternal(id: string, internal: boolean): Promise<{ error?: string }> {
+export async function setTransactionsInternal(ids: string[], internal: boolean): Promise<{ error?: string }> {
+  if (ids.length === 0) return {}
   const supabase = createClient()
-  if (internal) {
-    const { error } = await supabase.from('transactions').update({ is_internal: true }).eq('id', id)
-    return { error: error?.message }
-  }
-  const { error } = await supabase
-    .from('transactions')
-    .update({ is_internal: false, counterpart_board_id: null })
-    .eq('id', id)
-  if (error) return { error: error.message }
-  const { error: legError } = await supabase.from('transactions').delete().eq('counterpart_of_id', id)
-  return { error: legError?.message }
+  const values = internal ? { is_internal: true } : { is_internal: false, counterpart_board_id: null }
+  const { error } = await supabase.from('transactions').update(values).in('id', ids).is('counterpart_of_id', null)
+  return { error: error?.message }
+}
+
+export function setTransactionInternal(id: string, internal: boolean): Promise<{ error?: string }> {
+  return setTransactionsInternal([id], internal)
 }
 
 export function useRules() {
