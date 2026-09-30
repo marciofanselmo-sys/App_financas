@@ -22,27 +22,52 @@ import { PeriodFilter } from '@/components/dashboard/period-filter'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { CheckCircle, AlertTriangle, XCircle, TrendingUp, PiggyBank, ClipboardList, Sparkles, ChevronDown, ChevronRight } from 'lucide-react'
+import {
+  CheckCircle, AlertTriangle, XCircle, TrendingUp, TrendingDown, PiggyBank, Sparkles, ChevronDown, ChevronRight,
+  CalendarDays, PieChart, BarChart3, Target, List as ListIcon, CalendarClock, RefreshCw, ArrowRight, Pencil, Home, Coffee,
+} from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useGoals } from '@/hooks/use-goals'
+import { useUserPreferences } from '@/hooks/use-user-preferences'
+import { createClient } from '@/lib/supabase/client'
 
-interface PlanTemplate {
-  id: string
-  label: string
-  description: string
-  investPct: number
-  color: string
-}
+type PillarKey = 'essencial' | 'estilo' | 'futuro'
 
-// Reserva não é mais um alvo separado (2026-07-09) — já é coberta pelo
-// Investimento previsto, então o percentual que cada template reservava pra
-// ela entrou direto no investPct, pra manter a intenção original do template
-// (ex: "Equilibrado" ainda separa 30% da renda pra investir+reservar, só que
-// tudo dentro de um único campo agora).
-const PLAN_TEMPLATES: PlanTemplate[] = [
-  { id: 'equilibrado',  label: 'Equilibrado',    description: '50% essenciais · 30% variáveis · 20% investimentos', investPct: 0.30, color: 'blue'   },
-  { id: 'investidor',   label: 'Investidor',      description: '45% essenciais · 25% variáveis · 30% investimentos', investPct: 0.40, color: 'emerald'},
-  { id: 'dividas',      label: 'Quitar Dívidas',  description: '60% essenciais · 20% variáveis · 20% quitação',      investPct: 0.10, color: 'amber'  },
-  { id: 'personalizado',label: 'Personalizado',   description: 'Configure manualmente cada categoria',                investPct: 0,    color: 'slate'  },
+// Cores validadas para daltonismo; o texto ao lado de cada barra carrega o
+// nome e o valor, então a cor nunca é a única pista.
+const PILLARS: { key: PillarKey; label: string; color: string; icon: React.ElementType; hint: string }[] = [
+  { key: 'essencial', label: 'Essenciais',     color: '#10b981', icon: Home,      hint: 'Moradia, alimentação, transporte, saúde, contas básicas' },
+  { key: 'estilo',    label: 'Estilo de vida', color: '#8b5cf6', icon: Coffee,    hint: 'Lazer, compras, restaurantes, viagens, assinaturas' },
+  { key: 'futuro',    label: 'Futuro',         color: '#f59e0b', icon: PiggyBank, hint: 'Investimentos, reserva de emergência, objetivos' },
 ]
+
+const PRESETS = [
+  { label: 'Equilibrado',    essencial: 50, estilo: 30, futuro: 20 },
+  { label: 'Investidor',     essencial: 45, estilo: 25, futuro: 30 },
+  { label: 'Quitar dívidas', essencial: 60, estilo: 20, futuro: 20 },
+] as const
+
+const MONTH_NAMES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+]
+
+function CardTitle({ icon: Icon, title, subtitle, action }: {
+  icon: React.ElementType; title: string; subtitle?: string; action?: React.ReactNode
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="h-10 w-10 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+        <Icon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{title}</p>
+        {subtitle && <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>}
+      </div>
+      {action && <div className="shrink-0">{action}</div>}
+    </div>
+  )
+}
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -218,18 +243,10 @@ function PlanningPage() {
   const [year, setYear] = useState(now.getFullYear())
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [templateOpen, setTemplateOpen] = useState(false)
-  // Orçamento do mês recolhível; a escolha fica lembrada neste navegador.
-  const [budgetOpen, setBudgetOpen] = useState(true)
-  useEffect(() => {
-    try { if (localStorage.getItem('nobli:planning-budget-open') === '0') setBudgetOpen(false) } catch {}
-  }, [])
-  function toggleBudget() {
-    setBudgetOpen(v => {
-      try { localStorage.setItem('nobli:planning-budget-open', v ? '0' : '1') } catch {}
-      return !v
-    })
-  }
+  const [boardId, setBoardId] = useState('all')
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [tableOpen, setTableOpen] = useState(false)
+  const [pillarTab, setPillarTab] = useState<PillarKey>('essencial')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [showQuiet, setShowQuiet] = useState(false)
 
@@ -243,20 +260,49 @@ function PlanningPage() {
     [boards],
   )
   const exclude = excludedBoardIds.length > 0 ? excludedBoardIds : undefined
-  const { transactions } = useTransactions({ month, year, exclude_board_ids: exclude })
+  // "Todas as contas" usa a mesma exclusão do dashboard; uma conta escolhida
+  // mostra só ela.
+  const accountFilter = boardId === 'all' ? { exclude_board_ids: exclude } : { board_id: boardId }
+  const { transactions } = useTransactions({ month, year, ...accountFilter })
 
   // Os três meses anteriores, para a média de cada categoria.
   const p1 = monthsBack(month, year, 1)
   const p2 = monthsBack(month, year, 2)
   const p3 = monthsBack(month, year, 3)
-  const { transactions: prev1 } = useTransactions({ ...p1, exclude_board_ids: exclude })
-  const { transactions: prev2 } = useTransactions({ ...p2, exclude_board_ids: exclude })
-  const { transactions: prev3 } = useTransactions({ ...p3, exclude_board_ids: exclude })
+  const { transactions: prev1 } = useTransactions({ ...p1, ...accountFilter })
+  const { transactions: prev2 } = useTransactions({ ...p2, ...accountFilter })
+  const { transactions: prev3 } = useTransactions({ ...p3, ...accountFilter })
 
   const { categories } = useCategories()
   const motherNames = useMemo(() => motherNameByCategory(categories), [categories])
 
   const { plan, loading, loadedKey, savePlan } = useBudgetPlan(month, year)
+  // Plano do mês anterior, só para o "% em relação ao mês anterior".
+  const { plan: prevPlan } = useBudgetPlan(p1.month, p1.year)
+  const { goals } = useGoals()
+  const { defaultInvestmentPct, updatePreferences } = useUserPreferences()
+
+  // Percentuais de Essencial e Estilo de vida: preferência da pessoa, guardada
+  // no perfil (não muda de mês a mês). O Futuro é o investimento previsto do
+  // plano — o mesmo "% da receita" que o Dashboard usa.
+  const [basePct, setBasePct] = useState({ essencial: 50, estilo: 30 })
+  const pctDirty = useRef(false)
+  useEffect(() => {
+    createClient().auth.getUser().then(({ data: { user } }) => {
+      const saved = user?.user_metadata?.plan_pillars
+      if (saved && typeof saved.essencial === 'number' && typeof saved.estilo === 'number') {
+        setBasePct({ essencial: saved.essencial, estilo: saved.estilo })
+      }
+    })
+  }, [])
+  useEffect(() => {
+    if (!pctDirty.current) return
+    const t = setTimeout(() => {
+      pctDirty.current = false
+      createClient().auth.updateUser({ data: { plan_pillars: basePct } })
+    }, 800)
+    return () => clearTimeout(t)
+  }, [basePct])
 
   // Fixos (Recorrências confirmadas + parcelas ativas), por categoria — o
   // mesmo cálculo de useRecurringMonthlyTotal, mas guardando onde cada um cai.
@@ -354,11 +400,6 @@ function PlanningPage() {
   function changeMonth(m: number) { saveRef.current(); setMonth(m) }
   function changeYear(y: number) { saveRef.current(); setYear(y) }
 
-  function applyTemplate(tpl: PlanTemplate) {
-    const income = parseNum(expectedIncome)
-    if (income > 0 && tpl.investPct > 0) editInvest(String(Math.round(income * tpl.investPct)))
-    setTemplateOpen(false)
-  }
 
   // Planos salvos antes da conversão guardam "sub:Moradia" — e Moradia virou
   // categoria PRINCIPAL. Reescreve a chave; chave sem categoria é descartada.
@@ -462,7 +503,6 @@ function PlanningPage() {
   const incomeNum = parseNum(expectedIncome)
   const investNum = parseNum(investmentTarget)
   const totalPlanned = rows.reduce((s, r) => s + r.planned, 0)
-  const free = incomeNum - investNum - totalPlanned
   // Realizado só das categorias com limite, para bater com o planejado.
   const actualPlanned = rows.filter(r => r.planned > 0).reduce((s, r) => s + r.actual, 0)
   const untracked = Math.max(0, actual.total - actualPlanned)
@@ -501,6 +541,136 @@ function PlanningPage() {
     }
     return { totals, total }
   }, [transactions, categories])
+
+  // ── Pilares 50/30/20 ─────────────────────────────────────────────────────
+  const futuroPct = incomeNum > 0 && investNum > 0 ? Math.round((investNum / incomeNum) * 100) : defaultInvestmentPct
+  const pillarPct: Record<PillarKey, number> = { ...basePct, futuro: futuroPct }
+  const pillarTargets: Record<PillarKey, number> = {
+    essencial: (incomeNum * basePct.essencial) / 100,
+    estilo: (incomeNum * basePct.estilo) / 100,
+    futuro: investNum > 0 ? investNum : (incomeNum * futuroPct) / 100,
+  }
+  // Futuro = gastos com etiqueta "futuro" + o que foi aportado em investimento.
+  const pillarSpent: Record<PillarKey, number> = {
+    essencial: bucketSummary.totals.essencial,
+    estilo: bucketSummary.totals.estilo,
+    futuro: bucketSummary.totals.futuro + investActual,
+  }
+  const untaggedShare = bucketSummary.total > 0 ? bucketSummary.totals.sem / bucketSummary.total : 0
+
+  function setPillar(key: PillarKey, value: number) {
+    const v = Math.max(0, Math.min(100, Math.round(Number.isFinite(value) ? value : 0)))
+    if (key === 'futuro') {
+      editInvest(String(Math.round((incomeNum * v) / 100)))
+      updatePreferences({ investment_pct: v })
+      return
+    }
+    pctDirty.current = true
+    setBasePct(prev => ({ ...prev, [key]: v }))
+  }
+  function applyPreset(pr: (typeof PRESETS)[number]) {
+    setPillar('essencial', pr.essencial)
+    setPillar('estilo', pr.estilo)
+    setPillar('futuro', pr.futuro)
+  }
+
+  const incomeChange = prevPlan && prevPlan.expected_income > 0 && incomeNum > 0
+    ? ((incomeNum - prevPlan.expected_income) / prevPlan.expected_income) * 100
+    : null
+  const summaryIncome = incomeNum > 0 ? incomeNum : actualIncome
+  const projected = summaryIncome - actual.total
+
+  const status = (() => {
+    const neutral = 'bg-slate-50 border-slate-200 dark:bg-white/[0.03] dark:border-white/[0.08]'
+    if (incomeNum === 0) {
+      return { title: 'Defina sua renda', text: 'Sem a renda prevista não dá para calcular o limite de cada pilar.', subtitle: 'Falta a renda prevista do mês.', icon: AlertTriangle, box: neutral, iconCls: 'text-slate-400', titleCls: 'text-slate-700 dark:text-slate-200' }
+    }
+    const spending: PillarKey[] = ['essencial', 'estilo']
+    const over = spending.filter(k => pillarSpent[k] > pillarTargets[k])
+    if (over.length > 0) {
+      const k = over[0]
+      return {
+        title: 'Atenção: passou do limite',
+        text: `${PILLARS.find(p => p.key === k)!.label} já passou ${fmt(pillarSpent[k] - pillarTargets[k])} do planejado.`,
+        subtitle: 'Algum pilar estourou este mês.', icon: XCircle,
+        box: 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800/50', iconCls: 'text-red-500', titleCls: 'text-red-600 dark:text-red-400',
+      }
+    }
+    const near = spending.filter(k => pillarTargets[k] > 0 && pillarSpent[k] / pillarTargets[k] > 0.9)
+    if (near.length > 0) {
+      const k = near[0]
+      return {
+        title: 'Perto do limite',
+        text: `${PILLARS.find(p => p.key === k)!.label} já usou ${Math.round((pillarSpent[k] / pillarTargets[k]) * 100)}% do limite.`,
+        subtitle: 'Vale segurar os gastos até o fim do mês.', icon: AlertTriangle,
+        box: 'bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800/50', iconCls: 'text-amber-500', titleCls: 'text-amber-700 dark:text-amber-300',
+      }
+    }
+    return {
+      title: 'No caminho certo!', text: 'Seus gastos estão dentro do planejamento 50/30/20.',
+      subtitle: 'Você está dentro do planejado este mês.', icon: CheckCircle,
+      box: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800/50', iconCls: 'text-emerald-500', titleCls: 'text-emerald-700 dark:text-emerald-300',
+    }
+  })()
+
+  // Gasto por categoria principal dentro de cada pilar.
+  const byPillarMother = useMemo(() => {
+    const byName = new Map(categories.map(c => [c.name.trim().toLowerCase(), c]))
+    const out: Record<PillarKey, Record<string, number>> = { essencial: {}, estilo: {}, futuro: {} }
+    for (const t of realMovements(transactions)) {
+      if (t.type !== 'despesa') continue
+      const cat = byName.get(t.category.trim().toLowerCase())
+      const mother = cat?.parent_id ? categories.find(m => m.id === cat.parent_id) : null
+      const bucket = (cat?.bucket ?? mother?.bucket ?? null) as PillarKey | null
+      if (!bucket) continue
+      const name = motherOf(t.category, motherNames, t.type)
+      out[bucket][name] = (out[bucket][name] ?? 0) + Number(t.amount)
+    }
+    return out
+  }, [transactions, categories, motherNames])
+  const currentPillar = PILLARS.find(p => p.key === pillarTab)!
+  const topCategories = (() => {
+    const entries = Object.entries(byPillarMother[pillarTab])
+    const total = entries.reduce((s, [, v]) => s + v, 0)
+    return entries
+      .map(([name, amount]) => ({ name, amount, pct: total > 0 ? (amount / total) * 100 : 0 }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5)
+  })()
+
+  // Próximos gastos fixos: cada fixo confirmado costuma cair no mesmo dia do
+  // mês da última vez — daí sai a previsão dos próximos 30 dias (a partir de hoje).
+  const upcoming = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const clampDay = (y: number, m: number, d: number) => new Date(y, m, Math.min(d, new Date(y, m + 1, 0).getDate()))
+    const list: { key: string; name: string; amount: number; date: Date; days: number }[] = []
+    for (const item of buildDisplayItems(recurring, new Map(), subcategoryNames)) {
+      if (item.type !== 'despesa' || decisions.get(item.key) !== 'confirmed' || !item.lastDate) continue
+      const day = Number(item.lastDate.slice(8, 10))
+      let date = clampDay(today.getFullYear(), today.getMonth(), day)
+      if (date < today) date = clampDay(today.getFullYear(), today.getMonth() + 1, day)
+      const days = Math.round((date.getTime() - today.getTime()) / 86400000)
+      if (days <= 30) list.push({ key: item.key, name: item.name, amount: item.avgAmount, date, days })
+    }
+    return list.sort((a, b) => a.days - b.days).slice(0, 5)
+  }, [recurring, decisions, subcategoryNames])
+
+  // Gasto médio mensal, para "a reserva cobre N meses de despesas".
+  const averageTotal = useMemo(() => {
+    const months = [prev1, prev2, prev3].map(realMovements).map(sumDespesa).filter(m => m.total > 0)
+    return months.length ? months.reduce((s, m) => s + m.total, 0) / months.length : 0
+  }, [prev1, prev2, prev3]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reserva de emergência primeiro, depois as mais adiantadas.
+  const topGoals = [...goals]
+    .sort((a, b) => {
+      if ((a.type === 'reserva') !== (b.type === 'reserva')) return a.type === 'reserva' ? -1 : 1
+      const pa = a.targetAmount > 0 ? a.currentAmount / a.targetAmount : 0
+      const pb = b.targetAmount > 0 ? b.currentAmount / b.targetAmount : 0
+      return pb - pa
+    })
+    .slice(0, 2)
 
   function toggle(id: string) {
     setExpanded(prev => {
@@ -590,219 +760,339 @@ function PlanningPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-5 max-w-6xl mx-auto">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Planejamento Mensal</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Decida para onde vai o dinheiro do mês e acompanhe enquanto gasta</p>
+          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Planejamento 50/30/20</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Organize seu dinheiro, viva melhor e conquiste seus objetivos.</p>
         </div>
-        <PeriodFilter month={month} year={year} onMonthChange={changeMonth} onYearChange={changeYear} />
+        <div className="flex items-center gap-2">
+          <div className="shrink-0">
+            <PeriodFilter month={month} year={year} onMonthChange={changeMonth} onYearChange={changeYear} />
+          </div>
+          <select
+            value={boardId}
+            onChange={e => setBoardId(e.target.value)}
+            className="flex-1 min-w-0 lg:flex-none lg:w-48 h-9 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] px-3 text-sm font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+          >
+            <option value="all">Todas as contas</option>
+            {boards.filter(b => !b.is_investment).map(b => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {loading || recurringLoading || decisionsLoading ? (
-        <div className="space-y-4">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="h-20 bg-white dark:bg-slate-800 rounded-2xl animate-pulse shadow-sm" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-40 bg-white dark:bg-slate-800 rounded-2xl animate-pulse shadow-sm" />
           ))}
         </div>
       ) : (
         <>
-          {/* Orçamento do mês: receita, investimento e o que sobra */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-100 dark:border-slate-700 space-y-5">
-            <div className="flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={toggleBudget}
-                className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2 text-left"
-                aria-expanded={budgetOpen}
-              >
-                {budgetOpen
-                  ? <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
-                  : <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />}
-                <ClipboardList className="h-4 w-4 text-blue-500 shrink-0" />
-                Orçamento do mês
-              </button>
-              <div className="flex items-center gap-3">
+          {/* Linha 1: orçamento do mês + distribuição 50/30/20 */}
+          <div className="grid grid-cols-1 lg:grid-cols-[5fr_7fr] gap-4">
+            <div className="nobli-card p-5 flex flex-col">
+              <CardTitle icon={CalendarDays} title="Orçamento do mês" subtitle={`Sua renda e limites para ${MONTH_NAMES[month - 1]} ${year}`} />
+              <p className="text-3xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100 tabular-nums mt-4">
+                {fmt(incomeNum)}
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Renda mensal prevista</p>
+              {incomeChange !== null && (
+                <p className={cn('text-xs mt-2 flex items-center gap-1', incomeChange >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500')}>
+                  {incomeChange >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+                  {incomeChange >= 0 ? '+' : ''}{incomeChange.toFixed(0)}%
+                  <span className="text-slate-400 dark:text-slate-500"> em relação ao mês anterior</span>
+                </p>
+              )}
+              {incomeNum === 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                  Defina a renda prevista para calcular os limites de cada pilar.
+                </p>
+              )}
+              <div className="mt-auto pt-4 flex items-center justify-between gap-3">
                 <SaveIndicator status={saveStatus} error={saveError} />
-                {budgetOpen && (
-                <button
-                  type="button"
-                  onClick={() => setTemplateOpen(v => !v)}
-                  className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium transition-colors"
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Usar template
-                </button>
-                )}
+                <Button variant="outline" size="sm" className="gap-1.5 ml-auto" onClick={() => setEditorOpen(true)}>
+                  <Pencil className="h-3.5 w-3.5" /> Ajustar orçamento
+                </Button>
               </div>
             </div>
 
-            {/* Recolhido: só o resultado da conta do mês */}
-            {!budgetOpen && (
-              <div className={cn(
-                'flex justify-between text-sm font-semibold -mt-2',
-                free >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500',
-              )}>
-                <span>{free >= 0 ? 'Livre para planejar' : 'Planejado além da receita'}</span>
-                <span className="tabular-nums">{fmt(Math.abs(free))}</span>
+            <div className="nobli-card p-5">
+              <CardTitle icon={PieChart} title="Distribuição 50/30/20" subtitle="Quanto da renda vai para cada pilar" />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-0 sm:divide-x divide-slate-100 dark:divide-white/[0.06] mt-4">
+                {PILLARS.map(p => (
+                  <div key={p.key} className="sm:px-4 first:sm:pl-0 last:sm:pr-0">
+                    <div className="border-l-4 pl-3" style={{ borderColor: p.color }}>
+                      <p className="text-2xl font-extrabold tabular-nums" style={{ color: p.color }}>{pillarPct[p.key]}%</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{p.label}</p>
+                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 tabular-nums mt-0.5">{fmt(pillarTargets[p.key])}</p>
+                    </div>
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2 leading-snug">{p.hint}</p>
+                  </div>
+                ))}
               </div>
-            )}
-
-            {budgetOpen && templateOpen && (
-              <div className="grid grid-cols-2 gap-2 pb-2 border-b border-slate-100 dark:border-slate-700">
-                {PLAN_TEMPLATES.map(tpl => {
-                  const colorMap: Record<string, string> = {
-                    blue: 'border-blue-300 dark:border-blue-500/50 bg-blue-50 dark:bg-blue-500/10',
-                    emerald: 'border-emerald-300 dark:border-emerald-500/50 bg-emerald-50 dark:bg-emerald-500/10',
-                    amber: 'border-amber-300 dark:border-amber-500/50 bg-amber-50 dark:bg-amber-500/10',
-                    slate: 'border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50',
-                  }
-                  const textMap: Record<string, string> = {
-                    blue: 'text-blue-700 dark:text-blue-300',
-                    emerald: 'text-emerald-700 dark:text-emerald-300',
-                    amber: 'text-amber-700 dark:text-amber-300',
-                    slate: 'text-slate-700 dark:text-slate-200',
-                  }
-                  return (
-                    <button
-                      key={tpl.id}
-                      type="button"
-                      onClick={() => applyTemplate(tpl)}
-                      className={`flex flex-col gap-1 p-3 rounded-xl border-2 text-left transition-all hover:scale-[1.02] ${colorMap[tpl.color]}`}
-                    >
-                      <span className={`text-sm font-bold ${textMap[tpl.color]}`}>{tpl.label}</span>
-                      <span className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">{tpl.description}</span>
-                    </button>
-                  )
-                })}
-                {incomeNum === 0 && (
-                  <p className="col-span-2 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5 pt-1">
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                    Preencha a receita prevista para aplicar valores automaticamente.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {budgetOpen && (<>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                  <TrendingUp className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                  Receita prevista
-                </Label>
-                <CurrencyInput value={expectedIncome} onChange={editIncome} />
-                <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                  Recebido até agora: <span className="text-green-600 dark:text-green-400 font-medium">{fmt(actualIncome)}</span>
+              {untaggedShare > 0.15 && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-4 flex items-start gap-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" />
+                  <span>
+                    {fmt(bucketSummary.totals.sem)} do que você gastou está em categorias sem etiqueta e não entra em nenhum pilar.{' '}
+                    <a href="/settings/categories" className="underline font-medium">Ajustar etiquetas</a>
+                  </span>
                 </p>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                  <PiggyBank className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-                  Investimento previsto
-                </Label>
-                <CurrencyInput value={investmentTarget} onChange={editInvest} />
-                <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                  Aportado até agora: <span className="text-blue-600 dark:text-blue-400 font-medium">{fmt(investActual)}</span>
-                </p>
-              </div>
+              )}
             </div>
-
-            {/* A conta do mês */}
-            <div className="border-t border-slate-100 dark:border-slate-700 pt-4 space-y-1.5 text-sm">
-              <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                <span>Receita prevista</span><span className="tabular-nums">{fmt(incomeNum)}</span>
-              </div>
-              <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                <span>− Investimento</span><span className="tabular-nums">{fmt(investNum)}</span>
-              </div>
-              <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                <span>
-                  − Despesas planejadas
-                  {expensesTargetDisplay > 0 && (
-                    <span className="text-[11px] text-slate-400 dark:text-slate-500"> · {fmt(expensesTargetDisplay)} já são fixos</span>
-                  )}
-                </span>
-                <span className="tabular-nums">{fmt(totalPlanned)}</span>
-              </div>
-              <div className={cn(
-                'flex justify-between font-semibold pt-1.5 border-t border-slate-100 dark:border-slate-700',
-                free >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500',
-              )}>
-                <span>{free >= 0 ? 'Livre para planejar' : 'Planejado além da receita'}</span>
-                <span className="tabular-nums">{fmt(Math.abs(free))}</span>
-              </div>
-            </div>
-            </>)}
           </div>
 
-          {/* Categorias: onde se planeja. O acompanhamento fica na tabela abaixo. */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 px-6 py-4">
-            <div className="flex items-start justify-between gap-3 flex-wrap pb-2">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Despesas por categoria</h2>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                  Digite quanto quer gastar em cada uma. Abra a categoria para limitar as subcategorias.
-                </p>
+          {/* Linha 2: acompanhamento por pilar + status e resumo */}
+          <div className="grid grid-cols-1 lg:grid-cols-[7fr_5fr] gap-4">
+            <div className="nobli-card p-5">
+              <CardTitle icon={BarChart3} title="Acompanhamento do mês" subtitle="Gastos até hoje vs. limite de cada pilar" />
+              <div className="space-y-4 mt-4">
+                {PILLARS.map(p => {
+                  const target = pillarTargets[p.key]
+                  const spent = pillarSpent[p.key]
+                  const pct = target > 0 ? (spent / target) * 100 : 0
+                  return (
+                    <div key={p.key} className="flex items-center gap-3">
+                      <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: p.color + '1f' }}>
+                        <p.icon className="h-4 w-4" style={{ color: p.color }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <p className="text-sm text-slate-700 dark:text-slate-200 truncate">
+                            {p.label} <span className="text-slate-400 dark:text-slate-500">({pillarPct[p.key]}%)</span>
+                          </p>
+                          <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: p.color }}>
+                            {target > 0 ? `${pct.toFixed(0)}%` : '—'}
+                          </span>
+                        </div>
+                        <p className="text-xs tabular-nums mt-0.5">
+                          <span className="font-semibold text-slate-700 dark:text-slate-200">{fmt(spent)}</span>
+                          <span className="text-slate-400 dark:text-slate-500"> de {fmt(target)}</span>
+                        </p>
+                        <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden mt-1.5">
+                          <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, pct)}%`, backgroundColor: p.color }} />
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-              {emptyToFill.length > 0 && average.months > 0 && (
-                <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={fillFromAverage}>
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Preencher pela média
-                </Button>
+              {investActual > 0 && (
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-3">
+                  Futuro inclui {fmt(investActual)} aportados em contas de investimento.
+                </p>
               )}
             </div>
 
-            <div className="hidden sm:flex items-center gap-3 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-700 pb-2">
-              <span className="flex-1">Categoria</span>
-              <span className="w-32 text-right">Planejado</span>
-            </div>
-
-            {activeRows.length === 0 ? (
-              <p className="text-sm text-slate-400 dark:text-slate-500 py-6 text-center">
-                Nenhum gasto registrado ainda. Importe um extrato para ver as categorias aqui.
-              </p>
-            ) : (
-              <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
-                {activeRows.map(renderRow)}
-              </div>
-            )}
-
-            {quietRows.length > 0 && (
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowQuiet(v => !v)}
-                  className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex items-center gap-1"
-                >
-                  {showQuiet ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                  {showQuiet ? 'Ocultar' : 'Mostrar'} {quietRows.length} categoria{quietRows.length === 1 ? '' : 's'} sem movimento
-                </button>
-                {showQuiet && (
-                  <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
-                    {quietRows.map(renderRow)}
+            <div className="space-y-4">
+              <div className="nobli-card p-5">
+                <CardTitle icon={Target} title="Status do planejamento" subtitle={status.subtitle} />
+                <div className={cn('mt-4 rounded-xl border p-3.5 flex items-center gap-3', status.box)}>
+                  <status.icon className={cn('h-6 w-6 shrink-0', status.iconCls)} />
+                  <div>
+                    <p className={cn('text-sm font-semibold', status.titleCls)}>{status.title}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{status.text}</p>
                   </div>
-                )}
+                </div>
               </div>
-            )}
+
+              <div className="nobli-card p-5">
+                <CardTitle icon={TrendingUp} title="Resumo do mês" />
+                <div className="grid grid-cols-3 divide-x divide-slate-100 dark:divide-white/[0.06] mt-4">
+                  <div className="pr-3 min-w-0">
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500">Renda</p>
+                    <p className="text-sm sm:text-base font-bold tabular-nums text-green-600 truncate">{fmt(summaryIncome)}</p>
+                  </div>
+                  <div className="px-3 min-w-0">
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500">Gastos</p>
+                    <p className="text-sm sm:text-base font-bold tabular-nums text-red-500 truncate">-{fmt(actual.total)}</p>
+                  </div>
+                  <div className="pl-3 min-w-0">
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500">Saldo projetado</p>
+                    <p className={cn('text-sm sm:text-base font-bold tabular-nums truncate', projected >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500')}>
+                      {fmt(projected)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Planejado × Realizado — com o gasto do mês */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700">
-              <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Planejado × Realizado</h2>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Quanto já saiu em cada categoria planejada neste mês</p>
+          {/* Linha 3: principais categorias por pilar + próximos gastos fixos */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="nobli-card p-5">
+              <CardTitle icon={ListIcon} title="Principais categorias do mês" subtitle="Seu gasto por categoria dentro de cada pilar" />
+              <div className="flex gap-1 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-lg mt-4">
+                {PILLARS.map(p => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => setPillarTab(p.key)}
+                    className={cn(
+                      'flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-all',
+                      pillarTab === p.key
+                        ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm'
+                        : 'text-slate-500 dark:text-slate-400',
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              {topCategories.length === 0 ? (
+                <p className="text-sm text-slate-400 dark:text-slate-500 py-8 text-center">Nenhum gasto neste pilar ainda.</p>
+              ) : (
+                <div className="divide-y divide-slate-100 dark:divide-white/[0.06] mt-2">
+                  {topCategories.map(c => (
+                    <div key={c.name} className="flex items-center gap-3 py-2.5">
+                      <span className="flex-1 min-w-0 text-sm text-slate-700 dark:text-slate-200 truncate">{c.name}</span>
+                      <span className="text-sm tabular-nums text-slate-700 dark:text-slate-200 w-24 text-right shrink-0">{fmt(c.amount)}</span>
+                      <span className="text-xs tabular-nums text-slate-400 w-9 text-right shrink-0">{c.pct.toFixed(0)}%</span>
+                      <div className="hidden sm:block w-28 h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden shrink-0">
+                        <div className="h-full rounded-full" style={{ width: `${Math.min(100, c.pct)}%`, backgroundColor: currentPillar.color }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => { setTableOpen(true); setTimeout(() => document.getElementById('plano-tabela')?.scrollIntoView({ behavior: 'smooth' }), 50) }}
+                className="mt-3 ml-auto flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Ver todas as categorias <ArrowRight className="h-3.5 w-3.5" />
+              </button>
             </div>
 
-            {!hasTable ? (
-              <div className="px-6 py-10 text-center">
+            <div className="nobli-card p-5">
+              <CardTitle
+                icon={CalendarClock}
+                title="Próximos gastos fixos"
+                subtitle="Próximos 30 dias · pela data em que cada um costuma cair"
+                action={<a href="/fixos" className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">Ver todos <ArrowRight className="h-3.5 w-3.5" /></a>}
+              />
+              {upcoming.length === 0 ? (
+                <p className="text-sm text-slate-400 dark:text-slate-500 py-8 text-center">
+                  Nenhum gasto fixo confirmado nos próximos 30 dias.{' '}
+                  <a href="/fixos" className="text-blue-600 dark:text-blue-400 hover:underline">Confirmar em Recorrências</a>
+                </p>
+              ) : (
+                <div className="divide-y divide-slate-100 dark:divide-white/[0.06] mt-2">
+                  {upcoming.map(u => (
+                    <div key={u.key} className="flex items-center gap-3 py-2.5">
+                      <div className="h-8 w-8 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+                        <RefreshCw className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-slate-700 dark:text-slate-200 truncate">{u.name}</p>
+                        <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                          {u.date.getDate()} de {MONTH_NAMES[u.date.getMonth()].toLowerCase()}
+                        </p>
+                      </div>
+                      <span className="text-sm tabular-nums text-slate-700 dark:text-slate-200 shrink-0">{fmt(u.amount)}</span>
+                      <span className={cn(
+                        'text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 w-[68px] text-center',
+                        u.days === 0
+                          ? 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+                          : 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+                      )}>
+                        {u.days === 0 ? 'Hoje' : u.days === 1 ? 'Amanhã' : `Em ${u.days} dias`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Linha 4: metas + chamada para editar */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="nobli-card p-5">
+              <CardTitle
+                icon={Target}
+                title="Metas e reserva de emergência"
+                subtitle="Seu futuro em construção"
+                action={<a href="/goals" className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">Ver todas <ArrowRight className="h-3.5 w-3.5" /></a>}
+              />
+              {topGoals.length === 0 ? (
+                <p className="text-sm text-slate-400 dark:text-slate-500 py-8 text-center">
+                  Nenhuma meta ainda.{' '}
+                  <a href="/goals" className="text-blue-600 dark:text-blue-400 hover:underline">Criar a reserva de emergência</a>
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+                  {topGoals.map(g => {
+                    const pct = g.targetAmount > 0 ? (g.currentAmount / g.targetAmount) * 100 : 0
+                    const monthsCovered = g.type === 'reserva' && average.months > 0 && averageTotal > 0
+                      ? g.currentAmount / averageTotal : null
+                    return (
+                      <div key={g.id} className="rounded-xl border border-slate-100 dark:border-white/[0.06] p-3">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">{g.name}</p>
+                          <span className="text-xs font-semibold tabular-nums text-slate-500 dark:text-slate-400 shrink-0">{pct.toFixed(0)}%</span>
+                        </div>
+                        <p className="text-[11px] tabular-nums mt-0.5">
+                          <span className="font-semibold text-slate-700 dark:text-slate-200">{fmt(g.currentAmount)}</span>
+                          <span className="text-slate-400 dark:text-slate-500"> de {fmt(g.targetAmount)}</span>
+                        </p>
+                        <div className="h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden mt-2">
+                          <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, backgroundColor: g.color }} />
+                        </div>
+                        <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">
+                          {monthsCovered !== null
+                            ? `Cobre ${monthsCovered.toFixed(1).replace('.', ',')} meses de despesas`
+                            : `Prazo: ${g.deadline.split('-').reverse().join('/')}`}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="nobli-card p-5 flex items-center gap-4 bg-gradient-to-br from-blue-50 to-white dark:from-blue-900/20 dark:to-transparent">
+              <div className="h-14 w-14 rounded-2xl bg-blue-600 flex items-center justify-center shrink-0 shadow-md shadow-blue-600/25">
+                <Target className="h-7 w-7 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Mantenha o foco nos seus objetivos</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Revise seu planejamento todo mês e ajuste os limites para viver hoje e conquistar amanhã.
+                </p>
+                <Button size="sm" className="mt-3 gap-1.5" onClick={() => setEditorOpen(true)}>
+                  Editar planejamento <ArrowRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Detalhe por categoria — recolhido */}
+          <div id="plano-tabela" className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden scroll-mt-4">
+            <button
+              type="button"
+              onClick={() => setTableOpen(v => !v)}
+              aria-expanded={tableOpen}
+              className="w-full px-5 sm:px-6 py-4 flex items-center gap-2 text-left"
+            >
+              {tableOpen ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
+              <div>
+                <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Planejado × Realizado por categoria</h2>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Quanto já saiu em cada categoria planejada neste mês</p>
+              </div>
+            </button>
+
+            {tableOpen && (!hasTable ? (
+              <div className="px-6 py-8 text-center border-t border-slate-100 dark:border-slate-700">
                 <p className="text-sm text-slate-400 dark:text-slate-500">
-                  Defina a receita ou o limite de alguma categoria acima para ver o comparativo aqui.
+                  Defina limites por categoria em &ldquo;Ajustar orçamento&rdquo; para ver o comparativo aqui.
                 </p>
               </div>
             ) : (
-              <>
+              <div className="border-t border-slate-100 dark:border-slate-700">
               {/* Celular: lista em duas linhas por item */}
               <div className="sm:hidden divide-y divide-slate-100 dark:divide-slate-700/60">
                 {incomeNum > 0 && (
@@ -896,8 +1186,8 @@ function PlanningPage() {
                   + {fmt(untracked)} em categorias sem limite, fora do &ldquo;Total Despesas&rdquo;. Gasto total do mês: {fmt(actual.total)}.
                 </p>
               )}
-              </>
-            )}
+              </div>
+            ))}
           </div>
 
           {internal.count > 0 && (
@@ -907,71 +1197,124 @@ function PlanningPage() {
             </p>
           )}
 
-          {/* 50/30/20 — sugestão, ajustável mudando a etiqueta das categorias */}
-          {bucketSummary.total > 0 && (
-            <div className="nobli-card p-5 space-y-3">
-              <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Essencial · Estilo de vida · Futuro</p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                    Sugestão 50/30/20 sobre as despesas do período. Para mudar onde uma categoria entra,
-                    edite a etiqueta dela em Configurações › Categorias.
+          {/* Painel de edição: renda, pilares e limites por categoria */}
+          <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
+            <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto p-5 sm:p-6">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-3">
+                  Ajustar orçamento — {MONTH_NAMES[month - 1]} {year}
+                  <SaveIndicator status={saveStatus} error={saveError} />
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-5">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <TrendingUp className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                    Renda prevista
+                  </Label>
+                  <CurrencyInput value={expectedIncome} onChange={editIncome} />
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                    Recebido até agora: <span className="text-green-600 dark:text-green-400 font-medium">{fmt(actualIncome)}</span>
                   </p>
                 </div>
-                <a href="/settings/categories" className="text-xs text-blue-600 hover:underline shrink-0">Ajustar etiquetas →</a>
-              </div>
 
-              {bucketSummary.totals.sem / bucketSummary.total > 0.15 && (
-                <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-xl p-3">
-                  <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
-                  <p className="text-xs text-amber-700 dark:text-amber-300">
-                    <strong>{fmt(bucketSummary.totals.sem)}</strong> ({Math.round((bucketSummary.totals.sem / bucketSummary.total) * 100)}%)
-                    do que você gastou está em categorias sem etiqueta — em geral, o que ficou dentro de &ldquo;Outros&rdquo;.
-                    Enquanto isso, esta divisão não reflete a sua vida.{' '}
-                    <a href="/settings/categories" className="underline font-medium">Organize suas categorias</a>:
-                    mova as subcategorias para a categoria certa e marque se cada uma é essencial, estilo de vida ou futuro.
-                  </p>
-                </div>
-              )}
-
-              <div className="space-y-2.5">
-                {([
-                  ['essencial', 'Essencial', 50, 'bg-blue-500'],
-                  ['estilo', 'Estilo de vida', 30, 'bg-amber-500'],
-                  ['futuro', 'Futuro', 20, 'bg-emerald-500'],
-                  ['sem', 'Sem etiqueta', null, 'bg-slate-300 dark:bg-slate-600'],
-                ] as const).map(([key, label, target, color]) => {
-                  const value = bucketSummary.totals[key]
-                  if (key === 'sem' && value <= 0.005) return null
-                  const pct = bucketSummary.total > 0 ? (value / bucketSummary.total) * 100 : 0
-                  return (
-                    <div key={key}>
-                      <div className="flex items-center justify-between text-xs mb-1">
-                        <span className="text-slate-600 dark:text-slate-300">
-                          {label}
-                          {target !== null && (
-                            <span className="text-slate-400 dark:text-slate-500"> · sugerido {target}%</span>
-                          )}
-                        </span>
-                        <span className="text-slate-700 dark:text-slate-200 font-semibold tabular-nums">
-                          {pct.toFixed(0)}% · {fmt(value)}
-                        </span>
-                      </div>
-                      <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${Math.min(100, pct)}%` }} />
-                      </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <Label className="text-xs text-slate-500 dark:text-slate-400">Divisão da renda</Label>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {PRESETS.map(pr => (
+                        <button
+                          key={pr.label}
+                          type="button"
+                          onClick={() => applyPreset(pr)}
+                          className="text-[11px] font-medium px-2 py-1 rounded-lg border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 hover:border-blue-300 hover:text-blue-600"
+                        >
+                          {pr.label} {pr.essencial}/{pr.estilo}/{pr.futuro}
+                        </button>
+                      ))}
                     </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {PILLARS.map(p => (
+                      <div key={p.key} className="rounded-xl border border-slate-100 dark:border-white/[0.06] p-2.5">
+                        <p className="text-[11px] font-medium" style={{ color: p.color }}>{p.label}</p>
+                        <div className="flex items-center gap-1 mt-1">
+                          <Input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={pillarPct[p.key]}
+                            onChange={e => setPillar(p.key, Number(e.target.value))}
+                            className="h-8 text-sm text-right"
+                          />
+                          <span className="text-sm text-slate-400">%</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 tabular-nums">{fmt(pillarTargets[p.key])}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {pillarPct.essencial + pillarPct.estilo + pillarPct.futuro !== 100 && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                      Os três somam {pillarPct.essencial + pillarPct.estilo + pillarPct.futuro}% da renda.
+                    </p>
+                  )}
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                    O Futuro é o investimento previsto do mês. Os aportes em contas de investimento contam nele.
+                  </p>
+                </div>
 
+                <div className="border-t border-slate-100 dark:border-slate-700 pt-4">
+                  <div className="flex items-start justify-between gap-3 flex-wrap pb-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Limite por categoria <span className="font-normal text-slate-400">(opcional)</span></p>
+                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                        Detalhe dentro de cada pilar. Abra a categoria para limitar as subcategorias.
+                      </p>
+                    </div>
+                    {emptyToFill.length > 0 && average.months > 0 && (
+                      <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={fillFromAverage}>
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Preencher pela média
+                      </Button>
+                    )}
+                  </div>
+                  {activeRows.length === 0 ? (
+                    <p className="text-sm text-slate-400 dark:text-slate-500 py-6 text-center">
+                      Nenhum gasto registrado ainda. Importe um extrato para ver as categorias aqui.
+                    </p>
+                  ) : (
+                    <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                      {activeRows.map(renderRow)}
+                    </div>
+                  )}
+                  {quietRows.length > 0 && (
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowQuiet(v => !v)}
+                        className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex items-center gap-1"
+                      >
+                        {showQuiet ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                        {showQuiet ? 'Ocultar' : 'Mostrar'} {quietRows.length} categoria{quietRows.length === 1 ? '' : 's'} sem movimento
+                      </button>
+                      {showQuiet && (
+                        <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                          {quietRows.map(renderRow)}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </>
       )}
     </div>
   )
 }
+
 
 export default withPlan(
   'planning',
