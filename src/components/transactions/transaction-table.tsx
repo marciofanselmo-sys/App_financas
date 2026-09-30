@@ -394,7 +394,7 @@ export function TransactionTable({
               <DropdownMenuTrigger className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
                 <MoreHorizontal className="h-3.5 w-3.5" /> Mais ações <ChevronDown className="h-3.5 w-3.5" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
+              <DropdownMenuContent align="start" className="min-w-60 [&_[role=menuitem]]:whitespace-nowrap">
                 {onBulkTypeChange && (
                   <>
                     <DropdownMenuItem onClick={() => openMore('receita')}><TrendingUp className="h-4 w-4 mr-2" />Mudar tipo para Receita</DropdownMenuItem>
