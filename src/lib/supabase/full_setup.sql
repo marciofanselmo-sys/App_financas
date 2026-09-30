@@ -470,3 +470,14 @@ create index if not exists recurring_decisions_user_id_idx on recurring_decision
 -- ============================================================================
 -- FIM — 10 tabelas, RLS habilitado em todas, índices criados.
 -- ============================================================================
+
+-- Regra "Entre minhas contas" (migration_rules_internal.sql)
+alter table transactions
+  add column if not exists is_internal boolean not null default false;
+alter table categorization_rules
+  add column if not exists action text not null default 'categorize',
+  add column if not exists scope_board_id uuid references transaction_boards(id) on delete set null,
+  add column if not exists target_board_id uuid references transaction_boards(id) on delete set null;
+alter table categorization_rules drop constraint if exists categorization_rules_action_check;
+alter table categorization_rules
+  add constraint categorization_rules_action_check check (action in ('categorize', 'internal'));

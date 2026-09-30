@@ -4,8 +4,14 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Category, TransactionType } from '@/types'
 import { isCategoryUsableForDate } from '@/lib/special-category-filter'
+import { buildCounterpartLeg, hasExistingLeg } from '@/lib/internal-counterpart'
 
 export type MatchType = 'contains' | 'starts_with' | 'ends_with' | 'exact'
+
+// 'categorize': a regra de sempre (texto → categoria).
+// 'internal': "Entre minhas contas" — marca o lançamento para não somar em
+// gasto nem ganho (ex.: pagamento da fatura saindo da conta corrente).
+export type RuleAction = 'categorize' | 'internal'
 
 export interface CategorizationRule {
   id: string
@@ -17,7 +23,14 @@ export interface CategorizationRule {
   active: boolean
   created_at: string
   auto_created?: boolean
+  action?: RuleAction
+  // Só para 'internal': a regra vale só para lançamentos desta conta.
+  scope_board_id?: string | null
+  // Só para 'internal': conta que recebe o dinheiro — o app credita ela.
+  target_board_id?: string | null
 }
+
+export const isInternalRule = (r: Pick<CategorizationRule, 'action'>) => r.action === 'internal'
 
 function matchesRule(description: string, rule: CategorizationRule): boolean {
   const desc = description.toUpperCase()
@@ -56,6 +69,7 @@ export function applyUserRules(
   type: TransactionType
 ): { category: string | null; board_id: string | null } {
   for (const rule of rules) {
+    if (isInternalRule(rule)) continue
     if (
       rule.active &&
       matchesRule(description, rule) &&
@@ -196,6 +210,147 @@ export async function applyRuleToExisting(
   return { count: actualCount }
 }
 
+// ── Regra "Entre minhas contas" ─────────────────────────────────────────────
+
+type InternalRuleFields = Pick<CategorizationRule, 'keyword' | 'match_type' | 'scope_board_id' | 'target_board_id'> & { active?: boolean }
+
+export function matchesInternalRule(
+  tx: { description: string; board_id?: string | null },
+  rule: InternalRuleFields,
+): boolean {
+  if (rule.active === false) return false
+  if (rule.scope_board_id && tx.board_id !== rule.scope_board_id) return false
+  return matchesRule(tx.description, rule as CategorizationRule)
+}
+
+/** A primeira regra "Entre minhas contas" ativa que casa com o lançamento. */
+export function findInternalRule(
+  description: string,
+  boardId: string | null | undefined,
+  rules: CategorizationRule[],
+): CategorizationRule | null {
+  return rules.find(r => isInternalRule(r) && matchesInternalRule({ description, board_id: boardId }, r)) ?? null
+}
+
+/**
+ * Conta que o lançamento quita, pela regra: só em SAÍDAS (mesma lógica da
+ * detecção automática — a descrição de uma entrada não diz de onde veio) e
+ * nunca a própria conta de origem.
+ */
+export function internalRuleTarget(
+  rule: Pick<CategorizationRule, 'target_board_id'>,
+  tx: { type: string; board_id?: string | null },
+): string | null {
+  const target = rule.target_board_id ?? null
+  if (!target || tx.type !== 'despesa' || target === tx.board_id) return null
+  return target
+}
+
+interface TxForInternal {
+  id: string; description: string; amount: number; date: string; type: 'receita' | 'despesa'
+  category: string; board_id: string | null; is_internal: boolean | null
+  counterpart_board_id: string | null; counterpart_of_id: string | null
+}
+
+/**
+ * Aplica a regra "Entre minhas contas" no que JÁ está no banco — é isso que
+ * a detecção da importação não fazia: pagamentos importados antes dela
+ * continuavam somando como gasto. Com `dryRun`, só conta quantos casariam
+ * (para a tela mostrar "encontrei N" antes de salvar).
+ *
+ * Com conta de destino, também credita o destino (a "perna" do pagamento),
+ * pulando quando ela já existe — gerada antes ou vinda do extrato do banco.
+ */
+export async function applyInternalRule(
+  rule: InternalRuleFields,
+  opts: { dryRun?: boolean } = {},
+): Promise<{ count: number; legs: number; error?: string }> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { count: 0, legs: 0 }
+
+  const txs: TxForInternal[] = []
+  const PAGE = 1000
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('id, description, amount, date, type, category, board_id, is_internal, counterpart_board_id, counterpart_of_id')
+      .eq('user_id', user.id)
+      .range(from, from + PAGE - 1)
+    if (error) {
+      const friendly = error.code === '42703'
+        ? 'Falta atualizar o banco: rode a migração migration_rules_internal.sql no Supabase.'
+        : error.message
+      return { count: 0, legs: 0, error: friendly }
+    }
+    if (!data?.length) break
+    txs.push(...(data as TxForInternal[]))
+    if (data.length < PAGE) break
+  }
+
+  // A perna gerada pelo app nunca é alvo: ela já é a outra ponta.
+  const matches = txs.filter(t => !t.counterpart_of_id && matchesInternalRule(t, rule))
+  if (opts.dryRun || matches.length === 0) return { count: matches.length, legs: 0 }
+
+  const withTarget = matches.filter(t => internalRuleTarget(rule, t))
+  const plain = matches.filter(t => !internalRuleTarget(rule, t))
+
+  if (plain.length > 0) {
+    const { error } = await supabase.from('transactions').update({ is_internal: true }).in('id', plain.map(t => t.id))
+    if (error) return { count: 0, legs: 0, error: error.message }
+  }
+  if (withTarget.length > 0) {
+    const { error } = await supabase
+      .from('transactions')
+      .update({ is_internal: true, counterpart_board_id: rule.target_board_id })
+      .in('id', withTarget.map(t => t.id))
+    if (error) return { count: plain.length, legs: 0, error: error.message }
+  }
+
+  // Credita o destino, sem duplicar.
+  const alreadyGenerated = new Set(txs.filter(t => t.counterpart_of_id).map(t => t.counterpart_of_id))
+  const destTxs = txs.filter(t => t.board_id === rule.target_board_id)
+  const legs = withTarget
+    .filter(t => !alreadyGenerated.has(t.id))
+    .filter(t => !hasExistingLeg(destTxs, rule.target_board_id!, Number(t.amount), t.date, 'receita'))
+    .map(t => buildCounterpartLeg(
+      {
+        id: t.id, description: t.description, amount: Number(t.amount), date: t.date, type: t.type,
+        category: t.category, counterpartBoardId: rule.target_board_id!,
+      },
+      user.id,
+      crypto.randomUUID(),
+    ))
+  if (legs.length > 0) {
+    const { error } = await supabase.from('transactions').insert(legs)
+    if (error) {
+      return { count: matches.length, legs: 0, error: `Lançamentos marcados, mas não deu para creditar a conta de destino: ${error.message}` }
+    }
+  }
+  return { count: matches.length, legs: legs.length }
+}
+
+/**
+ * Marca/desmarca UM lançamento como "Entre minhas contas" (edição manual).
+ * Desmarcar também desfaz o crédito que o app tinha gerado no destino — senão
+ * o dinheiro continuaria "entrando" no cartão por um pagamento que agora é
+ * gasto comum.
+ */
+export async function setTransactionInternal(id: string, internal: boolean): Promise<{ error?: string }> {
+  const supabase = createClient()
+  if (internal) {
+    const { error } = await supabase.from('transactions').update({ is_internal: true }).eq('id', id)
+    return { error: error?.message }
+  }
+  const { error } = await supabase
+    .from('transactions')
+    .update({ is_internal: false, counterpart_board_id: null })
+    .eq('id', id)
+  if (error) return { error: error.message }
+  const { error: legError } = await supabase.from('transactions').delete().eq('counterpart_of_id', id)
+  return { error: legError?.message }
+}
+
 export function useRules() {
   const [rules, setRules] = useState<CategorizationRule[]>([])
   const [loading, setLoading] = useState(true)
@@ -224,7 +379,7 @@ export function useRules() {
   async function createRule(
     keyword: string,
     category: string,
-    extra?: Partial<Pick<CategorizationRule, 'match_type' | 'board_id'>>
+    extra?: Partial<Pick<CategorizationRule, 'match_type' | 'board_id' | 'action' | 'scope_board_id' | 'target_board_id'>>
   ) {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -238,12 +393,22 @@ export function useRules() {
       category,
       board_id: extra?.board_id ?? null,
       active: true,
+      ...(extra?.action === 'internal'
+        ? { action: 'internal', scope_board_id: extra.scope_board_id ?? null, target_board_id: extra.target_board_id ?? null }
+        : {}),
     }
     let res = await supabase
       .from('categorization_rules')
       .insert(fullRule)
       .select()
       .single()
+
+    // Regra "Entre minhas contas" sem as colunas novas não pode cair no
+    // fallback abaixo — viraria uma regra de categoria com categoria vazia.
+    if (res.error && extra?.action === 'internal') {
+      console.error('Erro ao criar regra entre contas:', res.error)
+      return
+    }
 
     // Fallback: match_type/board_id columns may not exist yet (migration_rules.sql not yet run)
     if (res.error) {
@@ -265,7 +430,7 @@ export function useRules() {
 
   async function updateRule(
     id: string,
-    data: Partial<Pick<CategorizationRule, 'keyword' | 'match_type' | 'category' | 'board_id' | 'active'>>
+    data: Partial<Pick<CategorizationRule, 'keyword' | 'match_type' | 'category' | 'board_id' | 'active' | 'scope_board_id' | 'target_board_id'>>
   ): Promise<{ ok: boolean; error?: string }> {
     const supabase = createClient()
 
@@ -336,6 +501,13 @@ export function useRules() {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { applied: 0, error: 'Não autenticado.' }
+
+    // Se já existe uma regra "Entre minhas contas" com esse mesmo texto exato,
+    // o upsert abaixo cairia nela (mesma chave única) e a transformaria numa
+    // regra de categoria. Recategorizar esse lançamento não mexe na regra.
+    if (rules.some(r => isInternalRule(r) && r.match_type === 'exact' && r.keyword.toUpperCase() === kw)) {
+      return { applied: 0 }
+    }
 
     // Upsert atômico no banco (precisa da constraint única de
     // migration_rules_unique.sql em user_id+keyword+match_type) — em vez de

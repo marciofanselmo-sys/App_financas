@@ -3,7 +3,8 @@
 import { withPlan } from '@/components/plan/with-plan'
 
 import { useState, useMemo, useEffect } from 'react'
-import { useRules, CategorizationRule, applyRuleToExisting } from '@/hooks/use-rules'
+import { useRules, CategorizationRule, applyRuleToExisting, isInternalRule } from '@/hooks/use-rules'
+import { InternalRulesSection } from '@/components/rules/internal-rules-section'
 import { useCategories } from '@/hooks/use-categories'
 import { CategoryOptions } from '@/components/categories/category-options'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
@@ -240,7 +241,11 @@ const SECTION_META: Record<SectionKey, { label: string; icon: React.ElementType;
 }
 
 function RulesPage() {
-  const { rules, loading, createRule, updateRule, deleteRule } = useRules()
+  const { rules: allRules, loading, createRule, updateRule, deleteRule } = useRules()
+  // Regras "Entre minhas contas" têm seção própria — não têm categoria, então
+  // não entram no agrupamento por categoria abaixo.
+  const rules = useMemo(() => allRules.filter(r => !isInternalRule(r)), [allRules])
+  const internalRules = useMemo(() => allRules.filter(isInternalRule), [allRules])
   const { categories } = useCategories()
   const { boards } = useTransactionBoards()
 
@@ -487,6 +492,14 @@ function RulesPage() {
           <button onClick={() => setRetroResult(null)} className={`transition-colors ${retroResult.schemaWarning ? 'text-amber-400 hover:text-amber-600' : 'text-emerald-400 hover:text-emerald-600'}`}><X className="h-4 w-4" /></button>
         </div>
       )}
+
+      <InternalRulesSection
+        rules={internalRules}
+        boards={boards}
+        createRule={createRule}
+        updateRule={updateRule}
+        deleteRule={deleteRule}
+      />
 
       {/* Search */}
       {rules.length > 0 && (

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { isInternalMovement } from '@/lib/internal-movement'
 import { createClient } from '@/lib/supabase/client'
 import { addMonths } from '@/utils/add-months'
 import { logSafeError } from '@/lib/supabase-error'
@@ -91,7 +92,9 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
         return
       }
       if (!data?.length) break
-      txs.push(...(data as Transaction[]))
+      // Movimentação entre as contas do próprio usuário (pagamento de fatura)
+      // se repete todo mês, mas não é gasto: não pode virar "gasto fixo".
+      txs.push(...(data as Transaction[]).filter(t => !isInternalMovement(t)))
       if (data.length < PAGE) break
     }
     if (!txs.length) { setLoading(false); return }

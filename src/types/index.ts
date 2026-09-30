@@ -86,6 +86,9 @@ export interface Transaction {
   // Só na perna GERADA pelo app: aponta para o pagamento que a originou.
   // Impede a reimportação do mesmo extrato de creditar o destino duas vezes.
   counterpart_of_id?: string | null
+  // Marcado por uma regra "Entre minhas contas" ou à mão: fica na conta e no
+  // saldo, mas não soma em gasto nem ganho (mesmo efeito das duas acima).
+  is_internal?: boolean | null
   category: string
   board_id?: string | null
   tags?: string[]

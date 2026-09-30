@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { MoreVertical, Pencil, Trash2, ArrowRightLeft, RefreshCw, Tag, Sparkles, X as XIcon } from 'lucide-react'
+import { MoreVertical, Pencil, Trash2, ArrowRightLeft, ArrowLeftRight, RefreshCw, Tag, Sparkles, X as XIcon, CircleSlash, CircleCheck } from 'lucide-react'
 import { Transaction, TransactionBoard, Category } from '@/types'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
@@ -16,6 +16,7 @@ import { categoriesForTransactions } from '@/lib/special-category-filter'
 import { categoryOptions } from '@/lib/category-tree'
 import { useEvents } from '@/hooks/use-events'
 import { installmentLabel } from '@/utils/format-installment'
+import { isInternalMovement } from '@/lib/internal-movement'
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
@@ -54,6 +55,8 @@ interface TransactionTableProps {
   onDelete: (id: string) => Promise<{ error: unknown }>
   onMove?: (txId: string, boardId: string) => Promise<{ error: unknown }>
   onToggleRecurring?: (tx: Transaction) => Promise<void>
+  /** Marca/desmarca o lançamento como "Entre minhas contas" (não soma). */
+  onToggleInternal?: (tx: Transaction) => Promise<void>
   boards?: TransactionBoard[]
   currentBoardId?: string
   categories?: Category[]
@@ -71,7 +74,7 @@ interface TransactionTableProps {
 }
 
 export function TransactionTable({
-  transactions, onEdit, onDelete, onMove, onToggleRecurring, boards, currentBoardId,
+  transactions, onEdit, onDelete, onMove, onToggleRecurring, onToggleInternal, boards, currentBoardId,
   categories, onBulkCategoryChange, onBulkEventChange, onBulkMove, onBulkDelete, balanceImpactOf,
 }: TransactionTableProps) {
   const { events } = useEvents()
@@ -337,6 +340,22 @@ export function TransactionTable({
                 )}
                 <TableCell className="overflow-hidden">
                   <p className="font-medium text-slate-700 dark:text-slate-200 text-sm truncate">{tx.description}</p>
+                  {/* Tarja de "não soma": fica na conta e no saldo, mas fora de
+                      gastos e entradas. Aparece em qualquer tamanho de tela. */}
+                  {isInternalMovement(tx) && (
+                    <span
+                      title="Movimentação entre suas contas: conta no saldo, mas não soma em gastos, entradas, relatórios nem planejamento."
+                      className="mt-1 inline-flex max-w-full items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300"
+                    >
+                      <ArrowLeftRight className="h-2.5 w-2.5 shrink-0" />
+                      <span className="truncate">
+                        Entre contas
+                        {tx.counterpart_board_id && boards?.find(b => b.id === tx.counterpart_board_id)
+                          ? ` → ${boards.find(b => b.id === tx.counterpart_board_id)!.name}`
+                          : tx.counterpart_of_id ? ' · pagamento recebido' : ' · não soma'}
+                      </span>
+                    </span>
+                  )}
                   {/* No celular as colunas de data e categoria somem — a
                       informação desce para baixo da descrição. */}
                   <p className="sm:hidden text-[11px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
@@ -400,7 +419,7 @@ export function TransactionTable({
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right font-semibold text-sm whitespace-nowrap">
-                  <span className={tx.type === 'receita' ? 'text-green-600' : 'text-red-500'}>
+                  <span className={isInternalMovement(tx) ? 'text-slate-500 dark:text-slate-400' : tx.type === 'receita' ? 'text-green-600' : 'text-red-500'}>
                     {tx.type === 'despesa' ? '- ' : '+ '}
                     {formatCurrency(Number(tx.amount))}
                   </span>
@@ -415,6 +434,15 @@ export function TransactionTable({
                         <Pencil className="h-4 w-4 mr-2" />
                         Editar
                       </DropdownMenuItem>
+                      {/* A perna gerada pelo app é a outra ponta de um pagamento:
+                          quem decide é o lançamento original, não ela. */}
+                      {onToggleInternal && !tx.counterpart_of_id && (
+                        <DropdownMenuItem onClick={() => onToggleInternal(tx)}>
+                          {isInternalMovement(tx)
+                            ? <><CircleCheck className="h-4 w-4 mr-2" />Voltar a somar nos gastos</>
+                            : <><CircleSlash className="h-4 w-4 mr-2" />Não somar (entre minhas contas)</>}
+                        </DropdownMenuItem>
+                      )}
                       {onMove && otherBoards.length > 0 && (
                         <DropdownMenuItem onClick={() => { setMoveTx(tx); setSelectedBoardId('') }}>
                           <ArrowRightLeft className="h-4 w-4 mr-2" />

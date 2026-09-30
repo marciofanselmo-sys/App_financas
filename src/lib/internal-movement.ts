@@ -5,9 +5,10 @@ import { Transaction } from '@/types'
  * PIX de uma conta dele para outra. O dinheiro muda de lugar, mas não é
  * gasto nem ganho: contar isso como despesa/receita infla os dois lados.
  *
- * Duas marcas identificam essas linhas, as duas já existentes no banco:
+ * Três marcas identificam essas linhas:
  *   counterpart_board_id → a conta que este lançamento quitou/abasteceu
  *   counterpart_of_id    → a perna que o app gerou do outro lado
+ *   is_internal          → regra "Entre minhas contas" ou marcação manual
  *
  * O saldo da conta e o patrimônio CONTINUAM contando: o dinheiro saiu da
  * conta corrente e abateu a fatura de verdade. Quem não conta é o total de
@@ -18,12 +19,14 @@ import { Transaction } from '@/types'
  * receita — é o caso do PIX da conta PJ para a conta pessoal, que é despesa
  * nenhuma para ele, mas é renda de verdade quando chega.
  */
-export function isInternalMovement(t: Pick<Transaction, 'counterpart_board_id' | 'counterpart_of_id'>): boolean {
-  return !!t.counterpart_board_id || !!t.counterpart_of_id
+type InternalMarks = Pick<Transaction, 'counterpart_board_id' | 'counterpart_of_id' | 'is_internal'>
+
+export function isInternalMovement(t: InternalMarks): boolean {
+  return !!t.is_internal || !!t.counterpart_board_id || !!t.counterpart_of_id
 }
 
 /** Só o que é gasto/ganho de verdade. */
-export function realMovements<T extends Pick<Transaction, 'counterpart_board_id' | 'counterpart_of_id'>>(list: T[]): T[] {
+export function realMovements<T extends InternalMarks>(list: T[]): T[] {
   return list.filter(t => !isInternalMovement(t))
 }
 

@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { TransactionType} from '@/types'
 import { useCategories } from '@/hooks/use-categories'
-import { useRules, applyUserRules } from '@/hooks/use-rules'
+import { useRules, applyUserRules, findInternalRule, internalRuleTarget } from '@/hooks/use-rules'
 import { useHistoryWindow } from '@/hooks/use-history-window'
 import { textoJanela } from '@/lib/plans'
 import { Upload, Download, CheckCircle, AlertCircle, FileText, Zap, Tag, TrendingUp, History } from 'lucide-react'
@@ -1012,14 +1012,24 @@ function shiftDays(date: string, days: number): string {
       if (!toInsert.length) continue
 
       // Build insert payload — track IDs separately so we only add to review AFTER confirmed insert
-      const tracking = toInsert.map(r => ({
-        id: uid(),
-        row: r,
+      const tracking = toInsert.map(r => {
         // A origem é a conta FINAL da linha: se uma regra mandou a transação
         // para outra conta, é essa que não pode ser o destino dela mesma.
-        counterpart: findCounterpartBoard(r.description, boards, r.board_id ?? boardId ?? null, r.type),
-      }))
-      const payload = tracking.map(({ id, row, counterpart }) => ({
+        const origin = r.board_id ?? boardId ?? null
+        // Regra "Entre minhas contas" ganha da detecção automática: o usuário
+        // disse explicitamente para onde vai (ou que só não deve somar).
+        const internalRule = findInternalRule(r.description, origin, rules)
+        const ruleTarget = internalRule ? internalRuleTarget(internalRule, { type: r.type, board_id: origin }) : null
+        return {
+          id: uid(),
+          row: r,
+          internal: !!internalRule,
+          counterpart: ruleTarget
+            ? boards.find(b => b.id === ruleTarget) ?? null
+            : findCounterpartBoard(r.description, boards, origin, r.type),
+        }
+      })
+      const payload = tracking.map(({ id, row, counterpart, internal }) => ({
         id,
         user_id: user.id,
         description: row.description,
@@ -1027,6 +1037,9 @@ function shiftDays(date: string, days: number): string {
         date: row.date,
         type: row.type,
         counterpart_board_id: counterpart?.id ?? null,
+        // Só manda a coluna quando precisa: banco sem migration_rules_internal.sql
+        // continua importando normalmente enquanto ninguém criou regra nova.
+        ...(internal ? { is_internal: true } : {}),
         category: row.category,
         board_id: row.board_id ?? boardId ?? null,
         tags: [],

@@ -8,7 +8,8 @@ import { useParams, useRouter } from 'next/navigation'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useCategories } from '@/hooks/use-categories'
-import { useRules, applyTypeToExisting } from '@/hooks/use-rules'
+import { useRules, applyTypeToExisting, setTransactionInternal } from '@/hooks/use-rules'
+import { isInternalMovement } from '@/lib/internal-movement'
 import { usePositionImport } from '@/hooks/use-position-import'
 import { TransactionTable } from '@/components/transactions/transaction-table'
 import { HistoryWindowNote } from '@/components/plan/history-window-note'
@@ -232,6 +233,18 @@ export default function BoardDetailPage() {
         .eq('description_key', decisionKey(tx.type, tx.description.toLowerCase().trim()))
       if (decisionError) logSafeError('handleToggleRecurring.clearDecision', decisionError)
     }
+  }
+
+  // "Não somar (entre minhas contas)" à mão, para o caso isolado que nenhuma
+  // regra cobre. Desmarcar também desfaz o crédito gerado no destino.
+  async function handleToggleInternal(tx: Transaction) {
+    const { error } = await setTransactionInternal(tx.id, !isInternalMovement(tx))
+    if (error) {
+      setRuleSyncError(error.includes('is_internal')
+        ? 'Falta atualizar o banco: rode a migração migration_rules_internal.sql no Supabase.'
+        : error)
+    }
+    refetch()
   }
 
   async function handleBulkCategoryChange(ids: string[], category: string) {
@@ -551,6 +564,7 @@ export default function BoardDetailPage() {
           onDelete={deleteTransaction}
           onMove={async (txId, newBoardId) => updateTransaction(txId, { board_id: newBoardId })}
           onToggleRecurring={handleToggleRecurring}
+          onToggleInternal={handleToggleInternal}
           boards={boards}
           currentBoardId={boardId}
           categories={categories}
