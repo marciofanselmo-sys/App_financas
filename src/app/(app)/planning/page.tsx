@@ -646,17 +646,28 @@ function PlanningPage() {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const clampDay = (y: number, m: number, d: number) => new Date(y, m, Math.min(d, new Date(y, m + 1, 0).getDate()))
-    const list: { key: string; name: string; amount: number; date: Date; days: number }[] = []
+    type Upcoming = { key: string; name: string; amount: number; date: Date; days: number }
+    const groups = new Map<string, { category: string; total: number; days: number; items: Upcoming[] }>()
     for (const item of buildDisplayItems(recurring, new Map(), subcategoryNames)) {
       if (item.type !== 'despesa' || decisions.get(item.key) !== 'confirmed' || !item.lastDate) continue
       const day = Number(item.lastDate.slice(8, 10))
       let date = clampDay(today.getFullYear(), today.getMonth(), day)
       if (date < today) date = clampDay(today.getFullYear(), today.getMonth() + 1, day)
       const days = Math.round((date.getTime() - today.getTime()) / 86400000)
-      if (days <= 30) list.push({ key: item.key, name: item.name, amount: item.avgAmount, date, days })
+      if (days > 30) continue
+      const category = motherOf(item.category, motherNames, 'despesa')
+      const g = groups.get(category) ?? { category, total: 0, days, items: [] }
+      g.total += item.avgAmount
+      g.days = Math.min(g.days, days)
+      g.items.push({ key: item.key, name: item.name, amount: item.avgAmount, date, days })
+      groups.set(category, g)
     }
-    return list.sort((a, b) => a.days - b.days).slice(0, 5)
-  }, [recurring, decisions, subcategoryNames])
+    return [...groups.values()]
+      .map(g => ({ ...g, items: g.items.sort((a, b) => a.days - b.days) }))
+      .sort((a, b) => a.days - b.days)
+      .slice(0, 5)
+  }, [recurring, decisions, subcategoryNames, motherNames])
+  const [openUpcoming, setOpenUpcoming] = useState<string | null>(null)
 
   // Gasto médio mensal, para "a reserva cobre N meses de despesas".
   const averageTotal = useMemo(() => {
@@ -984,28 +995,52 @@ function PlanningPage() {
                 </p>
               ) : (
                 <div className="divide-y divide-slate-100 dark:divide-white/[0.06] mt-2">
-                  {upcoming.map(u => (
-                    <div key={u.key} className="flex items-center gap-3 py-2.5">
-                      <div className="h-8 w-8 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
-                        <RefreshCw className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                  {upcoming.map(g => {
+                    const open = openUpcoming === g.category
+                    return (
+                      <div key={g.category}>
+                        <button
+                          type="button"
+                          onClick={() => setOpenUpcoming(open ? null : g.category)}
+                          className="w-full flex items-center gap-3 py-2.5 text-left"
+                        >
+                          <div className="h-8 w-8 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+                            <RefreshCw className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-slate-700 dark:text-slate-200 truncate flex items-center gap-1">
+                              <span className="truncate">{g.category}</span>
+                              <ChevronDown className={cn('h-3.5 w-3.5 text-slate-400 shrink-0 transition-transform', open && 'rotate-180')} />
+                            </p>
+                            <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                              {g.items.length} {g.items.length === 1 ? 'fixo' : 'fixos'}
+                            </p>
+                          </div>
+                          <span className="text-sm tabular-nums text-slate-700 dark:text-slate-200 shrink-0">{fmt(g.total)}</span>
+                          <span className={cn(
+                            'text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 w-[68px] text-center',
+                            g.days === 0
+                              ? 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+                              : 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+                          )}>
+                            {g.days === 0 ? 'Hoje' : g.days === 1 ? 'Amanhã' : `Em ${g.days} dias`}
+                          </span>
+                        </button>
+                        {open && (
+                          <div className="pl-11 pb-2 space-y-1.5">
+                            {g.items.map(u => (
+                              <div key={u.key} className="flex items-center gap-3 text-xs">
+                                <span className="flex-1 min-w-0 truncate text-slate-600 dark:text-slate-300">
+                                  {u.name} <span className="text-slate-400 dark:text-slate-500">· {u.date.getDate()} de {MONTH_NAMES[u.date.getMonth()].toLowerCase()}</span>
+                                </span>
+                                <span className="tabular-nums text-slate-600 dark:text-slate-300 shrink-0">{fmt(u.amount)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-slate-700 dark:text-slate-200 truncate">{u.name}</p>
-                        <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                          {u.date.getDate()} de {MONTH_NAMES[u.date.getMonth()].toLowerCase()}
-                        </p>
-                      </div>
-                      <span className="text-sm tabular-nums text-slate-700 dark:text-slate-200 shrink-0">{fmt(u.amount)}</span>
-                      <span className={cn(
-                        'text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 w-[68px] text-center',
-                        u.days === 0
-                          ? 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400'
-                          : 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-                      )}>
-                        {u.days === 0 ? 'Hoje' : u.days === 1 ? 'Amanhã' : `Em ${u.days} dias`}
-                      </span>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
