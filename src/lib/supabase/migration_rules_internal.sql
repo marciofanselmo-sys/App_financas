@@ -22,10 +22,13 @@ alter table transactions
 -- action: 'categorize' (regra de sempre) ou 'internal' (não somar).
 -- scope_board_id: a regra só vale para lançamentos DESTA conta (opcional).
 -- target_board_id: conta que recebe o dinheiro — o app credita ela (opcional).
-alter table categorization_rules
-  add column if not exists action text not null default 'categorize',
-  add column if not exists scope_board_id uuid references transaction_boards(id) on delete set null,
-  add column if not exists target_board_id uuid references transaction_boards(id) on delete set null;
+-- Sem chave estrangeira de propósito: em produção os ids têm tipo diferente do
+-- que o setup descreve (categories.id é text), e uma referência de tipo
+-- diferente faria a migração falhar. O app valida a conta; conta excluída só vira "conta
+-- excluída" na tela.
+alter table categorization_rules add column if not exists action text not null default 'categorize';
+alter table categorization_rules add column if not exists scope_board_id text;
+alter table categorization_rules add column if not exists target_board_id text;
 
 alter table categorization_rules drop constraint if exists categorization_rules_action_check;
 alter table categorization_rules

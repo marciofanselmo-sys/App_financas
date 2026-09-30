@@ -96,10 +96,16 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
         return
       }
     } else {
-      const saved = await createRule(fields.keyword, '', { ...fields, action: 'internal' })
+      let saved: CategorizationRule | undefined
+      let failure = 'Não foi possível criar a regra.'
+      try {
+        saved = await createRule(fields.keyword, '', { ...fields, action: 'internal' })
+      } catch (err) {
+        failure = err instanceof Error ? err.message : failure
+      }
       if (!saved) {
         setSaving(false); setFormOpen(false)
-        setResult({ count: 0, legs: 0, error: 'Não foi possível criar a regra. Rode a migração migration_rules_internal.sql no Supabase e tente de novo.' })
+        setResult({ count: 0, legs: 0, error: failure })
         return
       }
     }

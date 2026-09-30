@@ -407,7 +407,13 @@ export function useRules() {
     // fallback abaixo — viraria uma regra de categoria com categoria vazia.
     if (res.error && extra?.action === 'internal') {
       console.error('Erro ao criar regra entre contas:', res.error)
-      return
+      // Sobe o erro real para a tela — "rode a migração" genérico escondia
+      // qual passo do banco faltava.
+      throw new Error(res.error.code === '42703'
+        ? 'Falta atualizar o banco: rode a migração migration_rules_internal.sql no Supabase.'
+        : res.error.code === '23505'
+          ? 'Já existe uma regra com esse mesmo texto e tipo de correspondência. Edite a existente ou mude o texto.'
+          : res.error.message)
     }
 
     // Fallback: match_type/board_id columns may not exist yet (migration_rules.sql not yet run)
