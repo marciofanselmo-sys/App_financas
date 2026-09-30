@@ -67,6 +67,19 @@ const norm = (s: string) => s.trim().toUpperCase()
 const MIN_REPEATS = 2
 
 /**
+ * Parte mínima das saídas com aquele texto que precisa ter o par. Transferência
+ * para a própria conta tem par quase sempre ("PIX TRANSF MARCIO": 19 de 19);
+ * compra que coincide de valor com um PIX recebido, quase nunca ("MP
+ * *ALIEXPRESS": 2 de 10 com 5 dias de tolerância).
+ */
+const MIN_PAIRED_SHARE = 0.5
+
+/** Conta que é cartão de crédito — compra nele nunca é dinheiro indo para outra conta sua. */
+export function isCreditCardBoard(b: { type?: string; icon?: string; name: string }): boolean {
+  return b.type === 'saida' || b.icon === 'credit-card' || /cart[aã]o|cr[eé]dito/i.test(b.name)
+}
+
+/**
  * Dinheiro que só mudou de lugar entre duas contas do usuário e ainda soma:
  * uma saída numa conta e, em até 5 dias, uma entrada do MESMO valor noutra.
  *
@@ -79,12 +92,17 @@ export function findPairSuggestions(
   txs: SuggestionTx[],
   rules: SuggestionRule[],
   now = new Date(),
+  /** Contas que são cartão de crédito (ver isCreditCardBoard): nunca são origem. */
+  cardBoardIds: Set<string> = new Set(),
 ): PairSuggestion[] {
   const year = now.getFullYear()
   const candidates = txs.filter(t => !t.counterpart_of_id && t.board_id)
   const entries = candidates.filter(t => t.type === 'receita')
-  const outflows = candidates
-    .filter(t => t.type === 'despesa')
+  const allOutflows = candidates.filter(t => t.type === 'despesa')
+  // Compra no cartão pode coincidir em valor com um PIX recebido, mas nunca é
+  // dinheiro indo para outra conta sua.
+  const outflows = allOutflows
+    .filter(t => !cardBoardIds.has(t.board_id!))
     .sort((a, b) => a.date.localeCompare(b.date))
 
   // Um pareamento por entrada: a mesma linha nunca serve para duas saídas.
@@ -111,6 +129,9 @@ export function findPairSuggestions(
   const result: PairSuggestion[] = []
   for (const [key, g] of groups) {
     if (g.pairs.length < MIN_REPEATS) continue
+    // O par tem que ser o padrão daquele texto, não a exceção.
+    const withText = outflows.filter(t => t.board_id === g.origin && norm(t.description).includes(g.keyword))
+    if (g.pairs.length / withText.length < MIN_PAIRED_SHARE) continue
     const pendingPairs = g.pairs.filter(p => !isInternal(p.out) || !isInternal(p.entry))
     if (pendingPairs.length === 0) continue
 

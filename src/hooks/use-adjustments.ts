@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { logSafeError } from '@/lib/supabase-error'
 import { todayISO } from '@/utils/local-date'
-import { findPairSuggestions, PairSuggestion, SuggestionRule, SuggestionTx } from '@/lib/data-suggestions'
+import { findPairSuggestions, isCreditCardBoard, PairSuggestion, SuggestionRule, SuggestionTx } from '@/lib/data-suggestions'
+import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { applyInternalRule, undoInternalChanges, InternalUndo, useRules } from '@/hooks/use-rules'
 
 /** O que foi aplicado, com o necessário para desfazer. */
@@ -104,9 +105,11 @@ export function useAdjustments() {
 
   useEffect(() => { load() }, [load])
 
+  const { boards } = useTransactionBoards()
+  const cardBoardIds = useMemo(() => new Set(boards.filter(isCreditCardBoard).map(b => b.id)), [boards])
   const allSuggestions = useMemo(
-    () => findPairSuggestions(txs, rules as SuggestionRule[]),
-    [txs, rules],
+    () => findPairSuggestions(txs, rules as SuggestionRule[], new Date(), cardBoardIds),
+    [txs, rules, cardBoardIds],
   )
 
   const today = todayISO()
