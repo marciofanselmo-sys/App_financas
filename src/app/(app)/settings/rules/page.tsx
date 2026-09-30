@@ -644,7 +644,7 @@ function RulesPage() {
               {boards.length > 0 && (
                 <div className="space-y-1.5">
                   <Label htmlFor="rule-board" className="text-xs">Mover para conta (opcional)</Label>
-                  <Select value={form.board_id} onValueChange={v => setForm(f => ({ ...f, board_id: v ?? '' }))}>
+                  <Select value={form.board_id} onValueChange={v => setForm(f => ({ ...f, board_id: v ?? '' }))} items={{ '': 'Nenhuma conta específica', ...boardMap }}>
                     <SelectTrigger id="rule-board" className="w-full">
                       <SelectValue placeholder="Nenhuma conta específica" />
                     </SelectTrigger>

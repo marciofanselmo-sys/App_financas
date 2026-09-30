@@ -53,6 +53,9 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
   const [deleteTarget, setDeleteTarget] = useState<CategorizationRule | null>(null)
 
   const boardName = (id?: string | null) => (id ? boards.find(b => b.id === id)?.name ?? 'conta excluída' : null)
+  // O seletor mostra o texto destes mapas; sem eles, aparecia o id da conta.
+  const scopeItems: Record<string, string> = { '': 'Qualquer conta', ...Object.fromEntries(boards.map(b => [b.id, b.name.trim()])) }
+  const targetItems: Record<string, string> = { '': 'Nenhuma — só não somar', ...Object.fromEntries(boards.map(b => [b.id, b.name.trim()])) }
 
   // "Encontrei N lançamentos" enquanto o usuário digita — só conta, não grava.
   useEffect(() => {
@@ -242,7 +245,7 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
 
             <div className="space-y-1.5">
               <Label className="text-xs">Em qual conta acontece</Label>
-              <Select value={form.scope} onValueChange={v => setForm(f => ({ ...f, scope: v ?? '' }))}>
+              <Select value={form.scope} onValueChange={v => setForm(f => ({ ...f, scope: v ?? '' }))} items={scopeItems}>
                 <SelectTrigger className="w-full"><SelectValue placeholder="Qualquer conta" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Qualquer conta</SelectItem>
@@ -253,7 +256,7 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
 
             <div className="space-y-1.5">
               <Label className="text-xs">Para qual conta vai o dinheiro</Label>
-              <Select value={form.target} onValueChange={v => setForm(f => ({ ...f, target: v ?? '' }))}>
+              <Select value={form.target} onValueChange={v => setForm(f => ({ ...f, target: v ?? '' }))} items={targetItems}>
                 <SelectTrigger className="w-full"><SelectValue placeholder="Nenhuma — só não somar" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Nenhuma — só não somar</SelectItem>
