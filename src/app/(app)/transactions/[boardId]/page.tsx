@@ -477,10 +477,14 @@ export default function BoardDetailPage() {
             <Download className="h-4 w-4" />
             <span className="hidden sm:inline">Exportar CSV</span>
           </Button>
-          <Button size="sm" onClick={() => setFormOpen(true)} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Nova transação
-          </Button>
+          {/* Regra: lançamento não nasce numa conta de investimento — vem de
+              uma conta (C6, Itaú…) marcada como aporte. */}
+          {!isInvestmentBoard && (
+            <Button size="sm" onClick={() => setFormOpen(true)} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Nova transação
+            </Button>
+          )}
         </div>
       </div>
 
