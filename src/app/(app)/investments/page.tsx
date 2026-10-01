@@ -14,9 +14,13 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   Plus, Pencil, Trash2, PiggyBank, ChevronRight, AlertTriangle,
-  ChevronDown, Upload, RefreshCw, AlertCircle, Pin, PinOff, CircleDollarSign,
+  ChevronDown, Upload, RefreshCw, AlertCircle, Pin, PinOff, CircleDollarSign, HandCoins, CheckCircle2, X,
 } from 'lucide-react'
 import { todayISO } from '@/utils/local-date'
+import { useRules } from '@/hooks/use-rules'
+import { useInvestmentContributions } from '@/hooks/use-investment-contributions'
+import { contributionsForBoard } from '@/lib/investment-contributions'
+import { ContributionsSetup } from '@/components/investments/contributions-setup'
 import { EmptyState } from '@/components/ui/empty-state'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { createClient } from '@/lib/supabase/client'
@@ -89,6 +93,21 @@ function InvestmentsPage() {
     open: openPositionImport, handleFile: handlePositionFile, confirm: confirmPositionImport,
     cancel: cancelPositionImport, dismissError: dismissPositionError, saveManual,
   } = usePositionImport(updateBoard)
+
+  // Aportes: o que saiu das suas contas para cada conta de investimento.
+  const { rules, createRule, updateRule } = useRules()
+  const { linked, reload: reloadLinked } = useInvestmentContributions(boards.map(b => b.id))
+  const [setupFor, setSetupFor] = useState<TransactionBoard | null>(null)
+  const [notice, setNotice] = useState('')
+  const contributions = useMemo(
+    () => new Map(boards.map(b => [b.id, contributionsForBoard(b, linked)])),
+    [boards, linked],
+  )
+  // Rendimento só das contas com valor E aportes — misturar contas sem
+  // aporte configurado daria um "rendimento" igual ao valor inteiro delas.
+  const gainBoards = boards.filter(b => b.last_position_import && contributions.get(b.id)?.configured)
+  const totalInvested = gainBoards.reduce((s, b) => s + (contributions.get(b.id)?.aportado ?? 0), 0)
+  const totalValue = gainBoards.reduce((s, b) => s + (b.last_position_import?.patrimonio ?? 0), 0)
 
   // "Atualizar valor": para contas sem planilha (cripto, previdência, Tesouro,
   // outra corretora) — o valor informado vira a posição atual da conta.
@@ -275,6 +294,35 @@ function InvestmentsPage() {
             goal={linkedGoal}
           />
 
+          {notice && (
+            <div className="flex items-center gap-2 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-2.5 text-sm text-emerald-800 dark:text-emerald-300">
+              <CheckCircle2 className="h-4 w-4 shrink-0" /> <span className="flex-1">{notice}</span>
+              <button onClick={() => setNotice('')} className="text-emerald-500 hover:text-emerald-700"><X className="h-4 w-4" /></button>
+            </div>
+          )}
+
+          {gainBoards.length > 0 && totalInvested > 0 && (
+            <div className="rounded-2xl border border-slate-100 dark:border-white/[0.06] bg-white dark:bg-[#111c2d] shadow-sm p-4 grid gap-3 sm:grid-cols-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-slate-400">Total aportado</p>
+                <p className="text-xl font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(totalInvested)}</p>
+                <p className="text-[11px] text-slate-400">{gainBoards.map(b => b.name.trim()).join(', ')}</p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-slate-400">Valor atual</p>
+                <p className="text-xl font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(totalValue)}</p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-slate-400">Rendimento</p>
+                <p className={`text-xl font-bold tabular-nums ${totalValue - totalInvested >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                  {totalValue - totalInvested >= 0 ? '+' : '−'}{formatCurrency(Math.abs(totalValue - totalInvested))}
+                  <span className="text-sm font-semibold"> ({totalValue - totalInvested >= 0 ? '+' : ''}{(((totalValue - totalInvested) / totalInvested) * 100).toFixed(1).replace('.', ',')}%)</span>
+                </p>
+                <p className="text-[11px] text-slate-400">valor atual − total aportado</p>
+              </div>
+            </div>
+          )}
+
           {hasPositions && (
             <div className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)] items-start">
               <AllocationCard boards={boards} />
@@ -330,6 +378,13 @@ function InvestmentsPage() {
                             {board.show_on_dashboard ? <Pin className="h-3.5 w-3.5 text-blue-500" /> : <PinOff className="h-3.5 w-3.5 text-slate-400" />}
                           </button>
                           <button
+                            title="Aportes: de onde sai o dinheiro desta conta"
+                            onClick={() => setSetupFor(board)}
+                            className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                          >
+                            <HandCoins className="h-3.5 w-3.5 text-slate-400" />
+                          </button>
+                          <button
                             title="Atualizar valor (informar à mão)"
                             disabled={positionLoading}
                             onClick={() => openManual(board)}
@@ -367,6 +422,36 @@ function InvestmentsPage() {
                             {imp.source === 'manual' ? 'valor informado' : `${imp.positions.length} ativo${imp.positions.length === 1 ? '' : 's'}`} · atualizado em{' '}
                             {new Date(imp.importedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')}
                           </p>
+                          {(() => {
+                            const c = contributions.get(board.id)
+                            if (!c?.configured) {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={e => { e.stopPropagation(); setSetupFor(board) }}
+                                  className="mt-2 text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                                >
+                                  Configurar aportes para ver o rendimento →
+                                </button>
+                              )
+                            }
+                            const gain = imp.patrimonio - c.aportado
+                            return (
+                              <div className="mt-2 pt-2 border-t border-slate-100 dark:border-white/[0.06] grid grid-cols-2 gap-2 text-[11px]">
+                                <div>
+                                  <p className="text-slate-400">Aportado</p>
+                                  <p className="font-semibold tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(c.aportado)}</p>
+                                </div>
+                                <div>
+                                  <p className="text-slate-400">Rendimento</p>
+                                  <p className={`font-semibold tabular-nums ${gain >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                    {gain >= 0 ? '+' : '−'}{formatCurrency(Math.abs(gain))}
+                                    {c.aportado > 0 && <> ({gain >= 0 ? '+' : ''}{((gain / c.aportado) * 100).toFixed(1).replace('.', ',')}%)</>}
+                                  </p>
+                                </div>
+                              </div>
+                            )
+                          })()}
                         </>
                       ) : (
                         <div className="mt-3 rounded-lg border border-dashed border-slate-200 dark:border-white/[0.1] p-3 text-center" onClick={e => e.stopPropagation()}>
@@ -571,6 +656,19 @@ function InvestmentsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {setupFor && (
+        <ContributionsSetup
+          board={setupFor}
+          boards={allBoards}
+          rules={rules}
+          createRule={createRule}
+          updateRule={updateRule}
+          updateBoard={updateBoard}
+          onClose={() => setSetupFor(null)}
+          onSaved={msg => { setSetupFor(null); setNotice(msg); reloadLinked() }}
+        />
+      )}
 
       {/* Atualizar valor à mão */}
       <Dialog open={!!manualFor} onOpenChange={v => { if (!v) setManualFor(null) }}>

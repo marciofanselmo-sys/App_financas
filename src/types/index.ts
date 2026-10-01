@@ -73,6 +73,10 @@ export interface TransactionBoard {
   // app no dia em que abriu a conta: o cartão já tem fatura, a conta já tem
   // saldo. Negativo em cartão (fatura em aberto), positivo em conta.
   opening_balance: number
+  // Só em conta de investimento: quanto já estava aplicado até
+  // invested_base_date — o ponto de partida do "total aportado".
+  invested_base?: number | null
+  invested_base_date?: string | null
   // Tipo da conta (Conta corrente, Cartão de crédito…), usado para agrupar a
   // tela Contas e Cartões. Vazio nas contas antigas: o app deduz pelo ícone e
   // pelo nome (board-kind.ts). Migração migration_board_kind.sql.

@@ -505,3 +505,7 @@ create policy "users manage own adjustment decisions"
   on adjustment_decisions for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- Ponto de partida dos aportes (migration_investment_base.sql)
+alter table transaction_boards add column if not exists invested_base numeric not null default 0;
+alter table transaction_boards add column if not exists invested_base_date date;
