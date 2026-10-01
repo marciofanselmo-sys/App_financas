@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Transaction, TransactionType} from '@/types'
 import { useCategories } from '@/hooks/use-categories'
 import { categoriesForDate, isCategoryUsableForDate } from '@/lib/special-category-filter'
-import { categoryOptions } from '@/lib/category-tree'
+import { CategoryOptions } from '@/components/categories/category-options'
 import { useEvents } from '@/hooks/use-events'
 import { addMonths } from '@/utils/add-months'
 import { X } from 'lucide-react'
@@ -67,7 +67,6 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
     : usableCategoriesBase
   // Mãe seguida das subcategorias, num seletor só (antes eram dois: normais e
   // isoladas — as isoladas viraram eventos, que agora têm campo próprio).
-  const categoryChoices = categoryOptions(usableCategories, categories)
   // Evento encerrado some da lista, mas continua aparecendo se for o que já
   // está salvo nesta transação — senão editar limparia a marcação sem querer.
   const eventChoices = events.filter(e => !e.closed || e.id === eventId)
@@ -317,22 +316,7 @@ export function TransactionForm({ open, onClose, onSubmit, onSubmitBatch, initia
                 <SelectValue placeholder="Selecione uma categoria..." />
               </SelectTrigger>
               <SelectContent>
-                {categoryChoices.length === 0 ? (
-                  <SelectItem value="__empty__" disabled>Nenhuma categoria disponível</SelectItem>
-                ) : (
-                  categoryChoices.map(({ cat, parentName }) => (
-                    <SelectItem key={cat.id} value={cat.name}>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={parentName ? 'h-2 w-2 rounded-full shrink-0 ml-3' : 'h-2.5 w-2.5 rounded-full shrink-0'}
-                          style={{ backgroundColor: cat.color }}
-                        />
-                        {parentName && <span className="text-slate-400 dark:text-slate-500 text-xs">{parentName} ›</span>}
-                        {cat.name}
-                      </div>
-                    </SelectItem>
-                  ))
-                )}
+                <CategoryOptions list={usableCategories} all={categories} />
               </SelectContent>
             </Select>
             {hasChangeToSync && (

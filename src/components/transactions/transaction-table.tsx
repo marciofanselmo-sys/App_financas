@@ -13,7 +13,7 @@ import { Transaction, TransactionBoard, Category } from '@/types'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { categoriesForTransactions } from '@/lib/special-category-filter'
-import { categoryOptions } from '@/lib/category-tree'
+import { CategoryOptions } from '@/components/categories/category-options'
 import { useEvents } from '@/hooks/use-events'
 import { installmentLabel } from '@/utils/format-installment'
 import { isInternalMovement } from '@/lib/internal-movement'
@@ -131,10 +131,6 @@ export function TransactionTable({
   // Normais e especiais em seletores separados, gravando no mesmo estado
   // (bulkCategory) — escolher em um desmarca o outro, igual ao formulário de
   // transação. A especial só é opção se valer pra TODAS as selecionadas.
-  const bulkCategoryOptions = categoryOptions(
-    categoriesForTransactions(categories ?? [], selectedTransactions),
-    categories ?? [],
-  )
   const eventById = useMemo(() => new Map(events.map(e => [e.id, e])), [events])
   const openEvents = events.filter(e => !e.closed)
   // items: sem ele o gatilho mostra o id do evento em vez do nome.
@@ -310,19 +306,11 @@ export function TransactionTable({
               <SelectValue placeholder="Mudar categoria para..." />
             </SelectTrigger>
             <SelectContent>
-              {bulkCategoryOptions.length === 0 ? (
-                <SelectItem value="__empty__" disabled>Nenhuma categoria válida para a seleção</SelectItem>
-              ) : (
-                bulkCategoryOptions.map(({ cat, parentName }) => (
-                  <SelectItem key={cat.id} value={cat.name}>
-                    <span className="flex items-center gap-2">
-                      <span className={parentName ? 'h-2 w-2 rounded-full shrink-0 ml-3' : 'h-2 w-2 rounded-full shrink-0'} style={{ backgroundColor: cat.color }} />
-                      {parentName && <span className="text-slate-400 dark:text-slate-500 text-xs">{parentName} ›</span>}
-                      {cat.name}
-                    </span>
-                  </SelectItem>
-                ))
-              )}
+              <CategoryOptions
+                list={categoriesForTransactions(categories ?? [], selectedTransactions)}
+                all={categories ?? []}
+                emptyLabel="Nenhuma categoria válida para a seleção"
+              />
             </SelectContent>
           </Select>
           <Button size="sm" onClick={() => setBulkConfirmOpen(true)} disabled={!bulkCategory || applyingBulk} className="gap-1.5">
