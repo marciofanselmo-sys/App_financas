@@ -14,8 +14,9 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   Plus, Pencil, Trash2, PiggyBank, ChevronRight, AlertTriangle,
-  ChevronDown, Upload, RefreshCw, AlertCircle, Pin, PinOff,
+  ChevronDown, Upload, RefreshCw, AlertCircle, Pin, PinOff, CircleDollarSign,
 } from 'lucide-react'
+import { todayISO } from '@/utils/local-date'
 import { EmptyState } from '@/components/ui/empty-state'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { createClient } from '@/lib/supabase/client'
@@ -48,12 +49,6 @@ const ACCOUNT_TEMPLATES: AccountTemplate[] = [
   { id: 'cripto',      label: 'Criptomoedas',        description: 'Binance, Mercado Bitcoin...',               icon: 'coins',        color: '#f59e0b', type: 'ambos', suggestedName: 'Cripto' },
   { id: 'tesouro',     label: 'Tesouro Direto',      description: 'Títulos públicos',                          icon: 'dollar-sign',  color: '#3b82f6', type: 'ambos', suggestedName: 'Tesouro Direto' },
   { id: 'outro',       label: 'Outro',               description: 'Personalizado',                             icon: 'trending-up',  color: BOARD_COLORS[4], type: 'ambos', suggestedName: '' },
-]
-
-const BOARD_TYPE_OPTIONS: { value: BoardType; label: string; desc: string }[] = [
-  { value: 'entrada', label: 'Entrada',  desc: 'Receitas e depósitos' },
-  { value: 'saida',   label: 'Saída',    desc: 'Despesas e gastos' },
-  { value: 'ambos',   label: 'Ambos',    desc: 'Entradas e saídas' },
 ]
 
 interface FormState {
@@ -92,8 +87,33 @@ function InvestmentsPage() {
   const {
     fileRef: positionFileRef, preview: positionPreview, loading: positionLoading, error: positionImportError,
     open: openPositionImport, handleFile: handlePositionFile, confirm: confirmPositionImport,
-    cancel: cancelPositionImport, dismissError: dismissPositionError,
+    cancel: cancelPositionImport, dismissError: dismissPositionError, saveManual,
   } = usePositionImport(updateBoard)
+
+  // "Atualizar valor": para contas sem planilha (cripto, previdência, Tesouro,
+  // outra corretora) — o valor informado vira a posição atual da conta.
+  const [manualFor, setManualFor] = useState<TransactionBoard | null>(null)
+  const [manualValue, setManualValue] = useState('')
+  const [manualDate, setManualDate] = useState('')
+  const [manualError, setManualError] = useState('')
+  const todayStr = todayISO()
+  const parsedManual = parseFloat(manualValue.replace(/\./g, '').replace(',', '.'))
+  const manualPrev = manualFor?.last_position_import ?? null
+  const manualMinDate = manualPrev ? manualPrev.importedAt.slice(0, 10) : undefined
+
+  function openManual(board: TransactionBoard) {
+    setManualFor(board)
+    setManualValue('')
+    setManualDate(todayStr)
+    setManualError('')
+  }
+
+  async function confirmManual() {
+    if (!manualFor || !(parsedManual >= 0) || !manualDate) return
+    const { error } = await saveManual(manualFor, parsedManual, manualDate)
+    if (error) { setManualError(error); return }
+    setManualFor(null)
+  }
 
   // Fixar conta de investimento = entra SÓ nos totais dos Relatórios.
   // Dashboard e analytics excluem investimentos sempre, fixados ou não
@@ -310,7 +330,15 @@ function InvestmentsPage() {
                             {board.show_on_dashboard ? <Pin className="h-3.5 w-3.5 text-blue-500" /> : <PinOff className="h-3.5 w-3.5 text-slate-400" />}
                           </button>
                           <button
-                            title={imp ? 'Atualizar posição' : 'Importar posição'}
+                            title="Atualizar valor (informar à mão)"
+                            disabled={positionLoading}
+                            onClick={() => openManual(board)}
+                            className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+                          >
+                            <CircleDollarSign className="h-3.5 w-3.5 text-slate-400" />
+                          </button>
+                          <button
+                            title={imp ? 'Atualizar posição (planilha da corretora)' : 'Importar posição (planilha da corretora)'}
                             disabled={positionLoading}
                             onClick={() => openPositionImport(board)}
                             className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
@@ -336,20 +364,29 @@ function InvestmentsPage() {
                             </div>
                           )}
                           <p className="text-[11px] text-slate-400 mt-1.5">
-                            {imp.positions.length} ativo{imp.positions.length === 1 ? '' : 's'} · atualizado em{' '}
+                            {imp.source === 'manual' ? 'valor informado' : `${imp.positions.length} ativo${imp.positions.length === 1 ? '' : 's'}`} · atualizado em{' '}
                             {new Date(imp.importedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')}
                           </p>
                         </>
                       ) : (
                         <div className="mt-3 rounded-lg border border-dashed border-slate-200 dark:border-white/[0.1] p-3 text-center" onClick={e => e.stopPropagation()}>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">Nenhuma posição importada ainda.</p>
-                          <button
-                            type="button"
-                            onClick={() => openPositionImport(board)}
-                            className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-                          >
-                            <Upload className="h-3.5 w-3.5" /> Importar posição
-                          </button>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Sem valor ainda — esta conta não entra no seu patrimônio.</p>
+                          <div className="mt-1.5 flex items-center justify-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => openManual(board)}
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                            >
+                              <CircleDollarSign className="h-3.5 w-3.5" /> Informar valor
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openPositionImport(board)}
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:underline"
+                            >
+                              <Upload className="h-3.5 w-3.5" /> Importar planilha
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -431,37 +468,6 @@ function InvestmentsPage() {
                   value={form.description}
                   onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Tipo de lançamento</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  {BOARD_TYPE_OPTIONS.map(opt => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setForm(f => ({ ...f, type: opt.value }))}
-                      className={`flex flex-col items-center gap-0.5 rounded-lg border-2 px-2 py-2.5 text-center transition-all ${
-                        form.type === opt.value
-                          ? opt.value === 'entrada'
-                            ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                            : opt.value === 'saida'
-                            ? 'border-red-400 bg-red-50 dark:bg-red-900/20'
-                            : 'border-slate-500 bg-slate-100 dark:bg-slate-700'
-                          : 'border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500'
-                      }`}
-                    >
-                      <span className={`text-sm font-semibold ${
-                        form.type === opt.value
-                          ? opt.value === 'entrada' ? 'text-green-700 dark:text-green-400'
-                          : opt.value === 'saida' ? 'text-red-600 dark:text-red-400'
-                          : 'text-slate-700 dark:text-slate-200'
-                          : 'text-slate-600 dark:text-slate-300'
-                      }`}>{opt.label}</span>
-                      <span className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">{opt.desc}</span>
-                    </button>
-                  ))}
-                </div>
               </div>
 
               <div className="space-y-2">
@@ -563,6 +569,48 @@ function InvestmentsPage() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Atualizar valor à mão */}
+      <Dialog open={!!manualFor} onOpenChange={v => { if (!v) setManualFor(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>Atualizar valor — {manualFor?.name}</DialogTitle></DialogHeader>
+          <div className="space-y-4 pt-1">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Informe quanto vale esta conta hoje, como aparece no app do banco ou da corretora. O valor entra no seu patrimônio, na evolução e nas metas ligadas a esta conta.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="manual-value" className="text-xs">Valor atual (R$)</Label>
+                <Input id="manual-value" inputMode="decimal" placeholder="0,00" value={manualValue} onChange={e => setManualValue(e.target.value)} autoFocus />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="manual-date" className="text-xs">Valor de</Label>
+                <Input id="manual-date" type="date" value={manualDate} min={manualMinDate} max={todayStr} onChange={e => setManualDate(e.target.value)} />
+              </div>
+            </div>
+            {manualPrev && parsedManual >= 0 && (
+              <div className="rounded-lg bg-slate-50 dark:bg-slate-700/40 px-3 py-2 text-xs text-slate-600 dark:text-slate-300">
+                {formatCurrency(manualPrev.patrimonio)} ({new Date(manualPrev.importedAt).toLocaleDateString('pt-BR')}) → <strong>{formatCurrency(parsedManual)}</strong>
+                <span className={parsedManual - manualPrev.patrimonio >= 0 ? 'text-green-600' : 'text-red-500'}>
+                  {' '}({parsedManual - manualPrev.patrimonio >= 0 ? '+' : '−'}{formatCurrency(Math.abs(parsedManual - manualPrev.patrimonio))})
+                </span>
+              </div>
+            )}
+            {(manualPrev?.positions?.length ?? 0) > 0 && (
+              <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2">
+                Esta conta tem a lista de ativos da última planilha. Com um valor informado, a divisão por ativo deixa de aparecer — para tê-la de volta, use &ldquo;Importar posição&rdquo; com a planilha nova.
+              </p>
+            )}
+            {manualError && <p className="text-xs text-red-500">{manualError}</p>}
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setManualFor(null)} className="flex-1">Cancelar</Button>
+              <Button onClick={confirmManual} disabled={!(parsedManual >= 0) || !manualDate || positionLoading} className="flex-1">
+                {positionLoading ? 'Salvando...' : 'Salvar valor'}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

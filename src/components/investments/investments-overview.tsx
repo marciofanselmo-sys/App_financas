@@ -33,6 +33,13 @@ export function allocationOf(boards: TransactionBoard[]) {
   let cash = 0
   for (const b of withPosition(boards)) {
     const imp = b.last_position_import!
+    // Valor informado à mão não tem lista de ativos: aparece com o nome da
+    // conta, não como "saldo parado" (que seria patrimônio − ativos = tudo).
+    if (imp.source === 'manual') {
+      const label = `${b.name.trim()} · valor informado`
+      map.set(label, (map.get(label) ?? 0) + imp.patrimonio)
+      continue
+    }
     let inAssets = 0
     for (const p of imp.positions) {
       const cat = p.category || 'Outros'
@@ -98,12 +105,12 @@ export function InvestmentsSummary({ boards, contributions, target, income, goal
         <p className="text-[11px] uppercase tracking-wide text-blue-100">Patrimônio investido</p>
         <p className="font-heading text-2xl font-extrabold mt-1 tabular-nums">{formatCurrency(total)}</p>
         <p className="text-[11px] text-blue-100 mt-1">
-          {lastAt ? <>Atualizado em {shortDate(lastAt)} · {daysAgo(lastAt)}</> : 'Nenhuma posição importada ainda'}
+          {lastAt ? <>Atualizado em {shortDate(lastAt)} · {daysAgo(lastAt)}</> : 'Nenhum valor informado ainda'}
         </p>
       </div>
 
       <div className="bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] p-4">
-        <p className="text-[11px] uppercase tracking-wide text-slate-400">Desde a importação anterior</p>
+        <p className="text-[11px] uppercase tracking-wide text-slate-400">Desde a atualização anterior</p>
         {variation?.canCompare && variation.delta != null ? (
           <>
             <p className={cn('text-xl font-bold mt-1 tabular-nums', variation.delta >= 0 ? 'text-green-600' : 'text-red-500')}>
@@ -115,7 +122,7 @@ export function InvestmentsSummary({ boards, contributions, target, income, goal
             <p className="text-[11px] text-slate-400 mt-1">{variation.previousLabel}: {formatCurrency(variation.previous ?? 0)}</p>
           </>
         ) : (
-          <p className="text-xs text-slate-400 mt-2">Importe a posição mais uma vez para comparar.</p>
+          <p className="text-xs text-slate-400 mt-2">Atualize o valor ou importe a posição mais uma vez para comparar.</p>
         )}
       </div>
 

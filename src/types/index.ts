@@ -179,6 +179,12 @@ export interface BoardPositionImport {
   importedAt: string
   /** Snapshots leves de importações anteriores (mesmo JSONB — sem migration). */
   history?: PositionHistoryEntry[]
+  /**
+   * 'manual' = valor informado à mão ("Atualizar valor"), sem lista de ativos —
+   * para contas sem planilha (cripto, previdência, Tesouro, outra corretora).
+   * Ausente = planilha da corretora importada.
+   */
+  source?: 'manual'
 }
 
 /** Snapshot leve guardado a cada importação — usado no gráfico de evolução (7.19). */

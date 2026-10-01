@@ -79,6 +79,36 @@ export function usePositionImport(updateBoard: UpdateBoardFn) {
     setPreview(null)
   }
 
+  /**
+   * "Atualizar valor": grava um valor informado à mão como a posição atual da
+   * conta, no mesmo lugar da planilha — entra no patrimônio do Dashboard, nas
+   * Metas ligadas e na evolução, e a posição anterior vai para o histórico.
+   * Sem lista de ativos: a divisão por ativo só vem de uma planilha.
+   */
+  async function saveManual(board: TransactionBoard, value: number, date: string): Promise<{ error?: string }> {
+    const prev = board.last_position_import
+    const priorHistory = prev?.history ?? board.position_import_history ?? []
+    const history = prev
+      ? [...priorHistory, { patrimonio: prev.patrimonio, importedAt: prev.importedAt }]
+      : [...priorHistory]
+    const importedAt = new Date(`${date}T12:00:00`).toISOString()
+    setLoading(true)
+    const { error: saveError } = await updateBoard(board.id, {
+      last_position_import: {
+        patrimonio: value,
+        totalInvestido: value,
+        saldoDisponivel: 0,
+        positions: [],
+        proventos: [],
+        importedAt,
+        source: 'manual',
+        history: [...history, { patrimonio: value, importedAt }].slice(-48),
+      },
+    })
+    setLoading(false)
+    return saveError ? { error: 'Não foi possível salvar o valor. Tente novamente.' } : {}
+  }
+
   function cancel() {
     setPreview(null)
     setImportFor(null)
@@ -89,5 +119,5 @@ export function usePositionImport(updateBoard: UpdateBoardFn) {
     setImportFor(null)
   }
 
-  return { fileRef, importFor, preview, loading, error, open, handleFile, confirm, cancel, dismissError }
+  return { fileRef, importFor, preview, loading, error, open, handleFile, confirm, saveManual, cancel, dismissError }
 }
