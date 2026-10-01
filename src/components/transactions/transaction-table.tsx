@@ -202,9 +202,15 @@ export function TransactionTable({
     const target = targetId ? investmentTargets.find(b => b.id === targetId) : null
     const n = (k: number) => `${k} lançamento${k === 1 ? '' : 's'}`
     const linked = eligible.filter(t => aporteBoardOf(t))
+    // Os que já são aporte em OUTRA conta saem de lá: um lançamento aponta
+    // para uma conta só, nunca para duas.
+    const moving = target ? linked.filter(t => t.counterpart_board_id !== target.id) : []
+    const fromNames = [...new Set(moving.map(t => aporteBoardOf(t)!.name.trim()))]
     setMoreAction(target ? {
       title: `Aporte em ${target.name.trim()}`,
-      body: `${n(eligible.length)} viram aporte em ${target.name.trim()}: continuam nesta conta, não somam como gasto e aparecem em ${target.name.trim()} como aporte recebido (o mesmo lançamento, sem cópia — nada conta duas vezes no patrimônio). O saldo das contas não muda.`,
+      body: `${n(eligible.length)} viram aporte em ${target.name.trim()}: continuam nesta conta, não somam como gasto e aparecem em ${target.name.trim()} como aporte recebido (o mesmo lançamento, sem cópia — nada conta duas vezes no patrimônio).` +
+        (moving.length ? ` ${n(moving.length)} ${moving.length === 1 ? 'sai' : 'saem'} de ${fromNames.join(' e ')}, onde ${moving.length === 1 ? 'era aporte' : 'eram aportes'}.` : '') +
+        ' O saldo das contas não muda.',
       count: eligible.length,
       run: async () => { await onSetAporte!(eligible.map(t => t.id), target.id) },
     } : {
@@ -610,7 +616,9 @@ export function TransactionTable({
                         .filter(b => b.id !== tx.counterpart_board_id)
                         .map(b => (
                           <DropdownMenuItem key={b.id} onClick={() => onSetAporte([tx.id], b.id)}>
-                            <PiggyBank className="h-4 w-4 mr-2" />Aporte em {b.name.trim()}
+                            {/* Um lançamento aponta para UMA conta: escolher outra tira da atual. */}
+                            <PiggyBank className="h-4 w-4 mr-2" />
+                            {aporteBoardOf(tx) ? `Mudar aporte para ${b.name.trim()}` : `Aporte em ${b.name.trim()}`}
                           </DropdownMenuItem>
                         ))}
                       {onSetAporte && aporteBoardOf(tx) && (
