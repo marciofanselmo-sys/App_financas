@@ -6,7 +6,7 @@ import { useState, useMemo } from 'react'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { usePositionImport } from '@/hooks/use-position-import'
 import { TransactionBoard, BoardType, BOARD_COLORS, BOARD_ICONS, BoardIconKey } from '@/types'
-import { formatCurrency, rentColor, CategorySummary, PositionsBreakdown, ProventosBreakdown } from '@/components/investments/rico-position-summary'
+import { formatCurrency, rentColor } from '@/components/investments/rico-position-summary'
 import { BoardIcon } from '@/components/transactions/board-icon'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,13 +14,21 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   Plus, Pencil, Trash2, PiggyBank, ChevronRight, AlertTriangle,
-  ChevronDown, ChevronUp, Upload, RefreshCw, AlertCircle, Pin, PinOff,
+  ChevronDown, Upload, RefreshCw, AlertCircle, Pin, PinOff,
 } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { createClient } from '@/lib/supabase/client'
-import { AllocationChartsPanel } from '@/components/investments/allocation-charts-panel'
-import { PatrimonyVariationCard } from '@/components/investments/patrimony-variation-card'
-import { computeConsolidatedPatrimonyVariation, hasPatrimonyHistory } from '@/lib/position-history'
+import { useRouter } from 'next/navigation'
+import { useTransactions } from '@/hooks/use-transactions'
+import { useBudgetPlan } from '@/hooks/use-budget-plan'
+import { useGoals } from '@/hooks/use-goals'
+import { sumInvestmentContributions } from '@/lib/investment-contributions'
+import { realMovements } from '@/lib/internal-movement'
+import {
+  InvestmentsSummary, AllocationCard, PositionsTable, EvolutionCard, ProventosCard, allocationOf,
+} from '@/components/investments/investments-overview'
+import { InvestmentsHelp } from '@/components/investments/investments-help'
 
 interface AccountTemplate {
   id: string
@@ -65,6 +73,8 @@ const EMPTY_FORM: FormState = {
 }
 
 function InvestmentsPage() {
+  const router = useRouter()
+  const now = new Date()
   const { boards: allBoards, loading, createBoard, updateBoard, deleteBoard } = useTransactionBoards()
   const boards = allBoards.filter(b => b.is_investment)
 
@@ -78,8 +88,6 @@ function InvestmentsPage() {
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
 
-  const [expandedPos, setExpandedPos] = useState<Set<string>>(new Set())
-  const [expandedProventos, setExpandedProventos] = useState<Set<string>>(new Set())
 
   const {
     fileRef: positionFileRef, preview: positionPreview, loading: positionLoading, error: positionImportError,
@@ -92,14 +100,6 @@ function InvestmentsPage() {
   // (filtro `|| b.is_investment` nas duas páginas).
   function togglePinned(board: TransactionBoard) {
     updateBoard(board.id, { show_on_dashboard: !board.show_on_dashboard })
-  }
-
-  function togglePos(id: string) {
-    setExpandedPos(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
-  }
-
-  function toggleProventos(id: string) {
-    setExpandedProventos(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
   }
 
   async function openDeleteConfirm(board: TransactionBoard) {
@@ -170,8 +170,27 @@ function InvestmentsPage() {
     setFormOpen(false)
   }
 
-  const patrimonyVariation = useMemo(() => computeConsolidatedPatrimonyVariation(boards), [boards])
-  const showVariation = hasPatrimonyHistory(boards)
+  // Aportes do mês e meta de investir: mesmas regras do Dashboard.
+  const unpinnedBoardIds = useMemo(
+    () => allBoards.filter(b => !b.show_on_dashboard || b.is_investment).map(b => b.id),
+    [allBoards],
+  )
+  const { transactions: monthTxs } = useTransactions({
+    month: now.getMonth() + 1,
+    year: now.getFullYear(),
+    exclude_board_ids: unpinnedBoardIds.length > 0 ? unpinnedBoardIds : undefined,
+  })
+  const monthlyContributions = useMemo(() => sumInvestmentContributions(monthTxs, allBoards), [monthTxs, allBoards])
+  const monthIncome = useMemo(
+    () => realMovements(monthTxs).filter(t => t.type === 'receita').reduce((sum, t) => sum + Number(t.amount), 0),
+    [monthTxs],
+  )
+  const { plan } = useBudgetPlan(now.getMonth() + 1, now.getFullYear())
+  const investTarget = plan?.investment_target ?? 0
+  // Meta que puxa o valor de uma destas contas (Metas → "Vincular conta").
+  const { goals } = useGoals()
+  const linkedGoal = goals.find(g => g.lastImport?.source === 'board' && boards.some(b => b.id === g.lastImport?.boardId)) ?? null
+  const hasPositions = boards.some(b => (b.last_position_import?.positions?.length ?? 0) > 0)
 
   if (loading) return null
 
@@ -181,13 +200,39 @@ function InvestmentsPage() {
         <div>
           <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Investimentos</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            {boards.length === 0 ? 'Adicione sua primeira conta de investimento' : `${boards.length} conta${boards.length > 1 ? 's' : ''} cadastrada${boards.length > 1 ? 's' : ''}`}
+            {boards.length === 0 ? 'Adicione sua primeira conta de investimento' : 'Sua carteira, seus aportes e suas metas num lugar só'}
           </p>
         </div>
-        <Button onClick={openCreate} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Nova conta
-        </Button>
+        <div className="flex gap-2">
+          {/* Com uma conta só, importa direto nela; com várias, pergunta qual. */}
+          {boards.length === 1 && (
+            <Button variant="outline" className="gap-2" disabled={positionLoading} onClick={() => openPositionImport(boards[0])}>
+              <Upload className="h-4 w-4" />
+              <span className="hidden sm:inline">Importar posição</span>
+            </Button>
+          )}
+          {boards.length > 1 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/[0.08] disabled:opacity-50" disabled={positionLoading}>
+                <Upload className="h-4 w-4" />
+                <span className="hidden sm:inline">Importar posição</span>
+                <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {boards.map(b => (
+                  <DropdownMenuItem key={b.id} onClick={() => openPositionImport(b)}>
+                    <BoardIcon icon={b.icon} className="h-4 w-4 mr-2" style={{ color: b.color }} />
+                    {b.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          <Button onClick={openCreate} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Nova conta
+          </Button>
+        </div>
       </div>
 
       {boards.length === 0 ? (
@@ -201,128 +246,120 @@ function InvestmentsPage() {
           secondaryHref="/help"
         />
       ) : (
-        <div className="space-y-4">
-          <AllocationChartsPanel boards={boards} />
+        <div className="space-y-6">
+          <InvestmentsSummary
+            boards={boards}
+            contributions={monthlyContributions}
+            target={investTarget}
+            income={monthIncome}
+            goal={linkedGoal}
+          />
 
-          {showVariation && patrimonyVariation && (
-            <PatrimonyVariationCard variation={patrimonyVariation} />
+          {hasPositions && (
+            <div className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)] items-start">
+              <AllocationCard boards={boards} />
+              <PositionsTable boards={boards} />
+            </div>
           )}
 
-          {boards.map(board => {
-            return (
-              <div
-                key={board.id}
-                className="bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] overflow-hidden"
-              >
-                <div className="h-1 w-full" style={{ backgroundColor: board.color }} />
-                <div className="p-5">
-                  <div className="flex items-start justify-between gap-3 mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: board.color + '20' }}>
-                        <BoardIcon icon={board.icon} className="h-5 w-5" style={{ color: board.color }} />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold text-slate-800 dark:text-slate-100">{board.name}</p>
-                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                            board.type === 'entrada'
-                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                              : board.type === 'saida'
-                              ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
-                              : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
-                          }`}>
-                            {board.type === 'entrada' ? 'Entrada' : board.type === 'saida' ? 'Saída' : 'Ambos'}
-                          </span>
-                        </div>
-                        {board.description && (
-                          <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{board.description}</p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex gap-1 shrink-0">
-                      <button
-                        title={board.show_on_dashboard ? 'Remover dos relatórios' : 'Incluir nos relatórios'}
-                        onClick={() => togglePinned(board)}
-                        className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-                      >
-                        {board.show_on_dashboard
-                          ? <Pin className="h-3.5 w-3.5 text-blue-500" />
-                          : <PinOff className="h-3.5 w-3.5 text-slate-400" />
-                        }
-                      </button>
-                      <button
-                        title={board.last_position_import ? 'Atualizar posição' : 'Importar posição'}
-                        disabled={positionLoading}
-                        onClick={() => openPositionImport(board)}
-                        className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
-                      >
-                        {positionLoading ? <RefreshCw className="h-3.5 w-3.5 text-slate-400 animate-spin" /> : <Upload className="h-3.5 w-3.5 text-slate-400" />}
-                      </button>
-                      <button
-                        onClick={() => openEdit(board)}
-                        className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-                      >
-                        <Pencil className="h-3.5 w-3.5 text-slate-400" />
-                      </button>
-                      <button
-                        onClick={() => openDeleteConfirm(board)}
-                        className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                      >
-                        <Trash2 className="h-3.5 w-3.5 text-slate-400 hover:text-red-500" />
-                      </button>
-                    </div>
-                  </div>
+          {hasPositions && (
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] items-start">
+              <EvolutionCard boards={boards} />
+              <ProventosCard boards={boards} />
+            </div>
+          )}
 
-                  {/* Posição da carteira (PosicaoDetalhada.xlsx) — mesma organização de Metas.
-                      Só leitura aqui — importar/atualizar só é feito dentro da conta. */}
-                  <div className="bg-slate-50 dark:bg-white/[0.03] rounded-xl p-3.5 mb-4">
-                    {board.last_position_import ? (
-                      <>
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <p className="text-xs text-slate-400 dark:text-slate-500">Patrimônio (posição)</p>
-                            <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{formatCurrency(board.last_position_import.patrimonio)}</p>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {board.last_position_import.positions.length > 0 && (
-                              <Button variant="ghost" size="sm" className="text-xs gap-1 h-8 text-slate-500" onClick={() => togglePos(board.id)}>
-                                {expandedPos.has(board.id) ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                                {board.last_position_import.positions.length} ativos
-                              </Button>
-                            )}
-                            {board.last_position_import.proventos && board.last_position_import.proventos.length > 0 && (
-                              <Button variant="ghost" size="sm" className="text-xs gap-1 h-8 text-slate-500" onClick={() => toggleProventos(board.id)}>
-                                {expandedProventos.has(board.id) ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                                {board.last_position_import.proventos.length} rendimentos previstos
-                              </Button>
-                            )}
-                          </div>
+          {/* Contas de investimento — mesmo padrão de Contas e Cartões: o card
+              inteiro abre a conta, os botões do canto não. */}
+          <section>
+            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-200 dark:border-white/[0.08]">
+              <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Suas contas de investimento</h2>
+              <span className="text-xs text-slate-400">{boards.length}</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {boards.map(board => {
+                const imp = board.last_position_import
+                const open = () => router.push(`/transactions/${board.id}`)
+                const alloc = imp ? allocationOf([board]) : []
+                const allocTotal = alloc.reduce((sum, a) => sum + a.value, 0)
+                return (
+                  <div
+                    key={board.id}
+                    role="link"
+                    tabIndex={0}
+                    onClick={open}
+                    onKeyDown={e => { if (e.key === 'Enter') open() }}
+                    className="group cursor-pointer bg-white dark:bg-[#111c2d] rounded-xl shadow-sm border border-slate-100 dark:border-white/[0.06] overflow-hidden transition-all hover:-translate-y-px hover:shadow-md hover:border-slate-300 dark:hover:border-white/[0.15] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  >
+                    <div className="h-1 w-full" style={{ backgroundColor: board.color }} />
+                    <div className="p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: board.color + '20' }}>
+                          <BoardIcon icon={board.icon} className="h-4 w-4" style={{ color: board.color }} />
                         </div>
-                        {board.last_position_import.positions.length > 0 && (
-                          <div className="mt-3">
-                            <CategorySummary positions={board.last_position_import.positions} />
-                          </div>
-                        )}
-                        {expandedPos.has(board.id) && (
-                          <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
-                            <PositionsBreakdown positions={board.last_position_import.positions} />
-                          </div>
-                        )}
-                        {expandedProventos.has(board.id) && board.last_position_import.proventos && (
-                          <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
-                            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">Próximos Rendimentos</p>
-                            <ProventosBreakdown proventos={board.last_position_import.proventos} />
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <p className="text-xs text-slate-400 dark:text-slate-500">Nenhuma posição da carteira importada ainda</p>
-                    )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate" title={board.name}>{board.name}</p>
+                          {board.description && <p className="text-[11px] text-slate-400 truncate">{board.description}</p>}
+                        </div>
+                        <div className="flex -mr-1.5 -mt-1.5 shrink-0" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+                          <button
+                            title={board.show_on_dashboard ? 'Remover dos relatórios' : 'Incluir nos relatórios'}
+                            onClick={() => togglePinned(board)}
+                            className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                          >
+                            {board.show_on_dashboard ? <Pin className="h-3.5 w-3.5 text-blue-500" /> : <PinOff className="h-3.5 w-3.5 text-slate-400" />}
+                          </button>
+                          <button
+                            title={imp ? 'Atualizar posição' : 'Importar posição'}
+                            disabled={positionLoading}
+                            onClick={() => openPositionImport(board)}
+                            className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+                          >
+                            {positionLoading ? <RefreshCw className="h-3.5 w-3.5 text-slate-400 animate-spin" /> : <Upload className="h-3.5 w-3.5 text-slate-400" />}
+                          </button>
+                          <button title="Editar" onClick={() => openEdit(board)} className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                            <Pencil className="h-3.5 w-3.5 text-slate-400" />
+                          </button>
+                          <button title="Excluir" onClick={() => openDeleteConfirm(board)} className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                            <Trash2 className="h-3.5 w-3.5 text-slate-400 hover:text-red-500" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {imp ? (
+                        <>
+                          <p className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500 mt-3">Patrimônio</p>
+                          <p className="text-lg font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(imp.patrimonio)}</p>
+                          {allocTotal > 0 && (
+                            <div className="flex h-1.5 rounded-full overflow-hidden mt-2 bg-slate-100 dark:bg-white/[0.08]">
+                              {alloc.map(a => <div key={a.name} title={a.name} style={{ width: `${(a.value / allocTotal) * 100}%`, backgroundColor: a.color }} />)}
+                            </div>
+                          )}
+                          <p className="text-[11px] text-slate-400 mt-1.5">
+                            {imp.positions.length} ativo{imp.positions.length === 1 ? '' : 's'} · atualizado em{' '}
+                            {new Date(imp.importedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')}
+                          </p>
+                        </>
+                      ) : (
+                        <div className="mt-3 rounded-lg border border-dashed border-slate-200 dark:border-white/[0.1] p-3 text-center" onClick={e => e.stopPropagation()}>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Nenhuma posição importada ainda.</p>
+                          <button
+                            type="button"
+                            onClick={() => openPositionImport(board)}
+                            className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                          >
+                            <Upload className="h-3.5 w-3.5" /> Importar posição
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </div>
-            )
-          })}
+                )
+              })}
+            </div>
+          </section>
+
+          <InvestmentsHelp />
         </div>
       )}
 
