@@ -46,9 +46,9 @@ export function MacroOverview({ overview, loading, composition }: MacroOverviewP
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {/* Saldo em contas */}
-          <div className="rounded-2xl bg-[#F5F9FE] dark:bg-white/[0.03] border border-[#DDE7F3] dark:border-white/[0.06] p-4">
+          <div className="h-full rounded-2xl bg-[#F5F9FE] dark:bg-white/[0.03] border border-[#DDE7F3] dark:border-white/[0.06] p-4">
             <div className="flex items-center gap-2.5 mb-3">
               <div className="nobli-chip h-8 w-8 rounded-lg">
                 <Wallet className="h-4 w-4" />
@@ -63,7 +63,7 @@ export function MacroOverview({ overview, loading, composition }: MacroOverviewP
             </p>
             {overview.cashBreakdown.length > 0 && (
               <ul className="mt-3 space-y-1.5 border-t border-[#DDE7F3] dark:border-white/[0.06] pt-3">
-                {overview.cashBreakdown.slice(0, 4).map(b => (
+                {overview.cashBreakdown.slice(0, 5).map(b => (
                   <li key={b.boardId} className="flex items-center justify-between gap-2 text-xs">
                     <span className="flex items-center gap-1.5 min-w-0 truncate text-[#5B6B84] dark:text-slate-300">
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: b.color }} />
@@ -74,9 +74,9 @@ export function MacroOverview({ overview, loading, composition }: MacroOverviewP
                     </span>
                   </li>
                 ))}
-                {overview.cashBreakdown.length > 4 && (
+                {overview.cashBreakdown.length > 5 && (
                   <li className="text-[10px] text-[#93A5C1] pt-0.5">
-                    + {overview.cashBreakdown.length - 4} contas ·{' '}
+                    + {overview.cashBreakdown.length - 5} contas ·{' '}
                     <Link href="/transactions" className="text-[#2563EB] hover:underline">ver todas</Link>
                   </li>
                 )}
@@ -90,7 +90,7 @@ export function MacroOverview({ overview, loading, composition }: MacroOverviewP
           </div>
 
           {/* Investimentos */}
-          <div className="rounded-2xl bg-[#F5F9FE] dark:bg-white/[0.03] border border-[#DDE7F3] dark:border-white/[0.06] p-4">
+          <div className="h-full rounded-2xl bg-[#F5F9FE] dark:bg-white/[0.03] border border-[#DDE7F3] dark:border-white/[0.06] p-4">
             <div className="flex items-center gap-2.5 mb-3">
               <div className="nobli-chip h-8 w-8 rounded-lg">
                 <TrendingUp className="h-4 w-4" />
@@ -133,7 +133,7 @@ export function MacroOverview({ overview, loading, composition }: MacroOverviewP
           </div>
 
           {/* No tablet ocupa a linha de baixo inteira; no computador, a 3ª coluna. */}
-          {composition && <div className="sm:col-span-2 lg:col-span-1">{composition}</div>}
+          {composition && <div className="sm:col-span-2 lg:col-span-1 [&>*]:h-full">{composition}</div>}
         </div>
 
         <details className="mt-4 group">
