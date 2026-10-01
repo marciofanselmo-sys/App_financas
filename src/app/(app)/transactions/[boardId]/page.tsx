@@ -416,7 +416,9 @@ export default function BoardDetailPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => router.push('/transactions')}
+            // Conta de investimento abre a partir de Investimentos: voltar leva para lá.
+            onClick={() => router.push(isInvestmentBoard ? '/investments' : '/transactions')}
+            title={isInvestmentBoard ? 'Voltar para Investimentos' : 'Voltar para Contas e Cartões'}
             className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shrink-0"
           >
             <ArrowLeft className="h-4 w-4 text-slate-500" />
