@@ -16,6 +16,7 @@ import { HistoryWindowNote } from '@/components/plan/history-window-note'
 import { TransactionForm } from '@/components/transactions/transaction-form'
 import { ImportCSVModal } from '@/components/transactions/import-csv-modal'
 import { ExportCSVModal } from '@/components/transactions/export-csv-modal'
+import { BoardHelp } from '@/components/transactions/board-help'
 import { BoardIcon } from '@/components/transactions/board-icon'
 import { formatCurrency, rentColor, CategorySummary, PositionsBreakdown, ProventosBreakdown } from '@/components/investments/rico-position-summary'
 import { Transaction, TransactionType } from '@/types'
@@ -637,6 +638,8 @@ export default function BoardDetailPage() {
       )}
 
       {!loading && <HistoryWindowNote className="mt-4 px-1" />}
+
+      <BoardHelp />
 
       <TransactionForm
         open={formOpen}
