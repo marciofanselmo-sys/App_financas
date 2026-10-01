@@ -11,35 +11,35 @@ interface DefaultNode {
 // Árvore inicial de quem cria conta. Nomes são únicos no geral (a tabela tem
 // unique(user_id, name)), por isso "Manutenção da casa" e "Manutenção do carro".
 export const DEFAULT_CATEGORY_TREE: DefaultNode[] = [
-  { name: 'Renda', type: 'receita', color: '#10b981', children: [
+  { name: 'Renda', type: 'receita', color: '#16a34a', children: [
     { name: 'Salário' }, { name: 'Freelance' }, { name: 'Rendimentos' }, { name: 'Reembolsos' },
   ] },
-  { name: 'Moradia', type: 'despesa', color: '#8b5cf6', bucket: 'essencial', children: [
+  { name: 'Moradia', type: 'despesa', color: '#7e22ce', bucket: 'essencial', children: [
     { name: 'Aluguel' }, { name: 'Condomínio' }, { name: 'Energia' }, { name: 'Água' },
     { name: 'Gás' }, { name: 'Internet e telefone' }, { name: 'Manutenção da casa' },
   ] },
-  { name: 'Alimentação', type: 'despesa', color: '#f59e0b', bucket: 'essencial', children: [
+  { name: 'Alimentação', type: 'despesa', color: '#f97316', bucket: 'essencial', children: [
     { name: 'Mercado' }, { name: 'Padaria' },
     { name: 'Restaurante', bucket: 'estilo' }, { name: 'Delivery', bucket: 'estilo' },
   ] },
-  { name: 'Transporte', type: 'despesa', color: '#3b82f6', bucket: 'essencial', children: [
+  { name: 'Transporte', type: 'despesa', color: '#2563eb', bucket: 'essencial', children: [
     { name: 'Combustível' }, { name: 'Transporte por app' }, { name: 'Transporte público' },
     { name: 'Estacionamento' }, { name: 'Manutenção do carro' }, { name: 'IPVA e seguro' },
   ] },
-  { name: 'Saúde', type: 'despesa', color: '#ef4444', bucket: 'essencial', children: [
+  { name: 'Saúde', type: 'despesa', color: '#dc2626', bucket: 'essencial', children: [
     { name: 'Plano de saúde' }, { name: 'Farmácia' }, { name: 'Consultas e exames' },
     { name: 'Academia', bucket: 'estilo' },
   ] },
-  { name: 'Educação', type: 'despesa', color: '#ec4899', bucket: 'essencial', children: [
+  { name: 'Educação', type: 'despesa', color: '#1e3a8a', bucket: 'essencial', children: [
     { name: 'Mensalidade' }, { name: 'Cursos' }, { name: 'Livros' },
   ] },
-  { name: 'Lazer', type: 'despesa', color: '#f97316', bucket: 'estilo', children: [
+  { name: 'Lazer', type: 'despesa', color: '#ec4899', bucket: 'estilo', children: [
     { name: 'Viagens' }, { name: 'Passeios' }, { name: 'Streaming' }, { name: 'Hobbies' },
   ] },
-  { name: 'Pessoal', type: 'despesa', color: '#14b8a6', bucket: 'estilo', children: [
+  { name: 'Pessoal', type: 'despesa', color: '#a78bfa', bucket: 'estilo', children: [
     { name: 'Roupas' }, { name: 'Beleza' }, { name: 'Presentes' },
   ] },
-  { name: 'Financeiro', type: 'despesa', color: '#6366f1', bucket: 'essencial', children: [
+  { name: 'Financeiro', type: 'despesa', color: '#065f46', bucket: 'essencial', children: [
     { name: 'Tarifas bancárias' }, { name: 'Juros e multas' }, { name: 'Impostos' },
   ] },
   { name: 'Investimentos', type: 'despesa', color: '#84cc16', bucket: 'futuro', children: [
@@ -47,8 +47,8 @@ export const DEFAULT_CATEGORY_TREE: DefaultNode[] = [
   ] },
   // Destino padrão do app (importação sem categoria, exclusão de categoria).
   // Existe nos dois tipos, com o mesmo nome: o lançamento resolve pelo tipo dele.
-  { name: 'Outros', type: 'despesa', color: '#6b7280' },
-  { name: 'Outros', type: 'receita', color: '#6b7280' },
+  { name: 'Outros', type: 'despesa', color: '#64748b' },
+  { name: 'Outros', type: 'receita', color: '#64748b' },
 ]
 
 /**

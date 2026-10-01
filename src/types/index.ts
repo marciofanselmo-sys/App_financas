@@ -244,9 +244,12 @@ export const BOARD_ICONS: { key: BoardIconKey; label: string }[] = [
   { key: 'dollar-sign',  label: 'Dinheiro' },
 ]
 
+// 15 cores bem distintas entre si (checadas por distância de cor, par a par),
+// na ordem do arco-íris: vermelho, laranja, amarelo, lima, verde, verde-escuro,
+// ciano, azul, azul-marinho, lilás, roxo, rosa, rosa-claro, marrom, cinza.
 export const CATEGORY_COLORS = [
-  '#10b981', '#06b6d4', '#3b82f6', '#8b5cf6',
-  '#ec4899', '#f59e0b', '#ef4444', '#f97316',
-  '#14b8a6', '#6366f1', '#84cc16', '#6b7280',
+  '#dc2626', '#f97316', '#facc15', '#84cc16', '#16a34a',
+  '#065f46', '#22d3ee', '#2563eb', '#1e3a8a', '#a78bfa',
+  '#7e22ce', '#ec4899', '#fda4af', '#92400e', '#64748b',
 ]
 

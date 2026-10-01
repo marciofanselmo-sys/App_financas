@@ -1064,7 +1064,9 @@ export default function CategoriesPage() {
                 <div className="space-y-2">
                   <Label>Cor</Label>
                   <div className="flex flex-wrap gap-2 pt-1">
-                    {CATEGORY_COLORS.map(color => {
+                    {/* Cor antiga (fora da paleta atual) continua aparecendo
+                        enquanto a categoria usar ela. */}
+                    {[...(CATEGORY_COLORS.includes(form.color) ? [] : [form.color]), ...CATEGORY_COLORS].map(color => {
                       const users = colorUsers.get(color) ?? []
                       return (
                         <button key={color} type="button" onClick={() => setForm(f => ({ ...f, color }))}
