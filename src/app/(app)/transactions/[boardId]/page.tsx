@@ -8,7 +8,9 @@ import { useParams, useRouter } from 'next/navigation'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useCategories } from '@/hooks/use-categories'
-import { useRules, applyTypeToExisting, setTransactionInternal, setTransactionsInternal } from '@/hooks/use-rules'
+import { useRules, applyTypeToExisting, setTransactionInternal, setTransactionsInternal, setTransactionsAporte } from '@/hooks/use-rules'
+import { useInvestmentContributions } from '@/hooks/use-investment-contributions'
+import { contributionsForBoard } from '@/lib/investment-contributions'
 import { isInternalMovement } from '@/lib/internal-movement'
 import { usePositionImport } from '@/hooks/use-position-import'
 import { TransactionTable } from '@/components/transactions/transaction-table'
@@ -58,6 +60,13 @@ export default function BoardDetailPage() {
   // sentido filtrar rendimentos/dividendos/histórico de ativos por mês) —
   // diferente de conta corrente, que continua abrindo no mês atual.
   const isInvestmentBoard = board?.is_investment ?? false
+  // Conta de investimento: aportes que saíram das suas contas para ela. São os
+  // próprios lançamentos de lá (C6, Itaú…), mostrados aqui — nada é copiado.
+  const { linked: aportesIn } = useInvestmentContributions(isInvestmentBoard && board ? [board.id] : [])
+  const aporteSummary = useMemo(
+    () => (board && isInvestmentBoard ? contributionsForBoard(board, aportesIn) : null),
+    [board, isInvestmentBoard, aportesIn],
+  )
   const {
     fileRef: positionFileRef, preview: positionPreview, loading: positionLoading, error: positionImportError,
     open: openPositionImport, handleFile: handlePositionFile, confirm: confirmPositionImport,
@@ -245,6 +254,14 @@ export default function BoardDetailPage() {
         ? 'Falta atualizar o banco: rode a migração migration_rules_internal.sql no Supabase.'
         : error)
     }
+    refetch()
+  }
+
+  // "Aporte em …" / "Não é aporte": só liga/desliga o lançamento da conta de
+  // investimento — continua nesta conta e o saldo não muda.
+  async function handleSetAporte(ids: string[], investmentBoardId: string | null) {
+    const { error } = await setTransactionsAporte(ids, investmentBoardId)
+    if (error) setRuleSyncError(`Não foi possível marcar o aporte: ${error}`)
     refetch()
   }
 
@@ -526,6 +543,62 @@ export default function BoardDetailPage() {
         </div>
       )}
 
+      {isInvestmentBoard && aporteSummary && (
+        <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-4 shadow-sm border border-slate-100 dark:border-white/[0.06]">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Aportes recebidos</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Saídas das suas contas marcadas como aporte nesta conta. Ficam na conta de onde saíram — aqui só aparecem, sem contar duas vezes.
+              </p>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-[11px] text-slate-400">Total aportado</p>
+              <p className="text-lg font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(aporteSummary.aportado)}</p>
+              {board.last_position_import && aporteSummary.configured && (() => {
+                const gain = board.last_position_import.patrimonio - aporteSummary.aportado
+                return (
+                  <p className={`text-[11px] font-semibold tabular-nums ${gain >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                    rendimento {gain >= 0 ? '+' : '−'}{formatCurrency(Math.abs(gain))}
+                    {aporteSummary.aportado > 0 && ` (${gain >= 0 ? '+' : ''}${((gain / aporteSummary.aportado) * 100).toFixed(1).replace('.', ',')}%)`}
+                  </p>
+                )
+              })()}
+            </div>
+          </div>
+          {aporteSummary.aportes.length === 0 ? (
+            <p className="text-xs text-slate-400 mt-3">
+              Nenhum aporte ligado ainda. No extrato da conta de onde sai o dinheiro, use o menu ⋮ → &ldquo;Aporte em {board.name.trim()}&rdquo;, ou configure em Investimentos → Aportes.
+            </p>
+          ) : (
+            <div className="mt-3 rounded-xl border border-slate-100 dark:border-white/[0.06] divide-y divide-slate-100 dark:divide-white/[0.06] max-h-72 overflow-y-auto">
+              {aporteSummary.base > 0 && (
+                <div className="px-3 py-2 flex items-center gap-3 text-xs text-slate-500">
+                  <span className="w-16 shrink-0">{aporteSummary.baseDate ? new Date(`${aporteSummary.baseDate}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</span>
+                  <span className="flex-1">Ponto de partida (já aplicado)</span>
+                  <span className="tabular-nums font-medium">{formatCurrency(aporteSummary.base)}</span>
+                </div>
+              )}
+              {aporteSummary.aportes.map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => t.board_id && router.push(`/transactions/${t.board_id}`)}
+                  className="w-full text-left px-3 py-2 flex items-center gap-3 text-xs hover:bg-slate-50 dark:hover:bg-white/[0.03]"
+                >
+                  <span className="w-16 shrink-0 text-slate-400">{new Date(`${t.date}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                  <span className="flex-1 min-w-0 truncate text-slate-600 dark:text-slate-300">
+                    {t.description}
+                    <span className="block text-[10px] text-slate-400">de {boards.find(b => b.id === t.board_id)?.name.trim() ?? 'outra conta'}</span>
+                  </span>
+                  <span className="tabular-nums font-medium text-slate-700 dark:text-slate-200">{formatCurrency(Number(t.amount))}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Filters — no celular: busca ao lado do mês, e tipo e categoria
           lado a lado na linha de baixo */}
       <div className="flex flex-wrap gap-2 sm:gap-3 items-center">
@@ -635,6 +708,7 @@ export default function BoardDetailPage() {
           onBulkInternal={handleBulkInternal}
           onBulkRecurring={handleBulkRecurring}
           onBulkAddTag={handleBulkAddTag}
+          onSetAporte={handleSetAporte}
           balanceImpactOf={balanceImpactOf}
         />
       )}

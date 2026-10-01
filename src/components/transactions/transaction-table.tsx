@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { MoreVertical, MoreHorizontal, ChevronDown, Pencil, Trash2, ArrowRightLeft, ArrowLeftRight, RefreshCw, Tag, Sparkles, X as XIcon, CircleSlash, CircleCheck, TrendingUp, TrendingDown } from 'lucide-react'
+import { MoreVertical, MoreHorizontal, ChevronDown, Pencil, Trash2, ArrowRightLeft, ArrowLeftRight, RefreshCw, Tag, Sparkles, X as XIcon, CircleSlash, CircleCheck, TrendingUp, TrendingDown, PiggyBank } from 'lucide-react'
 import { Transaction, TransactionBoard, Category } from '@/types'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
@@ -71,6 +71,8 @@ interface TransactionTableProps {
   onBulkInternal?: (ids: string[], internal: boolean) => Promise<void>
   onBulkRecurring?: (ids: string[], recurring: boolean) => Promise<void>
   onBulkAddTag?: (ids: string[], tag: string) => Promise<void>
+  /** Marca como aporte numa conta de investimento (null = "Não é aporte"). */
+  onSetAporte?: (ids: string[], investmentBoardId: string | null) => Promise<void>
   /**
    * Saldo da conta antes e depois de tirar estas transações dela. A tabela só
    * conhece as linhas visíveis (filtradas por mês), então o cálculo vem de
@@ -82,7 +84,7 @@ interface TransactionTableProps {
 export function TransactionTable({
   transactions, onEdit, onDelete, onMove, onToggleRecurring, onToggleInternal, boards, currentBoardId,
   categories, onBulkCategoryChange, onBulkEventChange, onBulkMove, onBulkDelete, balanceImpactOf,
-  onBulkTypeChange, onBulkInternal, onBulkRecurring, onBulkAddTag,
+  onBulkTypeChange, onBulkInternal, onBulkRecurring, onBulkAddTag, onSetAporte,
 }: TransactionTableProps) {
   const { events } = useEvents()
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -125,6 +127,10 @@ export function TransactionTable({
   )
 
   const otherBoards = (boards ?? []).filter(b => b.id !== currentBoardId)
+  // Contas de investimento que podem receber um aporte vindo desta conta.
+  const investmentTargets = (boards ?? []).filter(b => b.is_investment && b.id !== currentBoardId)
+  const aporteBoardOf = (tx: Transaction) =>
+    tx.counterpart_board_id ? investmentTargets.find(b => b.id === tx.counterpart_board_id) ?? null : null
   const selectionEnabled = !!onBulkCategoryChange
   const allSelected = transactions.length > 0 && selected.size === transactions.length
   const selectedTransactions = transactions.filter(t => selected.has(t.id))
@@ -189,7 +195,25 @@ export function TransactionTable({
   }
 
   // Monta as opções de "Mais ações" a partir do que está selecionado.
-  const hasMoreActions = !!(onBulkTypeChange || onBulkInternal || onBulkRecurring || onBulkAddTag)
+  const hasMoreActions = !!(onBulkTypeChange || onBulkInternal || onBulkRecurring || onBulkAddTag || onSetAporte)
+  function openAporte(targetId: string | null) {
+    // Aporte é dinheiro SAINDO desta conta; a perna gerada pelo app fica de fora.
+    const eligible = selectedTransactions.filter(t => t.type === 'despesa' && !t.counterpart_of_id)
+    const target = targetId ? investmentTargets.find(b => b.id === targetId) : null
+    const n = (k: number) => `${k} lançamento${k === 1 ? '' : 's'}`
+    const linked = eligible.filter(t => aporteBoardOf(t))
+    setMoreAction(target ? {
+      title: `Aporte em ${target.name.trim()}`,
+      body: `${n(eligible.length)} viram aporte em ${target.name.trim()}: continuam nesta conta, não somam como gasto e aparecem em ${target.name.trim()} como aporte recebido (o mesmo lançamento, sem cópia — nada conta duas vezes no patrimônio). O saldo das contas não muda.`,
+      count: eligible.length,
+      run: async () => { await onSetAporte!(eligible.map(t => t.id), target.id) },
+    } : {
+      title: 'Não é aporte',
+      body: `${n(linked.length)} deixam de ser aporte e ficam como "Entre contas · não soma". Para voltarem a somar como gasto, use "Voltar a somar". O saldo das contas não muda.`,
+      count: linked.length,
+      run: async () => { await onSetAporte!(linked.map(t => t.id), null) },
+    })
+  }
   function openMore(kind: 'receita' | 'despesa' | 'internal' | 'external' | 'fix' | 'unfix' | 'tag') {
     const ids = Array.from(selected)
     const sel = selectedTransactions
@@ -404,6 +428,14 @@ export function TransactionTable({
                 {onBulkAddTag && (
                   <DropdownMenuItem onClick={() => openMore('tag')}><Tag className="h-4 w-4 mr-2" />Adicionar etiqueta…</DropdownMenuItem>
                 )}
+                {onSetAporte && investmentTargets.length > 0 && (
+                  <>
+                    {investmentTargets.map(b => (
+                      <DropdownMenuItem key={b.id} onClick={() => openAporte(b.id)}><PiggyBank className="h-4 w-4 mr-2" />Aporte em {b.name.trim()}</DropdownMenuItem>
+                    ))}
+                    <DropdownMenuItem onClick={() => openAporte(null)}><PiggyBank className="h-4 w-4 mr-2 opacity-50" />Não é aporte</DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -460,7 +492,15 @@ export function TransactionTable({
                   <p className="font-medium text-slate-700 dark:text-slate-200 text-sm truncate">{tx.description}</p>
                   {/* Tarja de "não soma": fica na conta e no saldo, mas fora de
                       gastos e entradas. Aparece em qualquer tamanho de tela. */}
-                  {isInternalMovement(tx) && (
+                  {aporteBoardOf(tx) ? (
+                    <span
+                      title={`Aporte em ${aporteBoardOf(tx)!.name.trim()}: sai do saldo desta conta, não soma como gasto e aparece lá como aporte recebido.`}
+                      className="mt-1 inline-flex max-w-full items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                    >
+                      <PiggyBank className="h-2.5 w-2.5 shrink-0" />
+                      <span className="truncate">Aporte → {aporteBoardOf(tx)!.name.trim()}</span>
+                    </span>
+                  ) : isInternalMovement(tx) && (
                     <span
                       title="Movimentação entre suas contas: conta no saldo, mas não soma em gastos, entradas, relatórios nem planejamento."
                       className="mt-1 inline-flex max-w-full items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300"
@@ -564,6 +604,18 @@ export function TransactionTable({
                           {isInternalMovement(tx)
                             ? <><CircleCheck className="h-4 w-4 mr-2" />Voltar a somar nos gastos</>
                             : <><CircleSlash className="h-4 w-4 mr-2" />Não somar (entre minhas contas)</>}
+                        </DropdownMenuItem>
+                      )}
+                      {onSetAporte && tx.type === 'despesa' && !tx.counterpart_of_id && investmentTargets
+                        .filter(b => b.id !== tx.counterpart_board_id)
+                        .map(b => (
+                          <DropdownMenuItem key={b.id} onClick={() => onSetAporte([tx.id], b.id)}>
+                            <PiggyBank className="h-4 w-4 mr-2" />Aporte em {b.name.trim()}
+                          </DropdownMenuItem>
+                        ))}
+                      {onSetAporte && aporteBoardOf(tx) && (
+                        <DropdownMenuItem onClick={() => onSetAporte([tx.id], null)}>
+                          <PiggyBank className="h-4 w-4 mr-2 opacity-50" />Não é aporte
                         </DropdownMenuItem>
                       )}
                       {onMove && otherBoards.length > 0 && (

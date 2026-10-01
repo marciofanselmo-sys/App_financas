@@ -347,6 +347,9 @@ export async function applyInternalRule(
   const unpaired: TxForInternal[] = []
   const isMarked = (t: TxForInternal) => !!t.is_internal || !!t.counterpart_board_id
   for (const t of withTarget) {
+    // Já ligado a OUTRA conta (ex.: o usuário marcou à mão "Aporte em Binance"
+    // num TED que a regra da RICO também pegaria): a escolha dele vale mais.
+    if (t.counterpart_board_id && t.counterpart_board_id !== target) continue
     if (alreadyGenerated.has(t.id)) { if (markOut) outsToMark.push(t); continue }
     const entry = findPairedEntry(destTxs, target!, Number(t.amount), t.date, 'receita', used)
     if (entry) {
@@ -429,6 +432,26 @@ export async function setTransactionsInternal(ids: string[], internal: boolean):
   const supabase = createClient()
   const values = internal ? { is_internal: true } : { is_internal: false, counterpart_board_id: null }
   const { error } = await supabase.from('transactions').update(values).in('id', ids).is('counterpart_of_id', null)
+  return { error: error?.message }
+}
+
+/**
+ * Marca lançamentos como APORTE numa conta de investimento: continuam na conta
+ * onde estão (o saldo dela não muda), não somam como gasto e passam a aparecer
+ * na conta de investimento como aporte recebido — o mesmo lançamento, sem
+ * cópia, então nada conta duas vezes no patrimônio.
+ *
+ * investmentBoardId = null → "Não é aporte": desfaz a ligação e o lançamento
+ * fica como "Entre contas · não soma" (para voltar a somar, há a ação própria).
+ */
+export async function setTransactionsAporte(ids: string[], investmentBoardId: string | null): Promise<{ error?: string }> {
+  if (ids.length === 0) return {}
+  const supabase = createClient()
+  const values = investmentBoardId
+    ? { is_internal: true, counterpart_board_id: investmentBoardId }
+    : { is_internal: true, counterpart_board_id: null }
+  const { error } = await supabase.from('transactions').update(values).in('id', ids)
+    .is('counterpart_of_id', null).eq('type', 'despesa')
   return { error: error?.message }
 }
 
