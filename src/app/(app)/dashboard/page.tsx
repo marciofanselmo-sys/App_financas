@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { buildDisplayItems } from '@/lib/recurring-groups'
-import { realMovements, internalTotals } from '@/lib/internal-movement'
+import { realMovements, internalTotals, isInternalMovement } from '@/lib/internal-movement'
 import { useSubcategoryNames } from '@/hooks/use-subcategory-names'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
@@ -142,9 +142,16 @@ export default function DashboardPage() {
     () => buildExpenseChartData(realTransactions, categories),
     [realTransactions, categories],
   )
+  // Categorias usadas só por movimentação entre contas no mês (pagamento de
+  // fatura, transferência) ficam fora do Planejado × Realizado: o limite delas
+  // apareceria sempre "sobrando", sem ser gasto de verdade.
+  const internalOnlyCategories = useMemo(() => {
+    const real = new Set(realTransactions.map(t => t.category))
+    return new Set(transactions.filter(t => isInternalMovement(t) && !real.has(t.category)).map(t => t.category))
+  }, [transactions, realTransactions])
   const plannedVsActual = useMemo(
-    () => buildPlannedVsActual(plan, realTransactions, categories),
-    [plan, realTransactions, categories],
+    () => buildPlannedVsActual(plan, realTransactions, categories, internalOnlyCategories),
+    [plan, realTransactions, categories, internalOnlyCategories],
   )
 
   const pinnedBoards = boards.filter(b => b.show_on_dashboard && !b.is_investment)
@@ -310,7 +317,7 @@ export default function DashboardPage() {
 
       {/* Diagnóstico Inteligente */}
       {!loading && (
-        <DiagnosticCard transactions={transactions} month={month} year={year} />
+        <DiagnosticCard transactions={realTransactions} month={month} year={year} />
       )}
 
       {/* Top 5 Gastos · Parcelas · Gastos Fixos — 3 colunas */}

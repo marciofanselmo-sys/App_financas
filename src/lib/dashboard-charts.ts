@@ -210,6 +210,8 @@ export function buildPlannedVsActual(
   plan: BudgetPlan | null,
   transactions: Transaction[],
   categories: Category[] = [],
+  /** Categorias que no mês só tiveram movimentação entre contas — ficam de fora. */
+  skip: Set<string> = new Set(),
 ): PlannedVsActualRow[] {
   if (!plan?.category_limits) return []
 
@@ -233,6 +235,7 @@ export function buildPlannedVsActual(
   for (const [key, planned] of Object.entries(plan.category_limits)) {
     if (planned <= 0) continue
     const label = isSubKey(key) ? subName(key) : key
+    if (skip.has(label)) continue
     // Limite de categoria principal cobre o que foi gasto nas subcategorias
     // dentro dela; limite de subcategoria conta só ela. O que manda é o nome,
     // não o formato da chave — plano antigo pode ter "sub:" num nome que hoje
