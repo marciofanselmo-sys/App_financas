@@ -433,12 +433,12 @@ export function TransactionTable({
                 </TableHead>
               )}
               <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400">Descrição</TableHead>
-              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden sm:table-cell w-28">Categoria</TableHead>
-              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden md:table-cell w-36">Data</TableHead>
-              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden md:table-cell w-24">Parcelas</TableHead>
-              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden lg:table-cell w-28">Recorrência</TableHead>
-              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden sm:table-cell w-24">Tipo</TableHead>
-              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 text-right w-28">Valor</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden sm:table-cell w-40 text-center">Categoria</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden md:table-cell w-24 text-center">Data</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden md:table-cell w-24 text-center">Parcelas</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden lg:table-cell w-28 text-center">Recorrência</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden sm:table-cell w-28 text-center">Tipo</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 text-right w-32 pr-4">Valor</TableHead>
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
@@ -481,10 +481,12 @@ export function TransactionTable({
                     {installmentLabel(tx) && ` · ${installmentLabel(tx)}`}
                   </p>
                 </TableCell>
-                <TableCell className="hidden sm:table-cell">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <Badge variant="secondary" className="text-xs font-normal">
-                      {tx.category}
+                <TableCell className="hidden sm:table-cell overflow-hidden">
+                  {/* Selo nunca passa da coluna: nome longo corta com "…" e
+                      aparece inteiro ao passar o mouse. */}
+                  <div className="flex items-center justify-center gap-1.5 flex-wrap min-w-0">
+                    <Badge variant="secondary" className="text-xs font-normal max-w-full min-w-0" title={tx.category}>
+                      <span className="truncate min-w-0">{tx.category}</span>
                     </Badge>
                     {tx.event_id && eventById.has(tx.event_id) && (
                       <span
@@ -497,13 +499,14 @@ export function TransactionTable({
                     )}
                   </div>
                 </TableCell>
-                <TableCell className="text-slate-500 dark:text-slate-400 text-sm hidden md:table-cell">
-                  {format(new Date(tx.date + 'T00:00:00'), "dd 'de' MMM, yyyy", { locale: ptBR })}
+                {/* Sem o ano: o mês e o ano já estão no filtro acima da tabela. */}
+                <TableCell className="text-slate-500 dark:text-slate-400 text-sm hidden md:table-cell text-center whitespace-nowrap">
+                  {format(new Date(tx.date + 'T00:00:00'), 'dd MMM', { locale: ptBR })}
                 </TableCell>
-                <TableCell className="text-slate-500 dark:text-slate-400 text-sm hidden md:table-cell">
+                <TableCell className="text-slate-500 dark:text-slate-400 text-sm hidden md:table-cell text-center">
                   {installmentLabel(tx)}
                 </TableCell>
-                <TableCell className="hidden lg:table-cell">
+                <TableCell className="hidden lg:table-cell text-center">
                   {onToggleRecurring && (
                     <button
                       title={tx.is_recurring ? 'Remover da aba Recorrências' : 'Adicionar à aba Recorrências'}
@@ -524,7 +527,7 @@ export function TransactionTable({
                     </button>
                   )}
                 </TableCell>
-                <TableCell className="hidden sm:table-cell">
+                <TableCell className="hidden sm:table-cell text-center">
                   <Badge
                     className={`text-xs ${
                       tx.type === 'receita'
@@ -536,7 +539,7 @@ export function TransactionTable({
                     {tx.type === 'receita' ? 'Receita' : 'Despesa'}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-right font-semibold text-sm whitespace-nowrap">
+                <TableCell className="text-right font-semibold text-sm whitespace-nowrap pr-4">
                   <span className={isInternalMovement(tx) ? 'text-slate-500 dark:text-slate-400' : tx.type === 'receita' ? 'text-green-600' : 'text-red-500'}>
                     {tx.type === 'despesa' ? '- ' : '+ '}
                     {formatCurrency(Number(tx.amount))}
