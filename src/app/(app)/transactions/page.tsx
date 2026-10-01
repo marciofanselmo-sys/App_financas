@@ -98,6 +98,7 @@ export default function TransactionsPage() {
   const { transactions: allTransactions } = useTransactions()
 
   const [formOpen, setFormOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   const [boardLimitOpen, setBoardLimitOpen] = useState(false)
   const [formStep, setFormStep] = useState<'template' | 'form'>('template')
   const [editing, setEditing] = useState<TransactionBoard | null>(null)
@@ -337,12 +338,20 @@ export default function TransactionsPage() {
 
       {/* Legenda: o que cada botão do card faz e como o saldo é calculado. */}
       {boards.length > 0 && (
-        <section className="rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50/70 dark:bg-white/[0.03] p-5">
-          <div className="flex items-center gap-2 mb-4">
+        <section className="rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50/70 dark:bg-white/[0.03] p-4">
+          {/* Começa recolhido; abre ao clicar no título. */}
+          <button
+            type="button"
+            onClick={() => setHelpOpen(v => !v)}
+            aria-expanded={helpOpen}
+            className="w-full flex items-center gap-2 text-left"
+          >
+            <ChevronRight className={cn('h-4 w-4 text-slate-400 shrink-0 transition-transform', helpOpen && 'rotate-90')} />
             <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
             <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Como funcionam os cards</h2>
-          </div>
-          <div className="grid gap-6 lg:grid-cols-2">
+          </button>
+          {helpOpen && (
+          <div className="grid gap-6 lg:grid-cols-2 mt-4">
             <div className="space-y-4">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Os botões do canto</p>
               <div className="flex gap-3">
@@ -405,6 +414,7 @@ export default function TransactionsPage() {
               </div>
             </div>
           </div>
+          )}
         </section>
       )}
 
