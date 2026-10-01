@@ -225,9 +225,11 @@ export default function DashboardPage() {
       <AdjustmentsBanner />
 
       {/* Patrimônio e composição não dependem do mês — ficam acima do filtro */}
-      <MacroOverview overview={patrimony} loading={boardsLoading || patrimonyLoading} />
-
-      <PatrimonyCompositionChart data={patrimonyChartData} loading={chartsLoading} />
+      <MacroOverview
+        overview={patrimony}
+        loading={boardsLoading || patrimonyLoading}
+        composition={<PatrimonyCompositionChart data={patrimonyChartData} loading={chartsLoading} />}
+      />
 
       {/* Daqui para baixo tudo segue o mês escolhido (os gráficos mostram os
           6 meses que terminam nele) — por isso o filtro fica aqui, e não no topo. */}

@@ -7,9 +7,11 @@ import { PatrimonyOverview, formatDashboardCurrency } from '@/lib/dashboard-patr
 interface MacroOverviewProps {
   overview: PatrimonyOverview
   loading?: boolean
+  /** Terceiro card do quadro (Composição do patrimônio). */
+  composition?: React.ReactNode
 }
 
-export function MacroOverview({ overview, loading }: MacroOverviewProps) {
+export function MacroOverview({ overview, loading, composition }: MacroOverviewProps) {
   if (loading) {
     return (
       <div className="h-44 nobli-card animate-pulse" />
@@ -44,7 +46,7 @@ export function MacroOverview({ overview, loading }: MacroOverviewProps) {
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
           {/* Saldo em contas */}
           <div className="rounded-2xl bg-[#F5F9FE] dark:bg-white/[0.03] border border-[#DDE7F3] dark:border-white/[0.06] p-4">
             <div className="flex items-center gap-2.5 mb-3">
@@ -129,6 +131,9 @@ export function MacroOverview({ overview, loading }: MacroOverviewProps) {
               </p>
             )}
           </div>
+
+          {/* No tablet ocupa a linha de baixo inteira; no computador, a 3ª coluna. */}
+          {composition && <div className="sm:col-span-2 lg:col-span-1">{composition}</div>}
         </div>
 
         <details className="mt-4 group">
