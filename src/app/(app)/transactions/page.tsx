@@ -8,13 +8,15 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useTransactions } from '@/hooks/use-transactions'
-import { TransactionBoard, Transaction, BoardType, BOARD_COLORS, BOARD_ICONS, BoardIconKey } from '@/types'
+import { TransactionBoard, Transaction, BoardType, BoardKind, BOARD_COLORS, BOARD_ICONS, BoardIconKey } from '@/types'
+import { BOARD_KINDS, boardKind } from '@/lib/board-kind'
 import { BoardIcon } from '@/components/transactions/board-icon'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Plus, Pencil, Trash2, Wallet, Pin, PinOff, ArrowRight, ChevronRight, AlertTriangle } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
 import { createClient } from '@/lib/supabase/client'
 import { balanceFromTransactions, formatDashboardCurrency, upToToday, looksLikeMissingCardData } from '@/lib/dashboard-patrimony'
@@ -43,16 +45,17 @@ interface AccountTemplate {
   icon: BoardIconKey
   color: string
   type: BoardType
+  kind: BoardKind
   suggestedName: string
 }
 
 const ACCOUNT_TEMPLATES: AccountTemplate[] = [
-  { id: 'conta-corrente',   label: 'Conta Corrente',   description: 'Bradesco, Itaú, Nubank...', icon: 'building',      color: '#3b82f6', type: 'ambos',  suggestedName: 'Conta Corrente'   },
-  { id: 'cartao-credito',   label: 'Cartão de Crédito', description: 'Crédito e compras parceladas', icon: 'credit-card',  color: '#8b5cf6', type: 'saida',  suggestedName: 'Cartão de Crédito' },
-  { id: 'carteira-digital', label: 'Carteira Digital',  description: 'PicPay, Mercado Pago, PayPal', icon: 'wallet',       color: '#06b6d4', type: 'ambos',  suggestedName: 'Carteira Digital'  },
-  { id: 'poupanca',         label: 'Poupança',          description: 'Reserva de emergência', icon: 'piggy-bank',    color: '#10b981', type: 'ambos',  suggestedName: 'Poupança'          },
-  { id: 'dinheiro-fisico',  label: 'Dinheiro Físico',   description: 'Espécie e carteira', icon: 'coins',         color: '#f59e0b', type: 'ambos',  suggestedName: 'Dinheiro Físico'   },
-  { id: 'outro',            label: 'Outro',             description: 'Personalizado', icon: 'wallet',       color: BOARD_COLORS[2], type: 'ambos', suggestedName: '' },
+  { id: 'conta-corrente',   label: 'Conta Corrente',   description: 'Bradesco, Itaú, Nubank...', icon: 'building',      color: '#3b82f6', type: 'ambos',  kind: 'corrente', suggestedName: 'Conta Corrente'   },
+  { id: 'cartao-credito',   label: 'Cartão de Crédito', description: 'Crédito e compras parceladas', icon: 'credit-card',  color: '#8b5cf6', type: 'saida',  kind: 'credito', suggestedName: 'Cartão de Crédito' },
+  { id: 'carteira-digital', label: 'Carteira Digital',  description: 'PicPay, Mercado Pago, PayPal', icon: 'wallet',       color: '#06b6d4', type: 'ambos',  kind: 'digital', suggestedName: 'Carteira Digital'  },
+  { id: 'poupanca',         label: 'Poupança',          description: 'Reserva de emergência', icon: 'piggy-bank',    color: '#10b981', type: 'ambos',  kind: 'poupanca', suggestedName: 'Poupança'          },
+  { id: 'dinheiro-fisico',  label: 'Dinheiro Físico',   description: 'Espécie e carteira', icon: 'coins',         color: '#f59e0b', type: 'ambos',  kind: 'dinheiro', suggestedName: 'Dinheiro Físico'   },
+  { id: 'outro',            label: 'Outro',             description: 'Personalizado', icon: 'wallet',       color: BOARD_COLORS[2], type: 'ambos', kind: 'outro', suggestedName: '' },
 ]
 
 const BOARD_TYPE_OPTIONS: { value: BoardType; label: string; desc: string }[] = [
@@ -67,6 +70,7 @@ interface FormState {
   icon: string
   description: string
   type: BoardType
+  kind: BoardKind
   // Texto, não número: o campo aceita vírgula e pode estar vazio enquanto o
   // usuário digita. Vira número só na hora de salvar.
   openingBalance: string
@@ -78,6 +82,7 @@ const EMPTY_FORM: FormState = {
   icon: 'wallet',
   description: '',
   type: 'ambos',
+  kind: 'outro',
   openingBalance: '',
 }
 
@@ -146,6 +151,7 @@ export default function TransactionsPage() {
       icon: tpl.icon,
       description: '',
       type: tpl.type,
+      kind: tpl.kind,
       openingBalance: '',
     })
     setFormStep('form')
@@ -155,7 +161,7 @@ export default function TransactionsPage() {
     setEditing(board)
     setForm({
       name: board.name, color: board.color, icon: board.icon,
-      description: board.description ?? '', type: board.type,
+      description: board.description ?? '', type: board.type, kind: boardKind(board),
       openingBalance: board.opening_balance ? String(board.opening_balance).replace('.', ',') : '',
     })
     setFormStep('form')
@@ -170,6 +176,7 @@ export default function TransactionsPage() {
       icon: form.icon as TransactionBoard['icon'],
       description: form.description || undefined,
       type: form.type,
+      kind: form.kind,
       is_investment: false,
       show_on_dashboard: editing?.show_on_dashboard ?? false,
       opening_balance: parseFloat(form.openingBalance.replace(/\./g, '').replace(',', '.')) || 0,
@@ -211,101 +218,118 @@ export default function TransactionsPage() {
           secondaryHref="/help"
         />
       ) : (
-        <div className="space-y-4">
-          {boards.map(board => {
-            const stats = computeStats(transactions, allTransactions, board)
-
+        // Agrupada pelo tipo da conta; grupo vazio não aparece. O card
+        // inteiro abre os lançamentos — os botões do canto não.
+        <div className="space-y-8">
+          {BOARD_KINDS.map(kind => {
+            const list = boards.filter(b => boardKind(b) === kind.key)
+            if (list.length === 0) return null
+            const withStats = list.map(board => ({ board, stats: computeStats(transactions, allTransactions, board) }))
+            const total = withStats.reduce((sum, { stats }) => sum + stats.balance, 0)
             return (
-              <div
-                key={board.id}
-                className="bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] overflow-hidden"
-              >
-                <div className="h-1 w-full" style={{ backgroundColor: board.color }} />
-                <div className="p-5">
-                  <div className="flex items-start justify-between gap-3 mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: board.color + '20' }}>
-                        <BoardIcon icon={board.icon} className="h-5 w-5" style={{ color: board.color }} />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold text-slate-800 dark:text-slate-100">{board.name}</p>
-                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                            board.type === 'entrada'
-                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                              : board.type === 'saida'
-                              ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
-                              : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
-                          }`}>
-                            {board.type === 'entrada' ? 'Entrada' : board.type === 'saida' ? 'Saída' : 'Ambos'}
-                          </span>
-                        </div>
-                        {board.description && (
-                          <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{board.description}</p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex gap-1 shrink-0">
-                      <button
-                        title={board.show_on_dashboard ? 'Remover do dashboard' : 'Fixar no dashboard'}
-                        onClick={() => toggleDashboard(board)}
-                        className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-                      >
-                        {board.show_on_dashboard
-                          ? <Pin className="h-3.5 w-3.5 text-blue-500" />
-                          : <PinOff className="h-3.5 w-3.5 text-slate-400" />
-                        }
-                      </button>
-                      <button
-                        onClick={() => openEdit(board)}
-                        className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-                      >
-                        <Pencil className="h-3.5 w-3.5 text-slate-400" />
-                      </button>
-                      <button
-                        onClick={() => openDeleteConfirm(board)}
-                        className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                      >
-                        <Trash2 className="h-3.5 w-3.5 text-slate-400 hover:text-red-500" />
-                      </button>
-                    </div>
+              <section key={kind.key}>
+                <div className="flex items-end justify-between gap-3 mb-3 pb-2 border-b border-slate-200 dark:border-white/[0.08]">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{kind.group}</h2>
+                    <span className="text-xs text-slate-400">{list.length}</span>
                   </div>
-
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-white/[0.05]">
-                    <div className="min-w-0">
-                      <p className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                        Saldo da conta
-                      </p>
-                      <p className={`text-lg font-bold tabular-nums ${
-                        stats.balance >= 0
-                          ? 'text-slate-800 dark:text-slate-100'
-                          : 'text-red-500'
-                      }`}>
-                        {formatDashboardCurrency(stats.balance)}
-                      </p>
-                      {looksLikeMissingCardData(board, stats.balance) && (
-                        <p className="flex items-start gap-1 text-xs text-amber-700 dark:text-amber-400 mt-1 max-w-xs">
-                          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" />
-                          Saldo positivo num cartão costuma indicar compras faltando — confira se alguma fatura ficou sem importar.
-                        </p>
-                      )}
-                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                        {stats.count} lançamento{stats.count !== 1 ? 's' : ''} este mês
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5 text-xs h-8"
-                      style={{ borderColor: board.color + '60', color: board.color }}
-                      onClick={() => router.push(`/transactions/${board.id}`)}
-                    >
-                      Ver lançamentos
-                      <ArrowRight className="h-3 w-3" />
-                    </Button>
-                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {kind.key === 'credito' ? 'Faturas somadas' : 'Saldo somado'}:{' '}
+                    <strong className={cn('tabular-nums', total < 0 ? 'text-red-500' : 'text-slate-700 dark:text-slate-200')}>
+                      {formatDashboardCurrency(total)}
+                    </strong>
+                  </p>
                 </div>
-              </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {withStats.map(({ board, stats }) => {
+                    const open = () => router.push(`/transactions/${board.id}`)
+                    return (
+                      <div
+                        key={board.id}
+                        role="link"
+                        tabIndex={0}
+                        onClick={open}
+                        onKeyDown={e => { if (e.key === 'Enter') open() }}
+                        className="group cursor-pointer bg-white dark:bg-[#111c2d] rounded-xl shadow-sm border border-slate-100 dark:border-white/[0.06] overflow-hidden transition-all hover:-translate-y-px hover:shadow-md hover:border-slate-300 dark:hover:border-white/[0.15] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      >
+                        <div className="h-1 w-full" style={{ backgroundColor: board.color }} />
+                        <div className="p-4">
+                          <div className="flex items-start gap-3">
+                            <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: board.color + '20' }}>
+                              <BoardIcon icon={board.icon} className="h-4 w-4" style={{ color: board.color }} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate" title={board.name}>{board.name}</p>
+                              <span className={`inline-block mt-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                                board.type === 'entrada'
+                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                  : board.type === 'saida'
+                                  ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+                                  : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                              }`}>
+                                {board.type === 'entrada' ? 'Entrada' : board.type === 'saida' ? 'Saída' : 'Ambos'}
+                              </span>
+                            </div>
+                            {/* Os botões param o clique aqui, para não abrir a conta junto. */}
+                            <div className="flex -mr-1.5 -mt-1.5 shrink-0" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+                              <button
+                                title={board.show_on_dashboard ? 'Remover do dashboard' : 'Fixar no dashboard'}
+                                onClick={() => toggleDashboard(board)}
+                                className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                              >
+                                {board.show_on_dashboard
+                                  ? <Pin className="h-3.5 w-3.5 text-blue-500" />
+                                  : <PinOff className="h-3.5 w-3.5 text-slate-400" />}
+                              </button>
+                              <button
+                                title="Editar"
+                                onClick={() => openEdit(board)}
+                                className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                              >
+                                <Pencil className="h-3.5 w-3.5 text-slate-400" />
+                              </button>
+                              <button
+                                title="Excluir"
+                                onClick={() => openDeleteConfirm(board)}
+                                className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-slate-400 hover:text-red-500" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex items-end justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                                {kind.key === 'credito' ? 'Fatura / saldo' : 'Saldo da conta'}
+                              </p>
+                              <p className={`text-lg font-bold tabular-nums ${stats.balance >= 0 ? 'text-slate-800 dark:text-slate-100' : 'text-red-500'}`}>
+                                {formatDashboardCurrency(stats.balance)}
+                              </p>
+                              <p className="text-xs text-slate-400 dark:text-slate-500">
+                                {stats.count} lançamento{stats.count !== 1 ? 's' : ''} este mês
+                              </p>
+                            </div>
+                            <span
+                              className="inline-flex items-center gap-1 text-xs font-medium opacity-0 -translate-x-1 transition-all group-hover:opacity-100 group-hover:translate-x-0 shrink-0"
+                              style={{ color: board.color }}
+                            >
+                              Ver lançamentos <ArrowRight className="h-3.5 w-3.5" />
+                            </span>
+                          </div>
+                          {looksLikeMissingCardData(board, stats.balance) && (
+                            <p className="flex items-start gap-1 text-[11px] text-amber-700 dark:text-amber-400 mt-2">
+                              <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" />
+                              Saldo positivo num cartão costuma indicar compras faltando — confira se alguma fatura ficou sem importar.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
             )
           })}
         </div>
@@ -417,6 +441,28 @@ export default function TransactionsPage() {
                   {' '}para a fatura em aberto (ex: <code>-1200,00</code>). Deixe
                   vazio se o histórico começa do zero.
                 </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Tipo de conta</Label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {BOARD_KINDS.map(k => (
+                    <button
+                      key={k.key}
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, kind: k.key }))}
+                      className={cn(
+                        'rounded-lg border-2 px-2 py-1.5 text-xs font-medium transition-all',
+                        form.kind === k.key
+                          ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300'
+                          : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-500',
+                      )}
+                    >
+                      {k.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-slate-400 dark:text-slate-500">Define em qual grupo a conta aparece.</p>
               </div>
 
               <div className="space-y-2">
