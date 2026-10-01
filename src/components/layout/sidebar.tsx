@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { BoardIcon } from '@/components/transactions/board-icon'
+import { BOARD_KINDS, boardKind } from '@/lib/board-kind'
 import {
   LayoutDashboard, ArrowLeftRight, LogOut, Settings,
   Tag, ChevronDown, Target, RefreshCw, BarChart2, CalendarCheck,
@@ -199,7 +200,16 @@ export function Sidebar() {
                     {nonInvestmentBoards.length === 0 ? (
                       <p className="px-3 py-1.5 text-xs text-slate-400 dark:text-slate-500">Nenhuma conta criada</p>
                     ) : (
-                      nonInvestmentBoards.map(board => (
+                      // Mesmos grupos da página Contas e Cartões; grupo vazio não aparece.
+                      BOARD_KINDS.map(kind => {
+                        const list = nonInvestmentBoards.filter(b => boardKind(b) === kind.key)
+                        if (list.length === 0) return null
+                        return (
+                          <div key={kind.key}>
+                            <p className="px-3 pt-2 pb-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#93A5C1] dark:text-slate-500">
+                              {kind.group}
+                            </p>
+                            {list.map(board => (
                         <Link
                           key={board.id}
                           href={`/transactions/${board.id}`}
@@ -213,7 +223,10 @@ export function Sidebar() {
                           <BoardIcon icon={board.icon} className="h-3.5 w-3.5 shrink-0" />
                           <span className="truncate">{board.name}</span>
                         </Link>
-                      ))
+                            ))}
+                          </div>
+                        )
+                      })
                     )}
                   </NavItemExpandable>
                 ) : item.href === '/investments' ? (

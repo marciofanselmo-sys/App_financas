@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Plus, Pencil, Trash2, Wallet, Pin, PinOff, ArrowRight, ChevronRight, AlertTriangle } from 'lucide-react'
+import { Plus, Pencil, Trash2, Wallet, Pin, PinOff, ArrowRight, ChevronRight, AlertTriangle, CreditCard, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
 import { createClient } from '@/lib/supabase/client'
@@ -318,7 +318,7 @@ export default function TransactionsPage() {
                               Ver lançamentos <ArrowRight className="h-3.5 w-3.5" />
                             </span>
                           </div>
-                          {looksLikeMissingCardData(board, stats.balance) && (
+                          {(kind.key === 'credito' ? stats.balance > 0.005 : looksLikeMissingCardData(board, stats.balance)) && (
                             <p className="flex items-start gap-1 text-[11px] text-amber-700 dark:text-amber-400 mt-2">
                               <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" />
                               Saldo positivo num cartão costuma indicar compras faltando — confira se alguma fatura ficou sem importar.
@@ -333,6 +333,79 @@ export default function TransactionsPage() {
             )
           })}
         </div>
+      )}
+
+      {/* Legenda: o que cada botão do card faz e como o saldo é calculado. */}
+      {boards.length > 0 && (
+        <section className="rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50/70 dark:bg-white/[0.03] p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Como funcionam os cards</h2>
+          </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div className="space-y-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Os botões do canto</p>
+              <div className="flex gap-3">
+                <span className="h-7 w-7 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/[0.08] flex items-center justify-center shrink-0">
+                  <Pin className="h-3.5 w-3.5 text-blue-500" />
+                </span>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  <strong className="text-slate-700 dark:text-slate-200">Fixar no dashboard.</strong> Com o alfinete
+                  azul, a conta entra nas somas do app: saldo e patrimônio do Dashboard, Análise, Relatórios e parcelas.
+                  Com o alfinete cinza, a conta continua aqui com todos os lançamentos, mas fica fora dessas somas —
+                  útil para uma conta da empresa, conjunta ou que você só quer guardar o histórico.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <span className="h-7 w-7 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/[0.08] flex items-center justify-center shrink-0">
+                  <Pencil className="h-3.5 w-3.5 text-slate-400" />
+                </span>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  <strong className="text-slate-700 dark:text-slate-200">Editar.</strong> Troca o nome, o tipo da conta
+                  (o grupo em que ela aparece nesta tela), se ela recebe entradas, saídas ou os dois, o ícone, a cor e o
+                  saldo antes de começar. Nenhum lançamento é alterado.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <span className="h-7 w-7 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/[0.08] flex items-center justify-center shrink-0">
+                  <Trash2 className="h-3.5 w-3.5 text-slate-400" />
+                </span>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  <strong className="text-slate-700 dark:text-slate-200">Excluir.</strong> Apaga a conta e todos os
+                  lançamentos dela, de todos os meses. Antes, o app mostra quantos lançamentos serão apagados e pede
+                  confirmação duas vezes — não dá para desfazer. Se a ideia é só tirar a conta das somas, use o alfinete.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">O valor do card</p>
+              <div className="flex gap-3">
+                <span className="h-7 w-7 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/[0.08] flex items-center justify-center shrink-0">
+                  <Wallet className="h-3.5 w-3.5 text-slate-400" />
+                </span>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  <strong className="text-slate-700 dark:text-slate-200">Saldo da conta.</strong> É o saldo antes de
+                  começar, mais tudo o que entrou, menos tudo o que saiu, até hoje. Lançamentos com data futura, como
+                  parcelas que ainda vão vencer, só contam quando chega o dia deles.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <span className="h-7 w-7 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/[0.08] flex items-center justify-center shrink-0">
+                  <CreditCard className="h-3.5 w-3.5 text-slate-400" />
+                </span>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  <strong className="text-slate-700 dark:text-slate-200">Cartão de crédito fica negativo — e isso é o
+                  normal.</strong> O valor do cartão é o quanto você está devendo. Cada compra deixa o número mais
+                  negativo, porque é um dinheiro que você só vai pagar depois, na fatura. Quando a fatura é paga, o
+                  pagamento entra no cartão e o valor volta para perto de zero. No topo do grupo, &ldquo;Faturas
+                  somadas&rdquo; mostra o total que você deve em todos os cartões. Se um cartão aparecer positivo,
+                  quase sempre falta importar alguma fatura — o card avisa quando isso acontece.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
       )}
 
       {/* MODAL — template + form */}
