@@ -554,6 +554,8 @@ export default function AnalyticsPage() {
                             aria-expanded={open}
                           >
                             <div className="flex items-center gap-3">
+                              {/* Seta antes do ícone, no mesmo padrão dos outros blocos recolhíveis. */}
+                              <ChevronRight className={cn('h-4 w-4 text-slate-400 shrink-0 transition-transform', open && 'rotate-90')} />
                               <div
                                 className="h-9 w-9 rounded-full flex items-center justify-center shrink-0"
                                 style={{ backgroundColor: `${color}1f`, color }}
@@ -572,9 +574,8 @@ export default function AnalyticsPage() {
                                 <p className="text-sm font-semibold whitespace-nowrap text-red-500 tabular-nums">{fmt(total)}</p>
                                 <p className="text-[11px] text-slate-400">{pct.toFixed(0)}%</p>
                               </div>
-                              <ChevronRight className={cn('h-4 w-4 text-slate-400 shrink-0 transition-transform', open && 'rotate-90')} />
                             </div>
-                            <div className="sm:hidden mt-2 ml-12 mr-6">{bar}</div>
+                            <div className="sm:hidden mt-2 ml-[76px]">{bar}</div>
                           </button>
 
                           {open && (
