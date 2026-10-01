@@ -27,8 +27,9 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import {
-  ArrowLeft, Plus, Upload, Download, Search, X,
+  ArrowLeft, Plus, Upload, Download, Search, X, MoreVertical, PiggyBank, ArrowRightLeft,
   ChevronDown, ChevronUp, RefreshCw, AlertCircle, CheckCircle2,
 } from 'lucide-react'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
@@ -62,7 +63,7 @@ export default function BoardDetailPage() {
   const isInvestmentBoard = board?.is_investment ?? false
   // Conta de investimento: aportes que saíram das suas contas para ela. São os
   // próprios lançamentos de lá (C6, Itaú…), mostrados aqui — nada é copiado.
-  const { linked: aportesIn } = useInvestmentContributions(isInvestmentBoard && board ? [board.id] : [])
+  const { linked: aportesIn, reload: reloadAportes } = useInvestmentContributions(isInvestmentBoard && board ? [board.id] : [])
   const aporteSummary = useMemo(
     () => (board && isInvestmentBoard ? contributionsForBoard(board, aportesIn) : null),
     [board, isInvestmentBoard, aportesIn],
@@ -263,6 +264,7 @@ export default function BoardDetailPage() {
     const { error } = await setTransactionsAporte(ids, investmentBoardId)
     if (error) setRuleSyncError(`Não foi possível marcar o aporte: ${error}`)
     refetch()
+    reloadAportes()
   }
 
   async function handleBulkCategoryChange(ids: string[], category: string) {
@@ -579,21 +581,42 @@ export default function BoardDetailPage() {
                   <span className="tabular-nums font-medium">{formatCurrency(aporteSummary.base)}</span>
                 </div>
               )}
-              {aporteSummary.aportes.map(t => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => t.board_id && router.push(`/transactions/${t.board_id}`)}
-                  className="w-full text-left px-3 py-2 flex items-center gap-3 text-xs hover:bg-slate-50 dark:hover:bg-white/[0.03]"
-                >
-                  <span className="w-16 shrink-0 text-slate-400">{new Date(`${t.date}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
-                  <span className="flex-1 min-w-0 truncate text-slate-600 dark:text-slate-300">
-                    {t.description}
-                    <span className="block text-[10px] text-slate-400">de {boards.find(b => b.id === t.board_id)?.name.trim() ?? 'outra conta'}</span>
-                  </span>
-                  <span className="tabular-nums font-medium text-slate-700 dark:text-slate-200">{formatCurrency(Number(t.amount))}</span>
-                </button>
-              ))}
+              {aporteSummary.aportes.map(t => {
+                const origin = boards.find(b => b.id === t.board_id)
+                const otherInvestments = boards.filter(b => b.is_investment && b.id !== boardId)
+                return (
+                  <div key={t.id} className="px-3 py-2 flex items-center gap-3 text-xs hover:bg-slate-50 dark:hover:bg-white/[0.03]">
+                    <span className="w-16 shrink-0 text-slate-400">{new Date(`${t.date}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                    <span className="flex-1 min-w-0 truncate text-slate-600 dark:text-slate-300">
+                      {t.description}
+                      <span className="block text-[10px] text-slate-400">de {origin?.name.trim() ?? 'outra conta'}</span>
+                    </span>
+                    <span className="tabular-nums font-medium text-slate-700 dark:text-slate-200">{formatCurrency(Number(t.amount))}</span>
+                    {/* Ações do aporte aqui mesmo; editar o lançamento inteiro é na
+                        conta de onde ele saiu — o formulário desta tela grava nesta conta. */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-slate-100 dark:hover:bg-white/[0.08] transition-colors shrink-0">
+                        <MoreVertical className="h-3.5 w-3.5 text-slate-500" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-56">
+                        {otherInvestments.map(b => (
+                          <DropdownMenuItem key={b.id} onClick={() => handleSetAporte([t.id], b.id)}>
+                            <PiggyBank className="h-4 w-4 mr-2" />Mudar aporte para {b.name.trim()}
+                          </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuItem onClick={() => handleSetAporte([t.id], null)}>
+                          <PiggyBank className="h-4 w-4 mr-2 opacity-50" />Não é aporte
+                        </DropdownMenuItem>
+                        {origin && (
+                          <DropdownMenuItem onClick={() => router.push(`/transactions/${origin.id}`)}>
+                            <ArrowRightLeft className="h-4 w-4 mr-2" />Abrir em {origin.name.trim()} para editar
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
