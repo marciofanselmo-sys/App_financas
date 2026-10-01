@@ -396,7 +396,7 @@ export default function TransactionsPage() {
                 </span>
                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                   <strong className="text-slate-700 dark:text-slate-200">Cartão de crédito fica negativo — e isso é o
-                  normal.</strong> O valor do cartão é o quanto você está devendo. Cada compra deixa o número mais
+                  normal.</strong>{' '}O valor do cartão é o quanto você está devendo. Cada compra deixa o número mais
                   negativo, porque é um dinheiro que você só vai pagar depois, na fatura. Quando a fatura é paga, o
                   pagamento entra no cartão e o valor volta para perto de zero. No topo do grupo, &ldquo;Faturas
                   somadas&rdquo; mostra o total que você deve em todos os cartões. Se um cartão aparecer positivo,
