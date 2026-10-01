@@ -75,17 +75,17 @@ export function BoardHelp() {
             </Item>
             <Item icon={MoreVertical} title="Menu ⋮.">
               <span className="block mt-0.5">
-                <b className="font-medium text-slate-600 dark:text-slate-300">Editar</b> muda descrição, valor, data,
+                <b className="font-medium text-slate-600 dark:text-slate-300">Editar</b>{' '}muda descrição, valor, data,
                 categoria e tipo. Ao trocar a categoria, todos os lançamentos com a mesma descrição mudam juntos e os
                 próximos já chegam assim — a não ser que você marque &ldquo;Mudar só esta transação&rdquo;.
               </span>
               <span className="block mt-1">
-                <b className="font-medium text-slate-600 dark:text-slate-300">Não somar (entre minhas contas)</b> coloca
+                <b className="font-medium text-slate-600 dark:text-slate-300">Não somar (entre minhas contas)</b>{' '}coloca
                 a etiqueta &ldquo;Entre contas&rdquo; à mão; no mesmo lugar dá para voltar a somar.
               </span>
               <span className="block mt-1">
-                <b className="font-medium text-slate-600 dark:text-slate-300">Mover para conta</b> passa o lançamento
-                para outra conta, e <b className="font-medium text-slate-600 dark:text-slate-300">Excluir</b> apaga
+                <b className="font-medium text-slate-600 dark:text-slate-300">Mover para conta</b>{' '}passa o lançamento
+                para outra conta, e <b className="font-medium text-slate-600 dark:text-slate-300">Excluir</b>{' '}apaga
                 só este lançamento, depois de confirmar.
               </span>
             </Item>
