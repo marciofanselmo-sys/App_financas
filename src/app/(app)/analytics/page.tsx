@@ -35,6 +35,7 @@ const OTHER_COLOR = '#94a3b8'
 const PREFERRED_SLOT: Record<string, number> = {
   'alimentação': 0, 'moradia': 1, 'saúde': 2, 'transporte': 3, 'lazer': 4, 'educação': 5, 'compras': 6,
 }
+const PREFERRED_INCOME_SLOT: Record<string, number> = { 'salário': 2, 'freelance': 3, 'rendimentos': 0 }
 
 // Ícone pelo nome da categoria — as categorias não guardam ícone no banco.
 const ICON_RULES: [RegExp, LucideIcon][] = [
@@ -171,6 +172,79 @@ function CardHeading({ icon: Icon, title, subtitle, extra }: { icon: LucideIcon;
   )
 }
 
+// Cor de cada categoria-mãe do tipo pedido: as conhecidas têm cor fixa e as
+// demais seguem a ordem alfabética, então a cor não muda de um mês para outro.
+function buildColorMap(categories: Category[], type: 'despesa' | 'receita') {
+  const names = [...new Set(
+    categories
+      .filter(c => !c.parent_id && (type === 'receita' ? c.type !== 'despesa' : c.type !== 'receita'))
+      .map(c => c.name),
+  )].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  const preferred = type === 'receita' ? PREFERRED_INCOME_SLOT : PREFERRED_SLOT
+  const map = new Map<string, string>()
+  let next = 0
+  for (const name of names) {
+    const key = name.toLowerCase()
+    if (key === 'outros') continue
+    const slot = preferred[key] ?? next++
+    map.set(name, PALETTE[slot % PALETTE.length])
+  }
+  return (cat: string) => map.get(cat) ?? (cat.toLowerCase() === 'outros' ? OTHER_COLOR : PALETTE[cat.length % PALETTE.length])
+}
+
+// Rosca: as 6 maiores e o resto somado em "Outros" (junto da própria Outros).
+function buildDonut(list: CategoryTotal[], colorOf: (cat: string) => string) {
+  const top = list.filter(c => c.cat.toLowerCase() !== 'outros').slice(0, 6)
+  const rest = list.filter(c => !top.includes(c)).reduce((s, c) => s + c.total, 0)
+  const items = top.map(c => ({ name: c.cat, value: c.total, color: colorOf(c.cat) }))
+  if (rest > 0.005) items.push({ name: 'Outros', value: rest, color: OTHER_COLOR })
+  return items
+}
+
+function DonutCard({ title, items, total }: { title: string; items: { name: string; value: number; color: string }[]; total: number }) {
+  return (
+    <section className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
+      <CardHeading icon={ChartPie} title={title} subtitle={`Total: ${fmt(total)}`} />
+      <div className="flex items-center gap-4">
+        <div className="relative h-36 w-36 shrink-0 [&_path]:stroke-white dark:[&_path]:stroke-slate-800">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={items}
+                dataKey="value"
+                nameKey="name"
+                innerRadius="60%"
+                outerRadius="100%"
+                strokeWidth={2}
+                startAngle={90}
+                endAngle={-270}
+                isAnimationActive={false}
+              >
+                {items.map(d => <Cell key={d.name} fill={d.color} />)}
+              </Pie>
+              <Tooltip
+                formatter={(value) => fmt(Number(value))}
+                contentStyle={{ borderRadius: 12, fontSize: 12 }}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+        <ul className="flex-1 min-w-0 space-y-1.5">
+          {items.map(d => (
+            <li key={d.name} className="flex items-center gap-2 text-xs">
+              <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+              <span className="flex-1 min-w-0 truncate text-slate-600 dark:text-slate-300">{d.name}</span>
+              <span className="tabular-nums text-slate-500 dark:text-slate-400">
+                {total > 0 ? ((d.value / total) * 100).toFixed(0) : 0}%
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )
+}
+
 export default function AnalyticsPage() {
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
@@ -215,31 +289,13 @@ export default function AnalyticsPage() {
 
   const maxExpense = expenseByCategory[0]?.total ?? 1
 
-  // Cor por categoria (ver PALETTE).
-  const colorOf = useMemo(() => {
-    const names = [...new Set(
-      categories.filter(c => !c.parent_id && c.type !== 'receita').map(c => c.name),
-    )].sort((a, b) => a.localeCompare(b, 'pt-BR'))
-    const map = new Map<string, string>()
-    let next = 0
-    for (const name of names) {
-      const key = name.toLowerCase()
-      if (key === 'outros') continue
-      const slot = PREFERRED_SLOT[key] ?? next++
-      map.set(name, PALETTE[slot % PALETTE.length])
-    }
-    return (cat: string) => map.get(cat) ?? (cat.toLowerCase() === 'outros' ? OTHER_COLOR : PALETTE[cat.length % PALETTE.length])
-  }, [categories])
+  // Cor por categoria (ver PALETTE), separada para despesas e receitas.
+  const expenseColor = useMemo(() => buildColorMap(categories, 'despesa'), [categories])
+  const incomeColor = useMemo(() => buildColorMap(categories, 'receita'), [categories])
+  const colorOf = expenseColor
 
-  // Rosca: as 6 maiores e o resto somado em "Outros" (junto da própria Outros).
-  const donut = useMemo(() => {
-    const main = expenseByCategory.filter(c => c.cat.toLowerCase() !== 'outros')
-    const top = main.slice(0, 6)
-    const rest = expenseByCategory.filter(c => !top.includes(c)).reduce((s, c) => s + c.total, 0)
-    const items = top.map(c => ({ name: c.cat, value: c.total, color: colorOf(c.cat) }))
-    if (rest > 0.005) items.push({ name: 'Outros', value: rest, color: OTHER_COLOR })
-    return items
-  }, [expenseByCategory, colorOf])
+  const donut = useMemo(() => buildDonut(expenseByCategory, expenseColor), [expenseByCategory, expenseColor])
+  const incomeDonut = useMemo(() => buildDonut(incomeByCategory, incomeColor), [incomeByCategory, incomeColor])
 
   // Insight: a categoria que mais subiu em reais contra o mês anterior.
   const insight = useMemo(() => {
@@ -585,47 +641,7 @@ export default function AnalyticsPage() {
             {/* Em telas médias os dois quadros ficam lado a lado, abaixo da lista. */}
             <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-1 items-start">
               {/* Distribuição das despesas */}
-              {donut.length > 0 && (
-                <section className={cn(cardCls, 'p-5')}>
-                  <CardHeading icon={ChartPie} title="Distribuição das despesas" subtitle={`Total: ${fmt(totalExpenses)}`} />
-                  <div className="flex items-center gap-4">
-                    <div className="relative h-36 w-36 shrink-0 [&_path]:stroke-white dark:[&_path]:stroke-slate-800">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={donut}
-                            dataKey="value"
-                            nameKey="name"
-                            innerRadius="60%"
-                            outerRadius="100%"
-                            strokeWidth={2}
-                            startAngle={90}
-                            endAngle={-270}
-                            isAnimationActive={false}
-                          >
-                            {donut.map(d => <Cell key={d.name} fill={d.color} />)}
-                          </Pie>
-                          <Tooltip
-                            formatter={(value) => fmt(Number(value))}
-                            contentStyle={{ borderRadius: 12, fontSize: 12 }}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <ul className="flex-1 min-w-0 space-y-1.5">
-                      {donut.map(d => (
-                        <li key={d.name} className="flex items-center gap-2 text-xs">
-                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                          <span className="flex-1 min-w-0 truncate text-slate-600 dark:text-slate-300">{d.name}</span>
-                          <span className="tabular-nums text-slate-500 dark:text-slate-400">
-                            {totalExpenses > 0 ? ((d.value / totalExpenses) * 100).toFixed(0) : 0}%
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </section>
-              )}
+              {donut.length > 0 && <DonutCard title="Distribuição das despesas" items={donut} total={totalExpenses} />}
 
               {/* Insight do mês */}
               <section className="rounded-xl border border-blue-100 dark:border-blue-800/50 bg-blue-50/70 dark:bg-blue-900/20 p-5">
@@ -664,6 +680,9 @@ export default function AnalyticsPage() {
                   </div>
                 </div>
               </section>
+
+              {/* Distribuição das receitas */}
+              {incomeDonut.length > 0 && <DonutCard title="Distribuição das receitas" items={incomeDonut} total={totalIncome} />}
             </div>
           </div>
 
