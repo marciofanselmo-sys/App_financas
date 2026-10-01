@@ -10,6 +10,7 @@ import { useRecurring } from '@/hooks/use-recurring'
 import { useRecurringDecisions } from '@/hooks/use-recurring-decisions'
 import { SummaryCards } from '@/components/dashboard/summary-cards'
 import { DiagnosticCard } from '@/components/dashboard/diagnostic-card'
+import { BOARD_KINDS, boardKind } from '@/lib/board-kind'
 import { TopCategoriesBar } from '@/components/dashboard/top-categories-bar'
 import { AdjustmentsBanner } from '@/components/dashboard/adjustments-banner'
 import { useCategories } from '@/hooks/use-categories'
@@ -287,39 +288,6 @@ export default function DashboardPage() {
         <PlannedVsActualChart data={plannedVsActual} loading={planLoading || loading} />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <InvestMonthCard
-          monthlyIncome={summary.totalIncome}
-          investmentTarget={plan?.investment_target ?? 0}
-          defaultInvestmentPct={defaultInvestmentPct}
-          actualContributions={monthlyContributions}
-          loading={planLoading || loading || allTxLoading || prefsLoading}
-          saving={savingInvestTarget}
-          onSaveTarget={handleSaveInvestmentTarget}
-        />
-        <GoalsSummaryCard goals={goals} loading={goalsLoading} />
-      </div>
-
-      <InvestTargetChart
-        data={investTargetChartData}
-        loading={targetsRangeLoading || allTxLoading || boardsLoading}
-      />
-
-      {/* Primeiros passos */}
-      {!loading && !boardsLoading && !recurringLoading && !decisionsLoading && (
-        <NextActionCard
-          hasTransactions={transactions.length > 0}
-          hasBoards={boards.length > 0}
-          pendingRecurring={pendingRecurringCount}
-          activeInstallments={activeInstallments.length}
-        />
-      )}
-
-      {/* Diagnóstico Inteligente */}
-      {!loading && (
-        <DiagnosticCard transactions={realTransactions} month={month} year={year} />
-      )}
-
       {/* Top 5 Gastos · Parcelas · Gastos Fixos — 3 colunas */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Top 5 gastos por categoria */}
@@ -428,6 +396,39 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Diagnóstico Inteligente */}
+      {!loading && (
+        <DiagnosticCard transactions={realTransactions} month={month} year={year} />
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <InvestMonthCard
+          monthlyIncome={summary.totalIncome}
+          investmentTarget={plan?.investment_target ?? 0}
+          defaultInvestmentPct={defaultInvestmentPct}
+          actualContributions={monthlyContributions}
+          loading={planLoading || loading || allTxLoading || prefsLoading}
+          saving={savingInvestTarget}
+          onSaveTarget={handleSaveInvestmentTarget}
+        />
+        <GoalsSummaryCard goals={goals} loading={goalsLoading} />
+      </div>
+
+      <InvestTargetChart
+        data={investTargetChartData}
+        loading={targetsRangeLoading || allTxLoading || boardsLoading}
+      />
+
+      {/* Primeiros passos */}
+      {!loading && !boardsLoading && !recurringLoading && !decisionsLoading && (
+        <NextActionCard
+          hasTransactions={transactions.length > 0}
+          hasBoards={boards.length > 0}
+          pendingRecurring={pendingRecurringCount}
+          activeInstallments={activeInstallments.length}
+        />
+      )}
+
       {/* Minhas Contas */}
       {!boardsLoading && (
         <div>
@@ -451,18 +452,33 @@ export default function DashboardPage() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {pinnedBoards.map(board => (
-                // Todas as transações da conta, não as do mês: o card mostra
-                // SALDO, e saldo é a soma de tudo que passou pela conta. Com o
-                // recorte do mês, a mesma conta aparecia com um número aqui e
-                // outro no bloco Patrimônio, logo abaixo na mesma tela.
-                <BoardSummaryCard
-                  key={board.id}
-                  board={board}
-                  transactions={allTransactions.filter(t => t.board_id === board.id)}
-                />
-              ))}
+            // Mesmos grupos de Contas e Cartões; grupo vazio não aparece.
+            <div className="space-y-5">
+              {BOARD_KINDS.map(kind => {
+                const list = pinnedBoards.filter(b => boardKind(b) === kind.key)
+                if (list.length === 0) return null
+                return (
+                  <section key={kind.key}>
+                    <div className="flex items-center gap-2 mb-2 pb-1.5 border-b border-[#DDE7F3] dark:border-white/[0.08]">
+                      <h3 className="text-xs font-semibold text-slate-600 dark:text-slate-300">{kind.group}</h3>
+                      <span className="text-[11px] text-[#93A5C1]">{list.length}</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {list.map(board => (
+                        // Todas as transações da conta, não as do mês: o card mostra
+                        // SALDO, e saldo é a soma de tudo que passou pela conta. Com o
+                        // recorte do mês, a mesma conta aparecia com um número aqui e
+                        // outro no bloco Patrimônio, logo abaixo na mesma tela.
+                        <BoardSummaryCard
+                          key={board.id}
+                          board={board}
+                          transactions={allTransactions.filter(t => t.board_id === board.id)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )
+              })}
             </div>
           )}
         </div>
