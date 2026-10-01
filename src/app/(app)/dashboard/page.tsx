@@ -269,10 +269,16 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <InvestTargetChart
-        data={investTargetChartData}
-        loading={targetsRangeLoading || allTxLoading || boardsLoading}
-      />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <ExpenseDistributionChart data={expenseChartData} loading={loading} />
+        <IncomeCommitmentChart
+          segments={incomeCommitment.segments}
+          hasIncome={incomeCommitment.hasIncome}
+          monthlyIncome={summary.totalIncome}
+          loading={loading || recurringLoading || decisionsLoading}
+        />
+        <PlannedVsActualChart data={plannedVsActual} loading={planLoading || loading} />
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <InvestMonthCard
@@ -287,16 +293,10 @@ export default function DashboardPage() {
         <GoalsSummaryCard goals={goals} loading={goalsLoading} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <ExpenseDistributionChart data={expenseChartData} loading={loading} />
-        <IncomeCommitmentChart
-          segments={incomeCommitment.segments}
-          hasIncome={incomeCommitment.hasIncome}
-          monthlyIncome={summary.totalIncome}
-          loading={loading || recurringLoading || decisionsLoading}
-        />
-        <PlannedVsActualChart data={plannedVsActual} loading={planLoading || loading} />
-      </div>
+      <InvestTargetChart
+        data={investTargetChartData}
+        loading={targetsRangeLoading || allTxLoading || boardsLoading}
+      />
 
       {/* Primeiros passos */}
       {!loading && !boardsLoading && !recurringLoading && !decisionsLoading && (
