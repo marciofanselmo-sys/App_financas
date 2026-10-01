@@ -7,8 +7,6 @@ import { useCategories } from '@/hooks/use-categories'
 import {
   TrendingDown, TrendingUp, Wallet, BarChart2, Loader2, AlertCircle, CheckCircle2, X, ArrowLeftRight, ChevronRight, ChevronDown, Tag,
   ArrowRight, ArrowUpRight, ArrowDownRight, ChartPie, Lightbulb, type LucideIcon,
-  UtensilsCrossed, House, Car, ShoppingCart, HeartPulse, Gamepad2, GraduationCap, Plane, PawPrint, PiggyBank,
-  CreditCard, Receipt, Shirt, Sparkles, Repeat, Zap, Users, Gift, Ellipsis,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -26,44 +24,11 @@ import { installmentLabel } from '@/utils/format-installment'
 import { aggregateDailyFlow } from '@/lib/analytics-charts'
 import { DailyFlowChart } from '@/components/analytics/daily-flow-chart'
 import { cn } from '@/lib/utils'
+import { CategoryIcon, categoryIconKey, guessIconKey } from '@/lib/category-icons'
 
-// Paleta categórica validada (daltonismo e contraste, claro e escuro). A cor
-// segue a categoria, não a posição: as conhecidas têm cor fixa e as demais
-// pegam pela ordem alfabética entre as categorias de despesa do usuário.
-const PALETTE = ['#d97706', '#7c3aed', '#059669', '#2563eb', '#db2777', '#0891b2', '#dc2626']
+// Cor e ícone vêm da categoria-mãe (escolhidos em Categorias). "Outros" na
+// rosca junta várias categorias, por isso fica cinza.
 const OTHER_COLOR = '#94a3b8'
-const PREFERRED_SLOT: Record<string, number> = {
-  'alimentação': 0, 'moradia': 1, 'saúde': 2, 'transporte': 3, 'lazer': 4, 'educação': 5, 'compras': 6,
-}
-const PREFERRED_INCOME_SLOT: Record<string, number> = { 'salário': 2, 'freelance': 3, 'rendimentos': 0 }
-
-// Ícone pelo nome da categoria — as categorias não guardam ícone no banco.
-const ICON_RULES: [RegExp, LucideIcon][] = [
-  [/aliment|mercado|restaur|comida|refei|supermerc/, UtensilsCrossed],
-  [/morad|casa|aluguel|condom/, House],
-  [/transport|carro|combust|uber|ve[ií]cul|gasolina/, Car],
-  [/compra|shopping/, ShoppingCart],
-  [/sa[uú]de|farm[aá]c|m[eé]dic|hospital/, HeartPulse],
-  [/lazer|divers|entret/, Gamepad2],
-  [/educa|curso|escola|faculd/, GraduationCap],
-  [/viage|turism/, Plane],
-  [/pet|animal/, PawPrint],
-  [/invest|poupan|reserva/, PiggyBank],
-  [/cart[aã]o|fatura/, CreditCard],
-  [/imposto|taxa|tribut|tarifa/, Receipt],
-  [/roupa|vestu/, Shirt],
-  [/beleza|cuidado|est[eé]tic/, Sparkles],
-  [/assinat|streaming/, Repeat],
-  [/conta|luz|energia|[aá]gua|internet|telefon/, Zap],
-  [/filho|fam[ií]lia/, Users],
-  [/presente|doa[cç]/, Gift],
-  [/outro/, Ellipsis],
-]
-
-function iconFor(cat: string): LucideIcon {
-  const n = cat.toLowerCase()
-  return ICON_RULES.find(([re]) => re.test(n))?.[1] ?? Tag
-}
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -172,24 +137,15 @@ function CardHeading({ icon: Icon, title, subtitle, extra }: { icon: LucideIcon;
   )
 }
 
-// Cor de cada categoria-mãe do tipo pedido: as conhecidas têm cor fixa e as
-// demais seguem a ordem alfabética, então a cor não muda de um mês para outro.
+// Categoria-mãe pelo nome, do tipo certo (o mesmo nome pode existir em
+// despesa e receita).
+function findMother(categories: Category[], name: string, type: 'despesa' | 'receita') {
+  const same = categories.filter(c => !c.parent_id && c.name === name)
+  return same.find(c => c.type === type) ?? same.find(c => c.type === 'ambos') ?? same[0]
+}
+
 function buildColorMap(categories: Category[], type: 'despesa' | 'receita') {
-  const names = [...new Set(
-    categories
-      .filter(c => !c.parent_id && (type === 'receita' ? c.type !== 'despesa' : c.type !== 'receita'))
-      .map(c => c.name),
-  )].sort((a, b) => a.localeCompare(b, 'pt-BR'))
-  const preferred = type === 'receita' ? PREFERRED_INCOME_SLOT : PREFERRED_SLOT
-  const map = new Map<string, string>()
-  let next = 0
-  for (const name of names) {
-    const key = name.toLowerCase()
-    if (key === 'outros') continue
-    const slot = preferred[key] ?? next++
-    map.set(name, PALETTE[slot % PALETTE.length])
-  }
-  return (cat: string) => map.get(cat) ?? (cat.toLowerCase() === 'outros' ? OTHER_COLOR : PALETTE[cat.length % PALETTE.length])
+  return (cat: string) => findMother(categories, cat, type)?.color ?? OTHER_COLOR
 }
 
 // Rosca: as 6 maiores e o resto somado em "Outros" (junto da própria Outros).
@@ -289,7 +245,7 @@ export default function AnalyticsPage() {
 
   const maxExpense = expenseByCategory[0]?.total ?? 1
 
-  // Cor por categoria (ver PALETTE), separada para despesas e receitas.
+  // Cor por categoria (a da categoria-mãe), separada para despesas e receitas.
   const expenseColor = useMemo(() => buildColorMap(categories, 'despesa'), [categories])
   const incomeColor = useMemo(() => buildColorMap(categories, 'receita'), [categories])
   const colorOf = expenseColor
@@ -580,7 +536,8 @@ export default function AnalyticsPage() {
                     {expenseByCategory.map(({ cat, total, count, pct, subs, txs }) => {
                       const open = expandedCat === `despesa:${cat}`
                       const color = colorOf(cat)
-                      const Icon = iconFor(cat)
+                      const mother = findMother(categories, cat, 'despesa')
+                      const iconKey = mother ? categoryIconKey(mother, categories) : guessIconKey(cat)
                       const bar = (
                         <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
                           <div
@@ -601,7 +558,7 @@ export default function AnalyticsPage() {
                                 className="h-9 w-9 rounded-full flex items-center justify-center shrink-0"
                                 style={{ backgroundColor: `${color}1f`, color }}
                               >
-                                <Icon className="h-4 w-4" />
+                                <CategoryIcon iconKey={iconKey} className="h-4 w-4" />
                               </div>
                               <div className="min-w-0 flex-1 sm:flex-none sm:w-48">
                                 <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate group-hover:underline">{cat}</p>

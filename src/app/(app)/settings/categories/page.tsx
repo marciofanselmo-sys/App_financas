@@ -21,6 +21,7 @@ import {
   TrendingDown, TrendingUp, ChevronDown, ChevronRight, Sparkles, Lock, Unlock, Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { CATEGORY_ICONS, CategoryIcon, categoryIconKey, guessIconKey } from '@/lib/category-icons'
 
 const TYPE_LABELS: Record<CategoryType, string> = {
   receita: 'Receita', despesa: 'Despesa', ambos: 'Ambos',
@@ -72,10 +73,12 @@ interface FormState {
   color: string
   bucket: CategoryBucket | null
   parentId: string | null
+  // null = ainda não escolhido: segue a sugestão pelo nome enquanto digita.
+  icon: string | null
 }
 
 const EMPTY_FORM: FormState = {
-  name: '', type: 'despesa', color: CATEGORY_COLORS[0], bucket: null, parentId: null,
+  name: '', type: 'despesa', color: CATEGORY_COLORS[0], bucket: null, parentId: null, icon: null,
 }
 
 // A seta na linha agora MOVE (troca a mãe, sem tocar em lançamento nenhum).
@@ -85,6 +88,10 @@ const EMPTY_FORM: FormState = {
 type MoveMode = 'mover' | 'juntar'
 interface MergeState { from: Category; toId: string; mode: MoveMode }
 interface EventFormState { name: string; color: string }
+
+function RowIcon({ iconKey, color }: { iconKey: string; color: string }) {
+  return <CategoryIcon iconKey={iconKey} className="h-4 w-4" style={{ color }} />
+}
 
 /**
  * Categorias em dois níveis (Categoria › Subcategoria) e Eventos na mesma tela.
@@ -279,7 +286,7 @@ export default function CategoriesPage() {
     setEditing(cat)
     setForm({
       name: cat.name, type: cat.type, color: cat.color,
-      bucket: cat.bucket ?? null, parentId: cat.parent_id ?? null,
+      bucket: cat.bucket ?? null, parentId: cat.parent_id ?? null, icon: cat.icon ?? null,
     })
     setFormError('')
     setFormOpen(true)
@@ -305,6 +312,8 @@ export default function CategoriesPage() {
     const payload = {
       name: form.name, type: form.type, color: form.color,
       bucket: form.bucket, parent_id: form.parentId,
+      // Subcategoria usa o ícone da mãe; o hook também acerta a cor dela.
+      icon: form.parentId ? null : (form.icon ?? guessIconKey(form.name)),
     }
     const { error } = editing
       ? await updateCategory(editing.id, payload)
@@ -510,6 +519,11 @@ export default function CategoriesPage() {
     )
   }
 
+  // Subcategoria sempre com a cor da mãe.
+  function colorOfMother(cat: Category) {
+    return (cat.parent_id && categories.find(c => c.id === cat.parent_id)?.color) || cat.color
+  }
+
   function renderCategoryRow(cat: Category, isChild: boolean, motherType?: CategoryType) {
     const count = countOf(cat)
     // Tipo diferente do da mãe não quebra conta nenhuma (o cálculo usa o tipo
@@ -526,10 +540,10 @@ export default function CategoriesPage() {
         )}
       >
         {isChild ? (
-          <span className="h-2 w-2 rounded-full shrink-0 ml-1" style={{ backgroundColor: cat.color }} />
+          <span className="h-2 w-2 rounded-full shrink-0 ml-1" style={{ backgroundColor: colorOfMother(cat) }} />
         ) : (
           <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: cat.color + '25' }}>
-            <Tag className="h-4 w-4" style={{ color: cat.color }} />
+            <RowIcon iconKey={categoryIconKey(cat, categories)} color={cat.color} />
           </div>
         )}
         <div className="flex-1 min-w-0">
@@ -588,6 +602,16 @@ export default function CategoriesPage() {
         </div>
       </div>
     )
+  }
+
+  // Mãe escolhida no formulário (subcategoria) e quem já usa cada cor.
+  const formParent = form.parentId ? categories.find(c => c.id === form.parentId) ?? null : null
+  const colorUsers = new Map<string, string[]>()
+  for (const c of categories) {
+    if (c.parent_id || (editing && c.id === editing.id)) continue
+    const list = colorUsers.get(c.color) ?? []
+    if (!list.includes(c.name)) list.push(c.name)
+    colorUsers.set(c.color, list)
   }
 
   return (
@@ -982,6 +1006,12 @@ export default function CategoriesPage() {
             <div className="space-y-2">
               <Label>Etiqueta 50/30/20</Label>
               <Select
+                items={[
+                  { value: NO_BUCKET, label: 'Nenhuma' },
+                  { value: 'essencial', label: 'Essencial' },
+                  { value: 'estilo', label: 'Estilo de vida' },
+                  { value: 'futuro', label: 'Futuro' },
+                ]}
                 value={form.bucket ?? NO_BUCKET}
                 onValueChange={v => v && setForm(f => ({ ...f, bucket: v === NO_BUCKET ? null : v as CategoryBucket }))}
               >
@@ -998,20 +1028,71 @@ export default function CategoriesPage() {
               </p>
             </div>
 
-            <div className="space-y-2">
-              <Label>Cor</Label>
-              <div className="flex flex-wrap gap-2 pt-1">
-                {CATEGORY_COLORS.map(color => (
-                  <button key={color} type="button" onClick={() => setForm(f => ({ ...f, color }))}
-                    className="h-7 w-7 rounded-full border-2 transition-transform hover:scale-110"
-                    style={{
-                      backgroundColor: color,
-                      borderColor: form.color === color ? '#1e293b' : 'transparent',
-                      outline: form.color === color ? '2px solid white' : 'none', outlineOffset: '-3px',
-                    }} />
-                ))}
+            {formParent ? (
+              // Subcategoria não escolhe cor nem ícone: usa os da mãe.
+              <div className="flex items-center gap-3 rounded-lg bg-slate-50 dark:bg-white/[0.04] px-3 py-2.5">
+                <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: formParent.color + '25' }}>
+                  <RowIcon iconKey={categoryIconKey(formParent, categories)} color={formParent.color} />
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Usa a cor e o ícone de <strong className="text-slate-700 dark:text-slate-200">{formParent.name}</strong>.
+                </p>
               </div>
-            </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label>Ícone</Label>
+                  <div className="grid grid-cols-10 gap-1.5 pt-1">
+                    {CATEGORY_ICONS.map(({ key, label, Icon }) => {
+                      const selected = (form.icon ?? guessIconKey(form.name)) === key
+                      return (
+                        <button key={key} type="button" title={label} aria-label={label} aria-pressed={selected}
+                          onClick={() => setForm(f => ({ ...f, icon: key }))}
+                          className={cn(
+                            'h-7 w-7 rounded-lg flex items-center justify-center border transition-colors',
+                            selected ? 'border-transparent' : 'border-slate-200 dark:border-white/[0.08] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200',
+                          )}
+                          style={selected ? { backgroundColor: form.color + '25', color: form.color, boxShadow: `inset 0 0 0 1.5px ${form.color}` } : undefined}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Cor</Label>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {CATEGORY_COLORS.map(color => {
+                      const users = colorUsers.get(color) ?? []
+                      return (
+                        <button key={color} type="button" onClick={() => setForm(f => ({ ...f, color }))}
+                          title={users.length ? `Já usada por: ${users.join(', ')}` : 'Livre'}
+                          className="relative h-7 w-7 rounded-full border-2 transition-transform hover:scale-110"
+                          style={{
+                            backgroundColor: color,
+                            borderColor: form.color === color ? '#1e293b' : 'transparent',
+                            outline: form.color === color ? '2px solid white' : 'none', outlineOffset: '-3px',
+                          }}>
+                          {users.length > 0 && (
+                            <span className="absolute -top-1 -right-1 h-3.5 min-w-3.5 px-0.5 rounded-full bg-white dark:bg-slate-900 text-[9px] font-bold leading-[14px] text-slate-600 dark:text-slate-300 shadow">
+                              {users.length}
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">
+                    {(colorUsers.get(form.color) ?? []).length > 0
+                      ? <>Essa cor já é usada por: {(colorUsers.get(form.color) ?? []).join(', ')}.</>
+                      : 'Nenhuma outra categoria usa essa cor.'}
+                    {' '}As subcategorias ficam com a mesma cor.
+                  </p>
+                </div>
+              </>
+            )}
 
             <div className="flex gap-2 pt-2">
               <Button type="button" variant="outline" onClick={() => setFormOpen(false)} className="flex-1">Cancelar</Button>

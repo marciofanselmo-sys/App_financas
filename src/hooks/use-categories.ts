@@ -84,8 +84,11 @@ export function useCategories() {
       c.name.toLowerCase() === cat.name.toLowerCase() && c.type === cat.type)
     if (duplicate) return { error: `Já existe uma categoria "${cat.name}" desse tipo.` }
 
+    // Subcategoria nasce com a cor da mãe e sem ícone próprio (usa o dela).
+    const parent = cat.parent_id ? categories.find(c => c.id === cat.parent_id) : null
     const newCat: Category = {
       ...cat,
+      ...(parent ? { color: parent.color, icon: null } : {}),
       id: uid(),
       user_id: user.id,
       created_at: new Date().toISOString(),
@@ -102,8 +105,27 @@ export function useCategories() {
     if (!user) return { error: 'Não autenticado.' }
 
     const oldCategory = categories.find(c => c.id === id)
+    // Virou (ou continua) subcategoria: assume a cor da mãe e larga o ícone.
+    const parent = cat.parent_id ? categories.find(c => c.id === cat.parent_id) : null
+    if (parent) cat = { ...cat, color: parent.color, icon: null }
     const { error } = await supabase.from('categories').update(cat).eq('id', id)
     if (error) return { error: error.message }
+
+    // Mãe trocou de cor: as subcategorias acompanham.
+    const children = categories.filter(c => c.parent_id === id)
+    const newColor = cat.color
+    if (newColor && oldCategory && newColor !== oldCategory.color && children.length > 0) {
+      const { error: kidsError } = await supabase
+        .from('categories')
+        .update({ color: newColor })
+        .eq('user_id', user.id)
+        .eq('parent_id', id)
+      if (kidsError) {
+        logSafeError('updateCategory.cascadeColor', kidsError)
+        await fetchCategories()
+        return { error: 'A cor da categoria mudou, mas as subcategorias não puderam ser atualizadas. Tente de novo.' }
+      }
+    }
 
     // Se o nome mudou, cascadeia para transactions, regras e planejamento
     if (cat.name && oldCategory && cat.name !== oldCategory.name) {
@@ -164,7 +186,11 @@ export function useCategories() {
       }
     }
 
-    setCategories(prev => prev.map(c => (c.id === id ? { ...c, ...cat } : c)))
+    setCategories(prev => prev.map(c => {
+      if (c.id === id) return { ...c, ...cat }
+      if (c.parent_id === id && newColor) return { ...c, color: newColor }
+      return c
+    }))
     return { error: null }
   }
 

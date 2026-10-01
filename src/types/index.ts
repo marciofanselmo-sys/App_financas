@@ -39,6 +39,9 @@ export interface Category {
   parent_id?: string | null
   // Etiqueta 50/30/20 — sugestão, ajustável em Planejamento.
   bucket?: CategoryBucket | null
+  // Chave do ícone (src/lib/category-icons.ts). Só na categoria principal;
+  // vazio = sugestão pelo nome. Migração migration_category_icon.sql.
+  icon?: string | null
 }
 
 export type CategoryBucket = 'essencial' | 'estilo' | 'futuro'
