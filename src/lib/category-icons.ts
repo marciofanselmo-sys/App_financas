@@ -2,6 +2,7 @@ import {
   type LucideIcon,
   UtensilsCrossed, House, Car, ShoppingCart, HeartPulse, Gamepad2, GraduationCap, Plane, PawPrint, PiggyBank,
   CreditCard, Receipt, Shirt, Sparkles, Repeat, Zap, Users, Gift, Ellipsis, Tag,
+  Briefcase, Banknote, Landmark, Fuel, Dumbbell, Smartphone, Coffee, Baby, Wrench, Store,
 } from 'lucide-react'
 import { createElement, type CSSProperties } from 'react'
 import { Category } from '@/types'
@@ -27,6 +28,16 @@ export const CATEGORY_ICONS: { key: string; label: string; Icon: LucideIcon }[] 
   { key: 'bolt', label: 'Contas da casa', Icon: Zap },
   { key: 'users', label: 'Família', Icon: Users },
   { key: 'gift', label: 'Presentes', Icon: Gift },
+  { key: 'briefcase', label: 'Trabalho', Icon: Briefcase },
+  { key: 'banknote', label: 'Dinheiro', Icon: Banknote },
+  { key: 'bank', label: 'Banco e financiamento', Icon: Landmark },
+  { key: 'fuel', label: 'Combustível', Icon: Fuel },
+  { key: 'gym', label: 'Academia e esporte', Icon: Dumbbell },
+  { key: 'phone', label: 'Celular', Icon: Smartphone },
+  { key: 'coffee', label: 'Café e bar', Icon: Coffee },
+  { key: 'baby', label: 'Filhos', Icon: Baby },
+  { key: 'wrench', label: 'Manutenção', Icon: Wrench },
+  { key: 'store', label: 'Loja', Icon: Store },
   { key: 'more', label: 'Outros', Icon: Ellipsis },
   { key: 'tag', label: 'Etiqueta', Icon: Tag },
 ]
@@ -35,6 +46,16 @@ const BY_KEY = new Map(CATEGORY_ICONS.map(i => [i.key, i.Icon]))
 
 // Sugestão pelo nome, para categorias que ainda não têm ícone escolhido.
 const NAME_RULES: [RegExp, string][] = [
+  [/combust|gasolina|posto/, 'fuel'],
+  [/financiam|banco|empr[eé]stim/, 'bank'],
+  [/trabalh|empresa|neg[oó]cio/, 'briefcase'],
+  [/dinheiro|saque|esp[eé]cie/, 'banknote'],
+  [/academia|esporte|gin[aá]st/, 'gym'],
+  [/celular|telefon/, 'phone'],
+  [/caf[eé]|\bbar\b|padaria/, 'coffee'],
+  [/filho|beb[eê]|crian/, 'baby'],
+  [/manuten|reforma|conserto/, 'wrench'],
+  [/loja/, 'store'],
   [/aliment|mercado|restaur|comida|refei|supermerc/, 'utensils'],
   [/morad|casa|aluguel|condom/, 'house'],
   [/transport|carro|combust|uber|ve[ií]cul|gasolina/, 'car'],
