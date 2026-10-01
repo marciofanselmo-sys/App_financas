@@ -245,6 +245,12 @@ function PlanningPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [boardId, setBoardId] = useState('all')
   const [editorOpen, setEditorOpen] = useState(false)
+  // Com o painel "Ajustar orçamento" aberto nada é gravado sozinho: só no
+  // botão Salvar. Cancelar volta tudo para como estava ao abrir.
+  const editorOpenRef = useRef(false)
+  useEffect(() => { editorOpenRef.current = editorOpen }, [editorOpen])
+  const [discardAsk, setDiscardAsk] = useState(false)
+  const [pendingFuturoPct, setPendingFuturoPct] = useState<number | null>(null)
   const [tableOpen, setTableOpen] = useState(false)
   const [pillarTab, setPillarTab] = useState<PillarKey>('essencial')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -296,7 +302,7 @@ function PlanningPage() {
     })
   }, [])
   useEffect(() => {
-    if (!pctDirty.current) return
+    if (!pctDirty.current || editorOpenRef.current) return
     const t = setTimeout(() => {
       pctDirty.current = false
       createClient().auth.updateUser({ data: { plan_pillars: basePct } })
@@ -341,8 +347,8 @@ function PlanningPage() {
   const dirty = useRef(false)
   const latest = useRef({ month, year, expectedIncome, investmentTarget, categoryLimits, expensesTargetDisplay })
 
-  async function saveNow() {
-    if (!dirty.current) return
+  async function saveNow(): Promise<boolean> {
+    if (!dirty.current) return true
     dirty.current = false
     const s = latest.current
     const limits: Record<string, number> = {}
@@ -364,9 +370,11 @@ function PlanningPage() {
     if (error) {
       setSaveStatus('error')
       setSaveError(typeof error === 'string' ? error : (error as { message?: string })?.message || 'Erro ao salvar o planejamento.')
-      return
+      dirty.current = true
+      return false
     }
     setSaveStatus('saved')
+    return true
   }
   const saveRef = useRef(saveNow)
   // Refs atualizados depois de cada render: o save lê sempre o último valor.
@@ -376,13 +384,14 @@ function PlanningPage() {
   })
 
   useEffect(() => {
-    if (!dirty.current) return
+    if (!dirty.current || editorOpenRef.current) return
     const t = setTimeout(() => saveRef.current(), 1200)
     return () => clearTimeout(t)
   }, [expectedIncome, investmentTarget, categoryLimits])
 
   // Saiu da tela com algo pendente: grava antes de ir.
-  useEffect(() => () => { saveRef.current() }, [])
+  // Com o painel aberto e sem Salvar, a edição é descartada.
+  useEffect(() => () => { if (!editorOpenRef.current) saveRef.current() }, [])
 
   function edit<T>(setter: (fn: (prev: T) => T) => void) {
     return (fn: (prev: T) => T) => {
@@ -562,12 +571,58 @@ function PlanningPage() {
     const v = Math.max(0, Math.min(100, Math.round(Number.isFinite(value) ? value : 0)))
     if (key === 'futuro') {
       editInvest(String(Math.round((incomeNum * v) / 100)))
-      updatePreferences({ investment_pct: v })
+      setPendingFuturoPct(v)
       return
     }
     pctDirty.current = true
     setBasePct(prev => ({ ...prev, [key]: v }))
   }
+  const [snapshot, setSnapshot] = useState<{ expectedIncome: string; investmentTarget: string; categoryLimits: Record<string, string>; basePct: { essencial: number; estilo: number } } | null>(null)
+  const [savingEditor, setSavingEditor] = useState(false)
+  function openEditor() {
+    setSnapshot({ expectedIncome, investmentTarget, categoryLimits, basePct })
+    setPendingFuturoPct(null)
+    setDiscardAsk(false)
+    setSaveStatus('idle')
+    setSaveError(null)
+    setEditorOpen(true)
+  }
+  const editorChanged = editorOpen && !!snapshot && (
+    pendingFuturoPct !== null ||
+    JSON.stringify({ expectedIncome, investmentTarget, categoryLimits, basePct }) !== JSON.stringify(snapshot)
+  )
+  async function saveEditor() {
+    setSavingEditor(true)
+    const ok = await saveNow()
+    if (ok && snapshot && JSON.stringify(basePct) !== JSON.stringify(snapshot.basePct)) {
+      pctDirty.current = false
+      await createClient().auth.updateUser({ data: { plan_pillars: basePct } })
+    }
+    if (ok && pendingFuturoPct !== null) await updatePreferences({ investment_pct: pendingFuturoPct })
+    setSavingEditor(false)
+    if (ok) { setPendingFuturoPct(null); setEditorOpen(false) }
+  }
+  function discardEditor() {
+    const snap = snapshot
+    if (snap) {
+      setExpectedIncome(snap.expectedIncome)
+      setInvestmentTarget(snap.investmentTarget)
+      setCategoryLimits(snap.categoryLimits)
+      setBasePct(snap.basePct)
+    }
+    dirty.current = false
+    pctDirty.current = false
+    setPendingFuturoPct(null)
+    setSaveStatus('idle')
+    setDiscardAsk(false)
+    setEditorOpen(false)
+  }
+  // Fechar pelo X ou clicando fora: se mudou algo, pergunta antes de descartar.
+  function requestCloseEditor() {
+    if (editorChanged) setDiscardAsk(true)
+    else discardEditor()
+  }
+
   function applyPreset(pr: (typeof PRESETS)[number]) {
     setPillar('essencial', pr.essencial)
     setPillar('estilo', pr.estilo)
@@ -827,7 +882,7 @@ function PlanningPage() {
               )}
               <div className="mt-auto pt-4 flex items-center justify-between gap-3">
                 <SaveIndicator status={saveStatus} error={saveError} />
-                <Button variant="outline" size="sm" className="gap-1.5 ml-auto" onClick={() => setEditorOpen(true)}>
+                <Button variant="outline" size="sm" className="gap-1.5 ml-auto" onClick={openEditor}>
                   <Pencil className="h-3.5 w-3.5" /> Ajustar orçamento
                 </Button>
               </div>
@@ -1100,7 +1155,7 @@ function PlanningPage() {
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   Revise seu planejamento todo mês e ajuste os limites para viver hoje e conquistar amanhã.
                 </p>
-                <Button size="sm" className="mt-3 gap-1.5" onClick={() => setEditorOpen(true)}>
+                <Button size="sm" className="mt-3 gap-1.5" onClick={openEditor}>
                   Editar planejamento <ArrowRight className="h-3.5 w-3.5" />
                 </Button>
               </div>
@@ -1235,12 +1290,11 @@ function PlanningPage() {
           )}
 
           {/* Painel de edição: renda, pilares e limites por categoria */}
-          <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
+          <Dialog open={editorOpen} onOpenChange={v => { if (v) openEditor(); else requestCloseEditor() }}>
             <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto p-5 sm:p-6">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-3">
                   Ajustar orçamento — {MONTH_NAMES[month - 1]} {year}
-                  <SaveIndicator status={saveStatus} error={saveError} />
                 </DialogTitle>
               </DialogHeader>
 
@@ -1343,6 +1397,30 @@ function PlanningPage() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Nada é gravado até clicar em Salvar. */}
+              <div className="sticky -bottom-5 sm:-bottom-6 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 mt-5 px-5 sm:px-6 py-3 border-t border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900">
+                {saveError && (
+                  <p className="text-xs text-red-500 mb-2">{saveError}</p>
+                )}
+                {discardAsk ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm text-slate-600 dark:text-slate-300 flex-1 min-w-0">Descartar as alterações que não foram salvas?</p>
+                    <Button variant="outline" size="sm" onClick={() => setDiscardAsk(false)}>Continuar editando</Button>
+                    <Button variant="destructive" size="sm" onClick={discardEditor}>Descartar</Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-slate-400 dark:text-slate-500 flex-1 min-w-0">
+                      {editorChanged ? 'Alterações ainda não salvas.' : 'Nenhuma alteração.'}
+                    </p>
+                    <Button variant="outline" size="sm" onClick={discardEditor} disabled={savingEditor}>Cancelar</Button>
+                    <Button size="sm" onClick={saveEditor} disabled={!editorChanged || savingEditor}>
+                      {savingEditor ? 'Salvando...' : 'Salvar'}
+                    </Button>
+                  </div>
+                )}
               </div>
             </DialogContent>
           </Dialog>
