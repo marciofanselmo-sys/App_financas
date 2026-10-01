@@ -334,15 +334,18 @@ function eventLabel(event: string) {
 
 export function ProventosCard({ boards }: { boards: TransactionBoard[] }) {
   const [all, setAll] = useState(false)
+  // Só o que ainda vai cair: pagamento com data passada já entrou na conta.
+  const today = new Date().toLocaleDateString('en-CA')
   const list = withPosition(boards)
     .flatMap(b => b.last_position_import!.proventos ?? [])
+    .filter(p => !p.paymentDate || p.paymentDate >= today)
     .sort((a, b) => a.paymentDate.localeCompare(b.paymentDate))
   const total = list.reduce((s, p) => s + p.netValue, 0)
   const shown = all ? list : list.slice(0, 4)
   return (
     <Card icon={Coins} title="Rendimentos a receber" subtitle="Dividendos, JCP e juros já anunciados">
       {list.length === 0 ? (
-        <p className="text-xs text-slate-400 mt-4">Nenhum rendimento anunciado na última importação.</p>
+        <p className="text-xs text-slate-400 mt-4">Nenhum rendimento a receber. Os anunciados na última importação já foram pagos — importe a posição de novo para ver os próximos.</p>
       ) : (
         <>
           <p className="text-xl font-bold text-green-600 mt-3 tabular-nums">
