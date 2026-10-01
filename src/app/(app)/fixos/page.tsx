@@ -296,7 +296,7 @@ function FixosPage() {
 
   if (isLoading) {
     return (
-      <div className="space-y-4 max-w-3xl mx-auto">
+      <div className="space-y-4 max-w-6xl mx-auto">
         {[1, 2, 3].map(i => (
           <div key={i} className="h-28 bg-white dark:bg-slate-800 rounded-2xl animate-pulse" />
         ))}
@@ -445,7 +445,7 @@ function FixosPage() {
   }
 
   return (
-    <div className="space-y-8 max-w-3xl mx-auto">
+    <div className="space-y-8 max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>

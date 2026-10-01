@@ -396,7 +396,7 @@ function RulesPage() {
   if (loading) return null
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div>

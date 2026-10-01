@@ -442,7 +442,7 @@ function AdjustmentsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-6xl mx-auto">
       <div>
         <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Ajustes sugeridos</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">

@@ -31,7 +31,7 @@ export default function AssinaturaPage() {
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto space-y-4">
+      <div className="max-w-6xl mx-auto space-y-4">
         {[1, 2].map(i => <div key={i} className="h-32 nobli-card animate-pulse" />)}
       </div>
     )
@@ -40,7 +40,7 @@ export default function AssinaturaPage() {
   const info = STATUS_TEXTO[status] ?? STATUS_TEXTO.free
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6">
       <div>
         <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">
           Minha assinatura

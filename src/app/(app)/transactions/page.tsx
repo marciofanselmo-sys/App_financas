@@ -186,7 +186,7 @@ export default function TransactionsPage() {
   if (loading) return null
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
+    <div className="space-y-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Contas e Cartões</h1>

@@ -33,7 +33,7 @@ export default function SuggestionsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <div className="space-y-6 max-w-6xl mx-auto">
       <div>
         <div className="flex items-center gap-3 mb-1">
           <div className="h-10 w-10 rounded-xl bg-violet-500/10 flex items-center justify-center">

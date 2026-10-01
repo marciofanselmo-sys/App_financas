@@ -901,7 +901,7 @@ function ReportsPage() {
   )
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6">
       {/* Header */}
       <div className="print:hidden flex items-start sm:items-center justify-between gap-3">
         <div className="min-w-0">

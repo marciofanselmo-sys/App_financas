@@ -100,7 +100,7 @@ export default function SettingsPage() {
   const despesas = categories.filter(c => c.type === 'despesa' || c.type === 'ambos')
 
   return (
-    <div className="space-y-8 max-w-3xl mx-auto">
+    <div className="space-y-8 max-w-6xl mx-auto">
       <div>
         <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Configurações</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Gerencie as preferências do app</p>

@@ -362,7 +362,7 @@ export default function BoardDetailPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-6 max-w-6xl mx-auto">
       {/* Erro ao sincronizar a regra automática — antes só ia pro console do
           navegador, invisível pro usuário; agora aparece aqui. */}
       {ruleSyncError && (
