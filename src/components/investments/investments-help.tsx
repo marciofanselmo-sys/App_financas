@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronRight, Info, Upload, Pin, Pencil, Trash2, Wallet, ArrowDownToLine, Target, type LucideIcon } from 'lucide-react'
+import { ChevronRight, Info, Upload, Pin, Pencil, Trash2, Wallet, ArrowDownToLine, Target, TrendingUp, HandCoins, CircleDollarSign, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 function Item({ icon: Icon, iconClass, title, children }: { icon: LucideIcon; iconClass?: string; title: string; children: React.ReactNode }) {
@@ -33,12 +33,16 @@ export function InvestmentsHelp() {
           <div className="space-y-4">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Os números</p>
             <Item icon={Wallet} title="Patrimônio investido.">
-              Vem do arquivo de posição que você baixa da corretora (a planilha de posição detalhada) — não é a soma dos
-              lançamentos da conta. Por isso ele só muda quando você importa uma posição nova.
+              Vem da planilha de posição da corretora ou de um valor que você informa (&ldquo;Atualizar valor&rdquo;) —
+              não é a soma de lançamentos. Muda quando você importa uma posição nova ou atualiza o valor.
             </Item>
             <Item icon={ArrowDownToLine} title="Aportes do mês.">
-              Dinheiro que entrou numa conta de investimento, ou que saiu das suas outras contas com o nome dela na
-              descrição. É comparado com a meta de investir do Planejamento.
+              Saídas das suas contas marcadas como aporte numa conta de investimento (no extrato, ⋮ → &ldquo;Aporte
+              em…&rdquo;, ou pela configuração de Aportes). É comparado com a meta de investir do Planejamento.
+            </Item>
+            <Item icon={TrendingUp} iconClass="text-green-600" title="Total aportado e rendimento.">
+              Por conta: o que já estava aplicado (ponto de partida, se informado) + os aportes. Rendimento = valor
+              atual − total aportado. Contas sem aporte configurado ficam de fora dessa conta.
             </Item>
             <Item icon={Target} title="Meta ligada.">
               Uma meta de Metas que puxa o valor de uma destas contas. Para ligar, crie ou edite a meta e escolha
@@ -51,6 +55,14 @@ export function InvestmentsHelp() {
             <Item icon={Pin} iconClass="text-blue-500" title="Incluir nos relatórios.">
               Com o alfinete azul, a conta entra nos totais dos Relatórios. Investimento nunca entra no Dashboard nem na
               Análise, para não misturar a carteira com o dinheiro do dia a dia.
+            </Item>
+            <Item icon={HandCoins} title="Aportes.">
+              Diz de qual conta e com que texto do extrato sai o dinheiro para esta conta, e o ponto de partida. Mostra
+              a lista do que foi encontrado antes de salvar. O saldo das contas não muda.
+            </Item>
+            <Item icon={CircleDollarSign} title="Atualizar valor.">
+              Para conta sem planilha (cripto, previdência, Tesouro): você informa o valor e a data, e ele entra no
+              patrimônio e na evolução.
             </Item>
             <Item icon={Upload} title="Importar posição.">
               Atualiza os ativos, o patrimônio, os rendimentos a receber e acrescenta um ponto na evolução. Antes de
