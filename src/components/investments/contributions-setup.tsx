@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { CategorizationRule, applyInternalRule, isInternalRule } from '@/hooks/use-rules'
 import { Transaction, TransactionBoard } from '@/types'
 import { formatCurrency } from '@/components/investments/rico-position-summary'
+import { isCreditCardBoard } from '@/lib/data-suggestions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -38,7 +39,9 @@ export function ContributionsSetup({ board, boards, rules, createRule, updateRul
 }) {
   const existing = rules.find(r => isInternalRule(r) && r.target_board_id === board.id) ?? null
   const cashBoards = boards.filter(b => !b.is_investment)
-  const [origin, setOrigin] = useState(existing?.scope_board_id ?? cashBoards[0]?.id ?? '')
+  // Dinheiro para investir sai de conta corrente, nunca de cartão de crédito.
+  const defaultOrigin = cashBoards.find(b => !isCreditCardBoard(b)) ?? cashBoards[0]
+  const [origin, setOrigin] = useState(existing?.scope_board_id ?? defaultOrigin?.id ?? '')
   const [keyword, setKeyword] = useState(existing?.keyword ?? '')
   const [base, setBase] = useState(board.invested_base ? String(board.invested_base).replace('.', ',') : '')
   const [baseDate, setBaseDate] = useState(board.invested_base_date ?? '')
