@@ -389,11 +389,23 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
       }
       return out
     }
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([k, v]) => ({ label: `${SHORT[Number(k.slice(5, 7)) - 1]}/${k.slice(2, 4)}`, value: v }))
+    // Mês a mês: todos os meses entre o primeiro e o último lançamento.
+    const out: { label: string; value: number }[] = []
+    if (s.first && s.last) {
+      let y = +s.first.slice(0, 4), m = +s.first.slice(5, 7)
+      const endKey = s.last.slice(0, 7)
+      for (let i = 0; i < 240; i++) {
+        const key = `${y}-${String(m).padStart(2, '0')}`
+        if (key > endKey) break
+        out.push({ label: `${SHORT[m - 1]}/${String(y).slice(2)}`, value: map.get(key) ?? 0 })
+        m += 1
+        if (m > 12) { m = 1; y += 1 }
+      }
+    }
+    return out
   }, [s.txs, s.first, s.last, byDay])
   // Muitos dias: o gráfico fica mais largo que o card e rola para o lado.
-  const chartMinWidth = byDay ? Math.max(0, series.length * 22) : 0
+  const chartMinWidth = series.length * (byDay ? 22 : 44)
   const txs = showAll ? s.txs : s.txs.slice(0, 8)
   const catTotal = s.cats.reduce((a, c) => a + c.value, 0)
 
@@ -427,7 +439,7 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
         ))}
       </div>
 
-        <OverviewSection icon={CalendarDays} title={byDay ? 'Dia a dia' : 'Mês a mês'} subtitle={byDay ? `Quanto saiu em cada um dos ${series.length} dias do período` : 'Quanto saiu em cada mês do evento'}>
+        <OverviewSection icon={CalendarDays} title={byDay ? 'Dia a dia' : 'Mês a mês'} subtitle={byDay ? `Quanto saiu em cada um dos ${series.length} dias do período` : `Quanto saiu em cada um dos ${series.length} meses do período`}>
           {series.length > 0 ? (
             <div className="mt-4 -ml-2 overflow-x-auto">
               <div className="h-56" style={{ minWidth: chartMinWidth }}>
