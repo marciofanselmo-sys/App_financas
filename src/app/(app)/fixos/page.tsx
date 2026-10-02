@@ -453,7 +453,15 @@ function FixosPage() {
 
       <MissingAlert items={confirmedItems} today={today} />
 
-      {TYPE_SECTIONS.map(renderTypeSection)}
+      {/* Despesas e Receitas lado a lado; se só uma tiver conteúdo, ocupa a linha toda. */}
+      {(() => {
+        const sections = TYPE_SECTIONS.map(renderTypeSection).filter(Boolean)
+        return (
+          <div className={cn('grid gap-4 items-start', sections.length > 1 && 'lg:grid-cols-2')}>
+            {sections}
+          </div>
+        )
+      })()}
 
       <RecurringHelp />
     </div>

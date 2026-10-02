@@ -247,7 +247,7 @@ export function FixedCategoryCard({ title, subtitle, icon: Icon, iconClass, grou
                     <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${color}1f`, color }}>
                       {isParcelas ? <CreditCard className="h-4 w-4" /> : <CategoryIcon iconKey={r.g!.iconKey} className="h-4 w-4" />}
                     </div>
-                    <div className="min-w-0 flex-1 sm:flex-none sm:w-48">
+                    <div className="min-w-0 flex-1 sm:flex-none sm:w-40">
                       <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate group-hover:underline flex items-center gap-1.5">
                         <span className="truncate">{isParcelas ? 'Cartões & Parcelas' : r.g!.name}</span>
                         {hasMissing && <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" title="Tem fixo que não apareceu no último mês" />}
