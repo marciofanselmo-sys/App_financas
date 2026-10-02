@@ -1,7 +1,5 @@
 'use client'
 
-import Link from 'next/link'
-
 import { withPlan } from '@/components/plan/with-plan'
 
 import { useState, useEffect } from 'react'
@@ -13,14 +11,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
-  Plus, Pencil, Trash2, Target, Trophy, Star, RefreshCw,
+  Plus, Target,
   PiggyBank, TrendingUp, Car, Plane, CreditCard, Home,
-  CheckCircle, Clock, AlertTriangle, Flame, Link2,
+  CheckCircle, Clock, AlertTriangle,
 } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
-import { InfoBox } from '@/components/ui/info-box'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
+import { GoalsSummary, GoalCard, PaceChart, GoalsTimeline, GoalsHelp, type GoalView } from '@/components/goals/goals-overview'
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -68,14 +64,6 @@ function deadlineLabel(deadline: string): string {
   const [y, m] = deadline.split('-').map(Number)
   const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
   return `${months[m - 1]}/${y}`
-}
-
-function milestone(pct: number): { label: string; color: string } | null {
-  if (pct >= 100) return { label: '🏆 Meta atingida!',      color: 'text-yellow-500' }
-  if (pct >= 75)  return { label: '🌟 75% — quase lá!',     color: 'text-purple-500' }
-  if (pct >= 50)  return { label: '⭐ Metade do caminho!',  color: 'text-blue-500'   }
-  if (pct >= 25)  return { label: '✨ 25% — ótimo começo!', color: 'text-green-500'  }
-  return null
 }
 
 // ── Form ──────────────────────────────────────────────────────────────────────
@@ -268,6 +256,39 @@ function GoalsPage() {
 
   if (loading) return null
 
+  // Números de cada meta — as mesmas fórmulas que os cards já usavam.
+  const now = new Date()
+  const goalViews: GoalView[] = [...goals]
+    .sort((a, b) => a.deadline.localeCompare(b.deadline))
+    .map(goal => {
+      const pct = Math.min(100, Math.round((goal.currentAmount / goal.targetAmount) * 100))
+      const months = monthsRemaining(goal.deadline)
+      const remaining = goal.targetAmount - goal.currentAmount
+      const monthly = months > 0 ? remaining / months : remaining
+      // Meses FRACIONÁRIOS desde o início, com piso de meio mês (14.30).
+      const monthsElapsed = Math.max(0.5, (now.getTime() - new Date(goal.created_at).getTime()) / (1000 * 60 * 60 * 24 * 30.44))
+      const currentPace = goal.currentAmount / monthsElapsed
+      const projectedMonths = currentPace > 0 ? Math.ceil(remaining / currentPace) : null
+      const projectedDate = projectedMonths != null ? (() => {
+        const d = new Date(); d.setMonth(d.getMonth() + projectedMonths)
+        const mn = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
+        return `${mn[d.getMonth()]}/${d.getFullYear()}`
+      })() : null
+      const typeConf = goalTypeConfig(goal.type ?? 'personalizada')
+      const imp = goal.lastImport
+      return {
+        goal, pct, months, remaining, monthly, monthsElapsed,
+        // Ritmo só faz sentido depois de 1 mês (antes, o card não mostrava).
+        currentPace: monthsElapsed >= 1 ? currentPace : 0,
+        projectedDate: monthsElapsed >= 1 ? projectedDate : null,
+        deadlineLabel: deadlineLabel(goal.deadline),
+        typeLabel: typeConf.label,
+        TypeIcon: typeConf.icon,
+        status: goalStatus(goal),
+        awaitingBoard: imp?.source === 'board' && !boards.find(b => b.id === imp.boardId)?.last_position_import,
+      }
+    })
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       {/* Header */}
@@ -289,15 +310,6 @@ function GoalsPage() {
         </div>
       )}
 
-      <InfoBox id="goals-vincular-conta">
-        <p className="text-blue-600 dark:text-blue-400">
-          O valor atual de uma meta pode vir de uma <strong>conta de investimento vinculada</strong>, em vez de digitado à mão. Pra isso funcionar, primeiro crie a conta em <strong>Investimentos</strong> e importe a posição dela (o patrimônio precisa aparecer no card da conta) — só depois ela fica disponível pra vincular aqui.
-        </p>
-        <p className="text-blue-600 dark:text-blue-400">
-          Vinculada, a meta guarda uma referência leve à conta (não copia posições nem proventos) — o valor só atualiza quando você clicar em &ldquo;Atualizar valor&rdquo;, nunca sozinho.
-        </p>
-      </InfoBox>
-
       {/* Empty state */}
       {goals.length === 0 ? (
         <EmptyState
@@ -310,172 +322,38 @@ function GoalsPage() {
           secondaryHref="/help"
         />
       ) : (
-        <div className="space-y-4">
-          {goals.map(goal => {
-            const pct      = Math.min(100, Math.round((goal.currentAmount / goal.targetAmount) * 100))
-            const months   = monthsRemaining(goal.deadline)
-            const remaining = goal.targetAmount - goal.currentAmount
-            const monthly  = months > 0 ? remaining / months : remaining
-            const ms       = milestone(pct)
-            const status   = goalStatus(goal)
-            const imp      = goal.lastImport
-            const typeConf = goalTypeConfig(goal.type ?? 'personalizada')
-            const TypeIcon = typeConf.icon
+        <>
+          <GoalsSummary items={goalViews} />
 
-            // Projeção baseada no ritmo atual
-            const now = new Date()
-            const created = new Date(goal.created_at)
-            // Meses FRACIONÁRIOS. Com Math.max(1, ...), uma meta criada ontem
-            // já contava um mês inteiro: quem guardou R$ 1.000 no primeiro dia
-            // via "ritmo de R$ 1.000/mês" e uma projeção de conclusão
-            // otimista demais. O piso de meio mês evita dividir por ~zero no
-            // dia da criação, que geraria um ritmo infinito. (14.30)
-            const msElapsed = now.getTime() - created.getTime()
-            const monthsElapsed = Math.max(0.5, msElapsed / (1000 * 60 * 60 * 24 * 30.44))
-            const currentPace = goal.currentAmount / monthsElapsed
-            const projectedMonths = currentPace > 0 ? Math.ceil(remaining / currentPace) : null
-            const projectedDate = projectedMonths != null ? (() => {
-              const d = new Date(); d.setMonth(d.getMonth() + projectedMonths)
-              const mn = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
-              return `${mn[d.getMonth()]}/${d.getFullYear()}`
-            })() : null
-
-            return (
-              <div key={goal.id} className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
-                <div className="p-5">
-                  {/* Cabeçalho */}
-                  <div className="flex items-start justify-between gap-3 mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: goal.color + '20' }}>
-                        {pct >= 100
-                          ? <Trophy className="h-5 w-5" style={{ color: goal.color }} />
-                          : <TypeIcon className="h-5 w-5" style={{ color: goal.color }} />
-                        }
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-semibold text-slate-800 dark:text-slate-100">{goal.name}</p>
-                          {/* Status badge */}
-                          {status && (
-                            <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 ${status.color}`}>
-                              <status.Icon className="h-3 w-3" /> {status.label}
-                            </span>
-                          )}
-                          {pct >= 100 && (
-                            <span className="text-[11px] font-semibold text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/30 px-1.5 py-0.5 rounded-full">
-                              🏆 Concluída
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{typeConf.label}</p>
-                        {ms && <p className={`text-xs font-medium mt-0.5 ${ms.color}`}>{ms.label}</p>}
-                        {imp && (
-                          <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                            {imp.source === 'board' && (
-                              <span className="inline-flex items-center gap-1 text-violet-500 dark:text-violet-400 font-medium mr-1">
-                                <Link2 className="h-3 w-3" /> {imp.boardName} ·
-                              </span>
-                            )}
-                            {imp.source === 'board' && !boards.find(b => b.id === imp.boardId)?.last_position_import
-                              ? <>aguardando o valor da conta · <Link href="/investments" className="text-blue-600 dark:text-blue-400 hover:underline">informar em Investimentos</Link></>
-                              : <>Atualizado em {format(new Date(imp.importedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</>}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex gap-1 shrink-0">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(goal)}>
-                        <Pencil className="h-3.5 w-3.5 text-slate-400" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={() => setDeleteTarget(goal)}>
-                        <Trash2 className="h-3.5 w-3.5 text-slate-400" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Barra de progresso */}
-                  <div className="space-y-2 mb-4">
-                    <div className="flex justify-between text-sm">
-                      <span className="font-bold text-slate-700 dark:text-slate-200">{fmt(goal.currentAmount)}</span>
-                      <span className="text-slate-400 dark:text-slate-500">{fmt(goal.targetAmount)}</span>
-                    </div>
-                    <div className="h-2.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: goal.color }} />
-                    </div>
-                    <div className="flex justify-between text-xs text-slate-400 dark:text-slate-500">
-                      <span>{pct}% concluído</span>
-                      <span>{fmt(remaining)} restando</span>
-                    </div>
-                  </div>
-
-                  {/* Rodapé: mensal + prazo */}
-                  <div className="flex items-center justify-between gap-3 flex-wrap pt-3 border-t border-slate-100 dark:border-slate-700">
-                    <div className="flex items-center gap-4 flex-wrap">
-                      {pct < 100 && months > 0 && (
-                        <div>
-                          <p className="text-xs text-slate-400 dark:text-slate-500">Necessário/mês</p>
-                          <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{fmt(monthly)}</p>
-                        </div>
-                      )}
-                      {pct < 100 && projectedDate && monthsElapsed >= 1 && currentPace > 0 && (
-                        <div>
-                          <p className="text-xs text-slate-400 dark:text-slate-500">Ritmo atual</p>
-                          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1">
-                            <Flame className="h-3 w-3 text-orange-400" />
-                            {fmt(currentPace)}/mês
-                          </p>
-                        </div>
-                      )}
-                      <div>
-                        <p className="text-xs text-slate-400 dark:text-slate-500">Prazo definido</p>
-                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1">
-                          <Star className="h-3 w-3 text-amber-400" />
-                          {deadlineLabel(goal.deadline)}
-                          {months > 0 && <span className="text-xs text-slate-400 font-normal">({months}m)</span>}
-                        </p>
-                      </div>
-                      {pct < 100 && projectedDate && projectedMonths != null && (
-                        <div>
-                          <p className="text-xs text-slate-400 dark:text-slate-500">Projeção do ritmo</p>
-                          <p className={`text-sm font-semibold flex items-center gap-1 ${
-                            status?.label === 'Adiantada' ? 'text-emerald-600 dark:text-emerald-400'
-                            : status?.label === 'Atrasada' ? 'text-amber-500'
-                            : 'text-slate-700 dark:text-slate-200'
-                          }`}>
-                            {projectedDate}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex gap-2 flex-wrap">
-                      {imp?.source === 'board' && (
-                        <Button
-                          size="sm" variant="ghost" className="text-xs gap-1.5 h-8 text-slate-500"
-                          title={`Atualizar com o patrimônio atual de "${imp.boardName}"`}
-                          onClick={() => quickRefreshFromBoard(goal)}
-                        >
-                          <RefreshCw className="h-3 w-3" />
-                          Atualizar valor
-                        </Button>
-                      )}
-                      {investmentBoards.length > 0 && (
-                        <Button
-                          size="sm" variant="outline" className="text-xs gap-1.5 h-8 border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400"
-                          onClick={() => openBoardPicker(goal)}
-                        >
-                          <Link2 className="h-3 w-3" />
-                          {imp?.source === 'board' ? 'Trocar conta' : 'Importar Patrimônio'}
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
+            <section>
+              <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-200 dark:border-white/[0.08]">
+                <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Suas metas</h2>
+                <span className="text-xs text-slate-400">ordenadas pelo prazo</span>
               </div>
-            )
-          })}
-        </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {goalViews.map(v => (
+                  <GoalCard
+                    key={v.goal.id}
+                    v={v}
+                    canLink={investmentBoards.length > 0}
+                    onEdit={() => openEdit(v.goal)}
+                    onDelete={() => setDeleteTarget(v.goal)}
+                    onRefresh={() => quickRefreshFromBoard(v.goal)}
+                    onPickBoard={() => openBoardPicker(v.goal)}
+                  />
+                ))}
+              </div>
+            </section>
+            <div className="space-y-4">
+              <PaceChart items={goalViews} />
+              <GoalsTimeline items={goalViews} />
+            </div>
+          </div>
+        </>
       )}
+
+      <GoalsHelp />
 
       {/* FORM MODAL */}
       <Dialog open={formOpen} onOpenChange={v => { if (!v) setFormOpen(false) }}>
