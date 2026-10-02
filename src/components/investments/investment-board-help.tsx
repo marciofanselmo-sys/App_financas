@@ -37,8 +37,9 @@ export function InvestmentBoardHelp() {
           <div className="space-y-4">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Os números</p>
             <Item icon={Wallet} title="Patrimônio.">
-              Quanto a conta vale hoje. Vem da planilha de posição da corretora (&ldquo;Atualizar posição&rdquo;) ou de
-              um valor que você informa em Investimentos → &ldquo;Atualizar valor&rdquo;. Não é a soma de lançamentos.
+              Quanto a conta vale hoje. Com extrato (planilha de posição ou &ldquo;Atualizar valor&rdquo;), vale o
+              extrato. Sem extrato, vale a soma dos aportes. Nunca os dois somados. É este valor que entra no
+              patrimônio do Dashboard.
             </Item>
             <Item icon={PiggyBank} iconClass="text-blue-600" title="Aportes recebidos.">
               Saídas das suas contas (C6, Itaú…) marcadas como aporte nesta conta. Elas continuam na conta de onde

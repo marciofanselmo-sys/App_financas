@@ -1,5 +1,6 @@
 import { Transaction, TransactionBoard } from '@/types'
 import { todayISO } from '@/utils/local-date'
+import { investmentValueOf } from '@/lib/investment-contributions'
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -86,6 +87,8 @@ export interface PatrimonyOverview {
 export function computePatrimonyOverview(
   boards: TransactionBoard[],
   cashTransactions: Transaction[],
+  /** Lançamentos de todas as contas — de onde saem os aportes das contas de investimento. */
+  allTransactions: Transaction[] = cashTransactions,
 ): PatrimonyOverview {
   const cashBoards = boards.filter(b => !b.is_investment)
   const investmentBoards = boards.filter(b => b.is_investment)
@@ -114,14 +117,16 @@ export function computePatrimonyOverview(
   const investments: InvestmentBreakdown[] = []
   const missingInvestmentImport: { boardId: string; name: string }[] = []
 
+  // Cada conta de investimento entra com o valor que ela mostra: o extrato,
+  // se houver; senão a soma dos aportes. Nunca os dois somados.
   for (const board of investmentBoards) {
-    const pos = board.last_position_import
-    if (pos?.patrimonio != null) {
+    const v = investmentValueOf(board, allTransactions)
+    if (v.source !== 'none') {
       investments.push({
         boardId: board.id,
         name: board.name,
-        patrimonio: pos.patrimonio,
-        importedAt: pos.importedAt,
+        patrimonio: v.value,
+        importedAt: board.last_position_import?.importedAt,
       })
     } else {
       missingInvestmentImport.push({ boardId: board.id, name: board.name })

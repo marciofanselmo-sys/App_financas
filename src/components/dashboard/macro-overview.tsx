@@ -101,7 +101,7 @@ export function MacroOverview({ overview, loading, composition }: MacroOverviewP
               {formatDashboardCurrency(overview.investmentsTotal)}
             </p>
             <p className="text-[11px] text-[#93A5C1] dark:text-slate-500 mt-1">
-              Última posição importada (XLSX)
+              Valor de cada conta: extrato ou soma dos aportes
             </p>
             {overview.investments.length > 0 ? (
               <ul className="mt-3 space-y-1.5 border-t border-[#DDE7F3] dark:border-white/[0.06] pt-3">
@@ -121,13 +121,13 @@ export function MacroOverview({ overview, loading, composition }: MacroOverviewP
               </ul>
             ) : (
               <p className="text-xs text-[#93A5C1] dark:text-slate-500 mt-3">
-                Nenhuma posição importada ainda.
+                Nenhuma conta de investimento com valor ainda.
               </p>
             )}
             {overview.missingInvestmentImport.length > 0 && (
               <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2">
-                {overview.missingInvestmentImport.length} conta(s) sem importação ·{' '}
-                <Link href="/investments" className="underline">Importar posição</Link>
+                {overview.missingInvestmentImport.length} conta(s) sem extrato nem aportes ·{' '}
+                <Link href="/investments" className="underline">Ver investimentos</Link>
               </p>
             )}
           </div>

@@ -573,7 +573,7 @@ export default function BoardDetailPage() {
                   return (
                     <>
                       <p className="text-[11px] text-slate-400 mt-1">
-                        valor atual {formatCurrency(iv.value)} · {investmentValueLabel(iv, formatCurrency)}
+                        valor atual {formatCurrency(iv.value)} · {investmentValueLabel(iv)}
                       </p>
                       {gain != null && (
                         <p className={`text-[11px] font-semibold tabular-nums ${gain >= 0 ? 'text-green-600' : 'text-red-500'}`}>

@@ -90,32 +90,25 @@ export function contributionsForBoard(
 export type InvestmentValueSource = 'position' | 'manual' | 'aportes' | 'none'
 
 export interface InvestmentValue {
-  /** O valor que a conta mostra e que entra no patrimônio e nas metas ligadas. */
+  /** O valor da conta — o que ela mostra e o que soma no patrimônio e nas metas. */
   value: number
   source: InvestmentValueSource
-  /** Valor do extrato (planilha ou informado) e a data dele, se houver. */
-  positionValue: number | null
+  /** Data do extrato (planilha ou valor informado), se houver. */
   positionDate: string | null
-  /** Aportes feitos DEPOIS do extrato — somados até chegar um extrato novo. */
-  aportesAfter: number
-  aportesAfterCount: number
   aportado: number
   /** Valor − aportado; só quando há extrato E aportes (sem extrato não há rendimento). */
   gain: number | null
 }
 
 /**
- * Regra do valor de uma conta de investimento, em ordem (decisão do dono,
- * 01/10/2026):
- *  1. Tem extrato — planilha importada ou valor informado à mão? Vale ele,
- *     mais os aportes feitos depois da data dele (o extrato fica velho; os
- *     aportes novos aproximam do real até o próximo extrato).
- *  2. Não tem? Vale a soma dos aportes (+ ponto de partida).
- *  3. Nem aportes: sem valor.
+ * O valor de uma conta de investimento — regra do dono (01/10/2026):
+ *  - tem extrato (planilha importada ou valor informado)? vale o extrato;
+ *  - não tem? vale a soma dos aportes (+ ponto de partida);
+ *  - nenhum dos dois: sem valor.
+ * Nunca soma extrato com aportes. Patrimônio, total de Investimentos e metas
+ * ligadas usam ESTE valor, o mesmo que a conta mostra.
  *
  * Só LÊ os aportes (contributionsForBoard); a regra de aportes não muda aqui.
- * O dinheiro do aporte já saiu do saldo da conta de origem, então somá-lo aqui
- * não conta nada duas vezes no patrimônio.
  */
 export function investmentValueOf(
   board: TransactionBoard,
@@ -124,33 +117,25 @@ export function investmentValueOf(
   const c = contributionsForBoard(board, linked)
   const pos = board.last_position_import
   if (pos) {
-    const positionDate = pos.importedAt.slice(0, 10)
-    const after = c.aportes.filter(t => t.date > positionDate)
-    const aportesAfter = after.reduce((s, t) => s + Number(t.amount), 0)
-    const value = pos.patrimonio + aportesAfter
     return {
-      value,
+      value: pos.patrimonio,
       source: pos.source === 'manual' ? 'manual' : 'position',
-      positionValue: pos.patrimonio,
-      positionDate,
-      aportesAfter,
-      aportesAfterCount: after.length,
+      positionDate: pos.importedAt.slice(0, 10),
       aportado: c.aportado,
-      gain: c.configured ? value - c.aportado : null,
+      gain: c.configured ? pos.patrimonio - c.aportado : null,
     }
   }
   if (c.configured) {
-    return {
-      value: c.aportado, source: 'aportes', positionValue: null, positionDate: null,
-      aportesAfter: 0, aportesAfterCount: 0, aportado: c.aportado, gain: null,
-    }
+    return { value: c.aportado, source: 'aportes', positionDate: null, aportado: c.aportado, gain: null }
   }
-  return { value: 0, source: 'none', positionValue: null, positionDate: null, aportesAfter: 0, aportesAfterCount: 0, aportado: 0, gain: null }
+  return { value: 0, source: 'none', positionDate: null, aportado: 0, gain: null }
 }
 
 /** Texto curto da origem do valor, para mostrar junto do número. */
-export function investmentValueLabel(v: InvestmentValue, fmtMoney: (n: number) => string): string {
+export function investmentValueLabel(v: InvestmentValue): string {
   const d = v.positionDate ? new Date(`${v.positionDate}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '') : ''
-  const base = v.source === 'position' ? `pelo extrato de ${d}` : v.source === 'manual' ? `pelo valor informado em ${d}` : v.source === 'aportes' ? 'pela soma dos aportes (sem extrato)' : 'sem valor'
-  return v.aportesAfterCount > 0 ? `${base} + ${fmtMoney(v.aportesAfter)} em aportes depois` : base
+  return v.source === 'position' ? `pelo extrato de ${d}`
+    : v.source === 'manual' ? `pelo valor informado em ${d}`
+      : v.source === 'aportes' ? 'pela soma dos aportes (sem extrato)'
+        : 'sem valor'
 }

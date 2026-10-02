@@ -291,6 +291,7 @@ function InvestmentsPage() {
         <div className="space-y-6">
           <InvestmentsSummary
             boards={boards}
+            total={[...values.values()].reduce((sum, v) => sum + v.value, 0)}
             contributions={monthlyContributions}
             target={investTarget}
             income={monthIncome}
@@ -416,7 +417,7 @@ function InvestmentsPage() {
                         <>
                           <p className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500 mt-3">Patrimônio</p>
                           <p className="text-lg font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(values.get(board.id)?.value ?? 0)}</p>
-                          <p className="text-[11px] text-slate-400">{investmentValueLabel(values.get(board.id)!, formatCurrency)}</p>
+                          <p className="text-[11px] text-slate-400">{investmentValueLabel(values.get(board.id)!)}</p>
                           {allocTotal > 0 && (
                             <div className="flex h-1.5 rounded-full overflow-hidden mt-2 bg-slate-100 dark:bg-white/[0.08]">
                               {alloc.map(a => <div key={a.name} title={a.name} style={{ width: `${(a.value / allocTotal) * 100}%`, backgroundColor: a.color }} />)}

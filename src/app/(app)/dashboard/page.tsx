@@ -90,8 +90,9 @@ export default function DashboardPage() {
     () => computePatrimonyOverview(
       boards.filter(b => b.show_on_dashboard || b.is_investment),
       allCashTransactions,
+      allTransactions,
     ),
-    [boards, allCashTransactions],
+    [boards, allCashTransactions, allTransactions],
   )
   const { plan, loading: planLoading, savePlan } = useBudgetPlan(month, year)
   const { defaultInvestmentPct, updatePreferences, loading: prefsLoading } = useUserPreferences()
@@ -235,7 +236,7 @@ export default function DashboardPage() {
       {/* Patrimônio e composição não dependem do mês — ficam acima do filtro */}
       <MacroOverview
         overview={patrimony}
-        loading={boardsLoading || patrimonyLoading}
+        loading={boardsLoading || patrimonyLoading || allTxLoading}
         composition={<PatrimonyCompositionChart data={patrimonyChartData} loading={chartsLoading} />}
       />
 

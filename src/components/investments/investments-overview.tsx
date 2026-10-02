@@ -82,8 +82,10 @@ const daysAgo = (iso: string) => {
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')
 
 // ── 1. Os quatro números do topo ───────────────────────────────────────────
-export function InvestmentsSummary({ boards, contributions, target, income, goal }: {
+export function InvestmentsSummary({ boards, total: shownTotal, contributions, target, income, goal }: {
   boards: TransactionBoard[]
+  /** Soma do valor que cada conta mostra (extrato, ou aportes sem extrato). */
+  total?: number
   contributions: number
   /** Meta de investir do mês (Planejamento); 0 = sem meta. */
   target: number
@@ -91,7 +93,7 @@ export function InvestmentsSummary({ boards, contributions, target, income, goal
   goal: Goal | null
 }) {
   const imports = withPosition(boards)
-  const total = imports.reduce((s, b) => s + b.last_position_import!.patrimonio, 0)
+  const total = shownTotal ?? imports.reduce((s, b) => s + b.last_position_import!.patrimonio, 0)
   const lastAt = imports.map(b => b.last_position_import!.importedAt).sort().pop()
   const variation = computeConsolidatedPatrimonyVariation(boards)
   const monthName = new Date().toLocaleDateString('pt-BR', { month: 'long' })
