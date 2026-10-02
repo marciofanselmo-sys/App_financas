@@ -217,7 +217,7 @@ export function requiredTier(feature: Feature): PaidTier {
  */
 const PRECOS: Record<PaidTier, number> = {
   mensal: 21,
-  trimestral: 44,
+  trimestral: 49,
   anual: 169,
 }
 
