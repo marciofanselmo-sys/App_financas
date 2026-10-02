@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { Suspense, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useUserSuggestions } from '@/hooks/use-user-suggestions'
 import {
   SUGGESTION_KIND_LABELS, SUGGESTION_KIND_OPTIONS, SUGGESTION_SCREENS, SUGGESTION_STATUS_LABELS,
@@ -36,10 +37,22 @@ const STEPS: { label: string; text: string }[] = [
 
 type Filter = 'all' | 'open' | 'done'
 
+// ?tipo=duvida (vindo da Ajuda) já abre o formulário com o tipo marcado.
 export default function SuggestionsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SuggestionsContent />
+    </Suspense>
+  )
+}
+
+function SuggestionsContent() {
+  const params = useSearchParams()
+  const tipo = params.get('tipo')
+  const initialKind: SuggestionKind = SUGGESTION_KIND_OPTIONS.includes(tipo as SuggestionKind) ? (tipo as SuggestionKind) : 'ideia'
   const { suggestions, loading, submitSuggestion } = useUserSuggestions()
   const [message, setMessage] = useState('')
-  const [kind, setKind] = useState<SuggestionKind>('ideia')
+  const [kind, setKind] = useState<SuggestionKind>(initialKind)
   const [screen, setScreen] = useState('Geral')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
