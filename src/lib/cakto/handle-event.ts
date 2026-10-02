@@ -4,7 +4,7 @@ import { enviarEmail } from '@/lib/email/send'
 import { PLANS, PaidTier } from '@/lib/plans'
 import {
   emailAssinaturaEncerrada, emailBoasVindas, emailPagamentoAtrasado,
-  emailPlanoLiberado, emailRenovacao,
+  emailPlanoLiberado, emailRenovacao, emailNovaVenda,
 } from '@/lib/email/templates'
 
 /**
@@ -249,10 +249,33 @@ export async function handleCaktoEvent(
       admin,
     })
 
+    // Venda nova: avisa a equipe (lista em SALES_NOTIFY_EMAILS, separada por
+    // vírgula). Falha aqui não afeta o acesso do cliente.
+    if (payload.event === 'purchase_approved') {
+      await avisarEquipe(order, resolved.email, rotuloDoPlano(order))
+    }
+
     results.push({ ok: true, detail: `${payload.event} → ${status}`, userId: resolved.userId })
   }
 
   return results
+}
+
+async function avisarEquipe(order: CaktoOrderData, email: string, plano: string) {
+  const para = (process.env.SALES_NOTIFY_EMAILS ?? '')
+    .split(',').map(e => e.trim()).filter(e => e.includes('@'))
+  if (para.length === 0) return
+  const aviso = emailNovaVenda({
+    plano,
+    valor: order.amount ?? order.offer?.price ?? null,
+    cliente: order.customer?.name ?? null,
+    email,
+    metodo: order.paymentMethod ?? null,
+    data: order.paidAt ?? null,
+  })
+  for (const destino of para) {
+    try { await enviarEmail(destino, aviso) } catch { /* nunca derruba o webhook */ }
+  }
 }
 
 function rotuloDoPlano(order: CaktoOrderData): string {

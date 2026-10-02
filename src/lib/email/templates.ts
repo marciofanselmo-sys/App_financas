@@ -162,3 +162,36 @@ export function emailRenovacao(params: { nome?: string; plano: string; proximaCo
     text: `${ola(params.nome)}\n\nSua assinatura do plano ${params.plano} foi renovada.${quando ? ` Próxima cobrança em ${quando}.` : ''}\n\n${SITE}/dashboard\n\nDúvidas: ${SUPORTE}`,
   }
 }
+
+/**
+ * Aviso interno de venda nova — vai para a equipe (SALES_NOTIFY_EMAILS), não
+ * para o cliente. Só dados da venda; nada de senha nem link de acesso.
+ */
+export function emailNovaVenda(params: {
+  plano: string
+  valor?: number | null
+  cliente?: string | null
+  email: string
+  metodo?: string | null
+  data?: string | null
+}): Email {
+  const valor = params.valor != null
+    ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(params.valor)
+    : '—'
+  const linhas: [string, string][] = [
+    ['Plano', params.plano],
+    ['Valor', valor],
+    ['Cliente', params.cliente || '—'],
+    ['E-mail', params.email],
+    ['Pagamento', params.metodo || '—'],
+    ['Data', dataBR(params.data) || dataBR(new Date().toISOString())],
+  ]
+  const tabela = `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:8px 0 4px;">${linhas
+    .map(([k, v]) => `<tr><td style="padding:6px 0;font-size:13px;color:#64748b;width:110px;">${k}</td><td style="padding:6px 0;font-size:14px;color:#0f172a;font-weight:600;">${v}</td></tr>`)
+    .join('')}</table>`
+  return {
+    subject: `Nova venda NOBLI · ${params.plano} · ${valor}`,
+    html: moldura(titulo('Nova venda 🎉') + p('Uma venda acabou de ser aprovada na Cakto.') + tabela + botao(`${SITE}/admin`, 'Abrir o painel')),
+    text: `Nova venda NOBLI\n\n${linhas.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\nPainel: ${SITE}/admin`,
+  }
+}
