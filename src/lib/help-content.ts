@@ -111,7 +111,7 @@ export const HELP_SECTIONS: HelpSection[] = [
           'Ao trocar, o app cria (ou atualiza) uma regra automática com aquela descrição e corrige as outras transações iguais.',
           '> Exemplo: "UBER EATS" estava em Transporte. Você muda para Alimentação — a regra "UBER EATS → Alimentação" passa a valer para todas.',
         ],
-        tip: 'Eventos (viagem, reforma…) nunca viram regra: a troca vale só para aquele lançamento.',
+        
       },
       {
         id: 'insight',
@@ -600,8 +600,9 @@ export const HELP_SECTIONS: HelpSection[] = [
         id: 'eventos',
         title: 'Eventos',
         body: [
-          'Para um gasto único que você quer acompanhar à parte — uma viagem, uma reforma.',
-          'Eventos ficam numa aba própria e nunca entram nas regras automáticas: só mudam quando você muda.',
+          'Evento é uma etiqueta por cima da categoria: uma viagem, uma reforma, um campeonato.',
+          'O lançamento continua na categoria normal (Alimentação, Transporte…) e também soma no evento — você vê quanto custou sem bagunçar os relatórios do mês.',
+          'Quando acabar, encerre o evento: ele some da lista ao lançar, mas continua nos relatórios.',
         ],
       },
       {
