@@ -420,7 +420,7 @@ function FixosPage() {
             receitaCount={confirmedReceitaItems.length}
           />
 
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px] items-stretch">
+          <div className="grid gap-4 lg:grid-cols-2 items-stretch">
             <IncomeSplit groups={splitGroups} despesa={totalMonthly} receita={receitaMonthly} />
             <MonthCalendar despesas={confirmedDespesaItems} receitas={confirmedReceitaItems} installments={installments} />
           </div>

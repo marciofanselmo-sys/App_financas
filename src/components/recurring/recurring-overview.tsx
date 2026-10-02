@@ -78,8 +78,8 @@ export function IncomeSplit({ groups, despesa, receita }: { groups: CategoryGrou
       {base > 0 ? (
         // Rosca no mesmo formato de "Distribuição das despesas" da Análise;
         // no centro, o que fica livre.
-        <div className="flex-1 flex flex-col sm:flex-row items-center gap-6 mt-4">
-          <div className="relative h-60 w-60 sm:h-64 sm:w-64 shrink-0 [&_path]:stroke-white dark:[&_path]:stroke-[#111c2d]">
+        <div className="flex-1 flex flex-col sm:flex-row items-center justify-center gap-5 mt-4">
+          <div className="relative h-52 w-52 shrink-0 [&_path]:stroke-white dark:[&_path]:stroke-[#111c2d]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={parts} dataKey="value" nameKey="name" innerRadius="66%" outerRadius="100%" strokeWidth={2}
@@ -103,13 +103,16 @@ export function IncomeSplit({ groups, despesa, receita }: { groups: CategoryGrou
               )}
             </div>
           </div>
-          <ul className="flex-1 min-w-0 w-full space-y-2">
+          {/* Legenda colada nos valores: nome, % e R$ em colunas do tamanho do conteúdo. */}
+          <ul className="grid grid-cols-[minmax(0,auto)_auto_auto] items-center gap-x-3 gap-y-2 text-[11px] min-w-0">
             {parts.map(p => (
-              <li key={p.name} className="flex items-center gap-2 text-[11px]">
-                <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
-                <span className={cn('flex-1 min-w-0 truncate text-slate-600 dark:text-slate-300', p.name === 'Sobra livre' && 'font-semibold text-blue-700 dark:text-blue-400')}>{p.name}</span>
-                <span className="tabular-nums text-slate-400 w-8 text-right">{pct((p.value / base) * 100)}</span>
-                <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-200 w-[84px] text-right">{fmt(p.value)}</span>
+              <li key={p.name} className="contents">
+                <span className={cn('flex items-center gap-2 min-w-0 text-slate-600 dark:text-slate-300', p.name === 'Sobra livre' && 'font-semibold text-blue-700 dark:text-blue-400')}>
+                  <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
+                  <span className="truncate">{p.name}</span>
+                </span>
+                <span className="tabular-nums text-slate-400 text-right">{pct((p.value / base) * 100)}</span>
+                <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-200 text-right">{fmt(p.value)}</span>
               </li>
             ))}
           </ul>
