@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/client'
 import { CreditCard, Plus, X } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useInstallmentsOverview, InstallmentsSummary, ReliefChart, ByCard, InstallmentsList } from '@/components/installments/installments-overview'
-import { InfoBox } from '@/components/ui/info-box'
+import { InstallmentsHelp } from '@/components/installments/installments-help'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -153,29 +153,7 @@ function RecurringPage() {
         </>
       )}
 
-      <InfoBox id="recurring-como-funciona">
-        <p className="text-blue-600 dark:text-blue-400">
-          Esta aba reúne todas as compras parceladas que o app encontrou nas suas transações (via importação de extrato ou lançamento manual). Ela não é uma lista do mês atual — é um acompanhamento das parcelas <strong>em andamento</strong>, olhando do primeiro pagamento até o último, independente de qual mês você está vendo agora.
-        </p>
-        <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
-          <p className="font-semibold mb-1">O que os valores em cima significam?</p>
-          <p className="text-blue-600 dark:text-blue-400">
-            <strong>Parcelas / mês</strong> é a soma do valor de UMA parcela de cada compra ativa — ou seja, quanto sai do seu bolso todo mês, recorrentemente, até cada parcelamento terminar. Não é só do mês atual: se um parcelamento começou em janeiro e vai até dezembro, esse valor conta com ele em todos esses meses.
-          </p>
-        </div>
-        <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
-          <p className="font-semibold mb-1">Falta pagar</p>
-          <p className="text-blue-600 dark:text-blue-400">
-            Já esse é o valor que ainda falta pagar no total, somando todas as parcelas futuras (a partir de hoje) de todos os parcelamentos ativos — sua dívida restante em parcelas, de uma vez só.
-          </p>
-        </div>
-        <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
-          <p className="font-semibold mb-1">Alivia, Fica livre e o gráfico</p>
-          <p className="text-blue-600 dark:text-blue-400">
-            <strong>Alivia em</strong> é quanto deixa de sair no mês que vem, porque esses parcelamentos terminam neste mês. <strong>Fica livre em</strong> é o mês da última parcela das compras que você já fez. O gráfico mostra, mês a mês, quanto já está comprometido — separado por cartão (a conta de onde vem a parcela; sem conta, aparece como &ldquo;Sem cartão&rdquo;).
-          </p>
-        </div>
-      </InfoBox>
+      <InstallmentsHelp />
 
       {/* ADD MANUAL INSTALLMENT MODAL */}
       <Dialog open={addOpen} onOpenChange={v => { if (!v) setAddOpen(false) }}>
