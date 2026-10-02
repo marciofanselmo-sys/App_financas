@@ -22,7 +22,6 @@ import {
   MoreVertical, Split, Compass, AlertCircle,
 } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { isInternalMovement } from '@/lib/internal-movement'
 import { CategoriesHelp } from '@/components/categories/categories-help'
 import { OverviewSection } from '@/components/ui/overview-blocks'
 import { cn } from '@/lib/utils'
@@ -194,27 +193,6 @@ export default function CategoriesPage() {
       ? (usageCount[`despesa|${n}`] ?? 0) + (usageCount[`receita|${n}`] ?? 0)
       : (usageCount[`${cat.type}|${n}`] ?? 0)
   }
-
-  // Média por mês nos 3 últimos meses fechados, por tipo|nome — o valor de
-  // cada linha (mesmo jeito de ler da Análise). Mês corrente fica de fora
-  // para um mês pela metade não puxar a média para baixo.
-  const AVG_MONTHS = 3
-  const avgByTypeName = useMemo(() => {
-    const now = new Date()
-    const ym = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    const end = ym(now)
-    const start = ym(new Date(now.getFullYear(), now.getMonth() - AVG_MONTHS, 1))
-    const map: Record<string, number> = {}
-    for (const t of transactions) {
-      if (!t.category || isInternalMovement(t)) continue
-      const m = t.date.slice(0, 7)
-      if (m < start || m >= end) continue
-      const k = `${t.type}|${t.category.trim().toLowerCase()}`
-      map[k] = (map[k] ?? 0) + Number(t.amount) / AVG_MONTHS
-    }
-    return map
-  }, [transactions])
-  const avgOf = (cat: Category, type: SectionType) => avgByTypeName[`${type}|${cat.name.trim().toLowerCase()}`] ?? 0
 
   // Totais por evento: quanto saiu, quanto voltou (estorno/reembolso) e o período.
   const eventStats = useMemo(() => {
@@ -578,7 +556,7 @@ export default function CategoriesPage() {
   }
 
   // Subcategoria: ponto na cor da mãe, nome, lançamentos, média e ⋮.
-  function renderChild(kid: Category, parent: Category, type: SectionType) {
+  function renderChild(kid: Category, parent: Category) {
     const count = countOf(kid)
     // Tipo diferente do da mãe não quebra conta nenhuma (o cálculo usa o tipo
     // do lançamento), mas embaralha a leitura dos relatórios — vale avisar.
@@ -595,18 +573,16 @@ export default function CategoriesPage() {
             <AlertTriangle className="h-2.5 w-2.5" /> fora do tipo
           </span>
         )}
-        <span className="hidden sm:inline text-[11px] text-slate-400 shrink-0">{count} lançamento{count === 1 ? '' : 's'}</span>
-        <span className="w-24 text-right text-[13px] font-semibold tabular-nums text-slate-700 dark:text-slate-200 shrink-0">
-          {money(avgOf(kid, type))}
-        </span>
+        <span className="text-[11px] text-slate-400 shrink-0">{count} lançamento{count === 1 ? '' : 's'}</span>
         {renderActions(kid, true)}
       </div>
     )
   }
 
-  // Linha de categoria no modelo da Análise: ícone redondo, nome, pilar,
-  // barra, média por mês e ⋮. `compact` = card de Receitas (sem barra).
-  function renderParent(parent: Category, type: SectionType, max: number, compact = false) {
+  // Linha de categoria no modelo da Análise: ícone redondo, nome, pilar e ⋮.
+  // Sem valores — quanto se gasta em cada categoria é assunto da Análise;
+  // aqui é onde se organiza.
+  function renderParent(parent: Category, type: SectionType) {
     const kids = (childrenOf.get(parent.id) ?? [])
       // Uma mãe "Ambos" (o Outros) aparece nas duas seções; cada uma mostra
       // só as subcategorias do tipo dela.
@@ -615,59 +591,46 @@ export default function CategoriesPage() {
     // Buscando, abre sozinho para mostrar a subcategoria encontrada.
     const open = expanded.has(parent.id) || !!q
     const total = countOf(parent) + kids.reduce((sum, k) => sum + countOf(k), 0)
-    const value = avgOf(parent, type) + kids.reduce((sum, k) => sum + avgOf(k, type), 0)
     // Lançamentos direto na mãe só viram linha quando ela tem subcategorias
     // (sem elas, já são os da própria categoria). "Outros" sempre mostra.
     const direct = txsByTypeName.get(`${type}|${parent.name.trim().toLowerCase()}`) ?? []
     const showDirect = direct.length > 0 && (kids.length > 0 || isOutros(parent))
     const color = parent.color
-    const valueClass = type === 'receita' ? 'text-green-600 dark:text-green-400' : 'text-red-500'
-    const bar = (
-      <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-        <div className="h-full rounded-full" style={{ width: `${max > 0 ? (value / max) * 100 : 0}%`, backgroundColor: color }} />
-      </div>
-    )
     return (
       <div key={`${type}:${parent.id}`} id={`cat-${type}-${parent.id}`} className="py-3 scroll-mt-20">
         <div className="flex items-center gap-3">
           <button type="button" onClick={() => toggle(parent.id)} aria-expanded={open}
             className="flex-1 min-w-0 flex items-center gap-3 text-left group">
             <ChevronRight className={cn('h-4 w-4 text-slate-400 shrink-0 transition-transform', open && 'rotate-90')} />
-            <span className={cn('rounded-full flex items-center justify-center shrink-0', compact ? 'h-8 w-8' : 'h-9 w-9')}
+            <span className="h-9 w-9 rounded-full flex items-center justify-center shrink-0"
               style={{ backgroundColor: `${color}1f`, color }}>
               <CategoryIcon iconKey={categoryIconKey(parent, categories)} className="h-4 w-4" />
             </span>
-            <span className={cn('min-w-0', compact ? 'flex-1' : 'flex-1 sm:flex-none sm:w-52')}>
+            <span className="min-w-0 flex-1">
               <span className="block text-sm font-medium text-slate-700 dark:text-slate-200 truncate group-hover:underline">{parent.name}</span>
               <span className="block text-[11px] text-slate-400 truncate">
                 {kids.length} subcategoria{kids.length === 1 ? '' : 's'} · {total} lançamento{total === 1 ? '' : 's'}
               </span>
             </span>
-            {!compact && type === 'despesa' && (
+            {type === 'despesa' && (
               parent.bucket ? (
-                <Badge className={cn('hidden md:inline-flex text-[10px] shrink-0 border-0', BUCKET_BADGE[parent.bucket])}>
+                <Badge className={cn('text-[10px] shrink-0 border-0', BUCKET_BADGE[parent.bucket])}>
                   {BUCKET_LABELS[parent.bucket]}
                 </Badge>
               ) : !isOutros(parent) ? (
-                <Badge className="hidden md:inline-flex text-[10px] shrink-0 border-0 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                <Badge className="text-[10px] shrink-0 border-0 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                   sem pilar
                 </Badge>
               ) : null
             )}
-            {!compact && <span className="hidden sm:block flex-1 min-w-0">{bar}</span>}
-            <span className="shrink-0 text-right w-24">
-              <span className={cn('block text-sm font-semibold tabular-nums whitespace-nowrap', valueClass)}>{money(value)}</span>
-              <span className="block text-[10.5px] text-slate-400">média/mês</span>
-            </span>
           </button>
           {renderActions(parent, false)}
         </div>
-        {!compact && <div className="sm:hidden mt-2 ml-[76px] mr-11">{bar}</div>}
 
         {open && (
-          <div className={cn('mt-2 pl-3 border-l-2 border-slate-100 dark:border-white/[0.08]', compact ? 'ml-4' : 'ml-[30px]')}>
+          <div className="mt-2 ml-[30px] pl-3 border-l-2 border-slate-100 dark:border-white/[0.08]">
             {showDirect && renderDirectRow(parent, type, direct)}
-            {kids.map(kid => renderChild(kid, parent, type))}
+            {kids.map(kid => renderChild(kid, parent))}
             <button type="button" onClick={() => openCreate(parent.id)}
               className="mt-1 ml-2 flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">
               <Plus className="h-3.5 w-3.5" /> Nova subcategoria
@@ -693,38 +656,24 @@ export default function CategoriesPage() {
   const strandedKids = outrosParent ? (childrenOf.get(outrosParent.id) ?? []) : []
   const unlabeledList = parents.filter(p => !p.bucket && p.type !== 'receita' && !isOutros(p))
   const outrosDirect = outrosParent ? (txsByTypeName.get(`despesa|${outrosParent.name.trim().toLowerCase()}`) ?? []) : []
-  const parentValue = (p: Category, type: SectionType) =>
-    avgOf(p, type) + (childrenOf.get(p.id) ?? [])
-      .filter(k => k.type === type || k.type === 'ambos')
-      .reduce((sum, k) => sum + avgOf(k, type), 0)
-  const expenseParents = [...bySection.despesa].sort((a, b) => {
-    if (isOutros(a)) return 1
-    if (isOutros(b)) return -1
-    return parentValue(b, 'despesa') - parentValue(a, 'despesa')
-  })
-  const incomeList = [...bySection.receita].sort((a, b) => {
-    if (isOutros(a)) return 1
-    if (isOutros(b)) return -1
-    return parentValue(b, 'receita') - parentValue(a, 'receita')
-  })
-  const expenseMax = Math.max(0, ...expenseParents.map(p => parentValue(p, 'despesa')))
-  const expenseTotal = expenseParents.reduce((sum, p) => sum + parentValue(p, 'despesa'), 0)
-  const incomeMax = Math.max(0, ...incomeList.map(p => parentValue(p, 'receita')))
-  const incomeTotal = incomeList.reduce((sum, p) => sum + parentValue(p, 'receita'), 0)
+  // Ordem alfabética, "Outros" sempre por último (como antes).
+  const expenseParents = bySection.despesa
+  const incomeList = bySection.receita
   const PILLARS: { key: CategoryBucket | 'none'; label: string; color: string }[] = [
     { key: 'essencial', label: 'Essencial', color: '#2563eb' },
     { key: 'estilo', label: 'Estilo de vida', color: '#db2777' },
     { key: 'futuro', label: 'Futuro', color: '#16a34a' },
     { key: 'none', label: 'Sem pilar', color: '#cbd5e1' },
   ]
-  const allExpenseParents = parents.filter(p => p.type === 'despesa' || p.type === 'ambos')
-  const pillarTotals = PILLARS.map(pl => ({
+  // Pilares por categoria: quantas (e quais) categorias de despesa em cada um.
+  const allExpenseParents = parents.filter(p => (p.type === 'despesa' || p.type === 'ambos') && !isOutros(p))
+  const pillarGroups = PILLARS.map(pl => ({
     ...pl,
-    value: allExpenseParents
+    cats: allExpenseParents
       .filter(p => (p.bucket ?? 'none') === pl.key)
-      .reduce((sum, p) => sum + parentValue(p, 'despesa'), 0),
+      .sort((x, y) => x.name.localeCompare(y.name, 'pt-BR')),
   }))
-  const pillarSum = pillarTotals.reduce((sum, p) => sum + p.value, 0)
+  const pillarCount = allExpenseParents.length
 
   function reviewOutros() {
     if (!outrosParent) return
@@ -811,7 +760,7 @@ export default function CategoriesPage() {
                     <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Despesas por categoria</h2>
                   </div>
                   <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 ml-6">
-                    Clique numa categoria para ver e criar subcategorias. Valor = média por mês nos {AVG_MONTHS} últimos meses fechados.
+                    Clique numa categoria para ver e criar subcategorias. Quanto você gasta em cada uma está na Análise.
                   </p>
                   <div className="relative mt-3">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -824,7 +773,7 @@ export default function CategoriesPage() {
                     </p>
                   ) : (
                     <div className="mt-2 divide-y divide-slate-100 dark:divide-slate-700/60">
-                      {expenseParents.map(p => renderParent(p, 'despesa', expenseMax))}
+                      {expenseParents.map(p => renderParent(p, 'despesa'))}
                     </div>
                   )}
                 </div>
@@ -832,7 +781,7 @@ export default function CategoriesPage() {
                   <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                     {expenseParents.length} categoria{expenseParents.length === 1 ? '' : 's'} de despesa
                   </span>
-                  <span className="text-sm font-bold text-slate-800 dark:text-slate-100 tabular-nums">{money(expenseTotal)}/mês</span>
+                  <span className="text-xs text-slate-400">{expenseParents.reduce((sum, p) => sum + (childrenOf.get(p.id) ?? []).filter(k => k.type !== 'receita').length, 0)} subcategorias</span>
                 </div>
               </section>
 
@@ -844,13 +793,13 @@ export default function CategoriesPage() {
                     <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Receitas por categoria</h2>
                   </div>
                   <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 ml-6">
-                    Categorias de entrada. Valor = média por mês nos {AVG_MONTHS} últimos meses fechados.
+                    Categorias de entrada: salário, rendimentos, vendas…
                   </p>
                   {incomeList.length === 0 ? (
                     <p className="text-center text-sm text-slate-400 py-8">{q ? 'Nada encontrado.' : 'Nenhuma categoria de receita.'}</p>
                   ) : (
                     <div className="mt-2 divide-y divide-slate-100 dark:divide-slate-700/60">
-                      {incomeList.map(p => renderParent(p, 'receita', incomeMax))}
+                      {incomeList.map(p => renderParent(p, 'receita'))}
                     </div>
                   )}
                 </div>
@@ -858,7 +807,7 @@ export default function CategoriesPage() {
                   <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                     {incomeList.length} categoria{incomeList.length === 1 ? '' : 's'} de receita
                   </span>
-                  <span className="text-sm font-bold text-slate-800 dark:text-slate-100 tabular-nums">{money(incomeTotal)}/mês</span>
+                  <span className="text-xs text-slate-400">{incomeList.reduce((sum, p) => sum + (childrenOf.get(p.id) ?? []).filter(k => k.type !== 'despesa').length, 0)} subcategorias</span>
                 </div>
               </section>
               </div>
@@ -907,29 +856,40 @@ export default function CategoriesPage() {
                 )}
 
                 {/* Pilares 50/30/20 */}
-                <OverviewSection icon={Compass} title="Pilares 50/30/20" subtitle="Seu gasto médio por pilar">
-                  {pillarSum > 0 ? (
+                <OverviewSection icon={Compass} title="Pilares 50/30/20" subtitle="Suas categorias de despesa em cada pilar">
+                  {pillarCount > 0 ? (
                     <>
                       <div className="flex h-3 rounded-full overflow-hidden mt-3 bg-slate-100 dark:bg-white/[0.08]">
-                        {pillarTotals.map(pl => pl.value > 0 && (
-                          <div key={pl.key} title={`${pl.label}: ${money(pl.value)}`} style={{ width: `${(pl.value / pillarSum) * 100}%`, backgroundColor: pl.color }} />
+                        {pillarGroups.map(pl => pl.cats.length > 0 && (
+                          <div key={pl.key} title={`${pl.label}: ${pl.cats.length}`} style={{ width: `${(pl.cats.length / pillarCount) * 100}%`, backgroundColor: pl.color }} />
                         ))}
                       </div>
-                      <ul className="mt-3 space-y-1.5">
-                        {pillarTotals.map(pl => (
-                          <li key={pl.key} className="flex items-center gap-2 text-xs">
-                            <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: pl.color }} />
-                            <span className="flex-1 text-slate-600 dark:text-slate-300">{pl.label}</span>
-                            <span className="tabular-nums text-slate-400">{Math.round((pl.value / pillarSum) * 100)}%</span>
-                            <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-200 w-24 text-right">{money(pl.value)}</span>
+                      <ul className="mt-3 space-y-2.5">
+                        {pillarGroups.map(pl => (
+                          <li key={pl.key}>
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: pl.color }} />
+                              <span className={cn('flex-1 font-medium', pl.key === 'none' && pl.cats.length > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-200')}>{pl.label}</span>
+                              <span className="tabular-nums text-slate-400">{pl.cats.length} categoria{pl.cats.length === 1 ? '' : 's'}</span>
+                            </div>
+                            {pl.cats.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1.5 ml-[18px]">
+                                {pl.cats.map(c => (
+                                  <button key={c.id} type="button" onClick={() => openEdit(c)} title="Editar (mudar o pilar)"
+                                    className="text-[11px] rounded-full bg-slate-100 dark:bg-white/[0.06] px-2 py-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/[0.1]">
+                                    {c.name}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </li>
                         ))}
                       </ul>
                     </>
                   ) : (
-                    <p className="text-xs text-slate-400 mt-3">Sem gastos nos últimos meses para dividir.</p>
+                    <p className="text-xs text-slate-400 mt-3">Nenhuma categoria de despesa ainda.</p>
                   )}
-                  <p className="text-[11px] text-slate-400 mt-3">O pilar de cada categoria alimenta o Planejamento.</p>
+                  <p className="text-[11px] text-slate-400 mt-3">Clique numa categoria para mudar o pilar. É o pilar que monta o 50/30/20 do Planejamento.</p>
                 </OverviewSection>
 
               </div>

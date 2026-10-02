@@ -38,13 +38,13 @@ export function CategoriesHelp() {
               Cada lançamento fica numa categoria (Moradia) e, se quiser, numa subcategoria dentro dela (Aluguel).
               A subcategoria usa a cor e o ícone da categoria.
             </Item>
-            <Item icon={Layers} title="Valor de cada linha.">
-              A média por mês dos 3 últimos meses fechados, sem contar movimentação entre suas contas. A barra compara
-              as categorias entre si.
+            <Item icon={Layers} title="Lançamentos.">
+              Cada linha mostra quantas subcategorias e lançamentos a categoria tem. Quanto você gasta em cada uma
+              fica na Análise — aqui é o lugar de organizar.
             </Item>
             <Item icon={Compass} iconClass="text-blue-600" title="Pilares 50/30/20.">
-              Cada categoria de despesa é Essencial, Estilo de vida ou Futuro. É isso que monta o 50/30/20 do
-              Planejamento — categoria sem pilar fica de fora.
+              Cada categoria de despesa é Essencial, Estilo de vida ou Futuro. O card de pilares mostra quais
+              categorias estão em cada um — clique numa para mudar. Categoria sem pilar fica fora do 50/30/20.
             </Item>
             <Item icon={Sparkles} iconClass="text-violet-500" title="Eventos.">
               Uma etiqueta por cima da categoria (viagem, reforma): o lançamento continua na categoria e também soma no evento.
