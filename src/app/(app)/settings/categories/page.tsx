@@ -709,6 +709,8 @@ export default function CategoriesPage() {
   })
   const expenseMax = Math.max(0, ...expenseParents.map(p => parentValue(p, 'despesa')))
   const expenseTotal = expenseParents.reduce((sum, p) => sum + parentValue(p, 'despesa'), 0)
+  const incomeMax = Math.max(0, ...incomeList.map(p => parentValue(p, 'receita')))
+  const incomeTotal = incomeList.reduce((sum, p) => sum + parentValue(p, 'receita'), 0)
   const PILLARS: { key: CategoryBucket | 'none'; label: string; color: string }[] = [
     { key: 'essencial', label: 'Essencial', color: '#2563eb' },
     { key: 'estilo', label: 'Estilo de vida', color: '#db2777' },
@@ -800,6 +802,7 @@ export default function CategoriesPage() {
             </div>
           ) : (
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
+              <div className="space-y-4 min-w-0">
               {/* Despesas por categoria — mesmo modelo da Análise */}
               <section className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
                 <div className="p-5 pb-2">
@@ -833,7 +836,34 @@ export default function CategoriesPage() {
                 </div>
               </section>
 
-              <div className="space-y-4">
+              {/* Receitas por categoria — mesmo card, embaixo das despesas */}
+              <section className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
+                <div className="p-5 pb-2">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-green-600 shrink-0" />
+                    <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Receitas por categoria</h2>
+                  </div>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 ml-6">
+                    Categorias de entrada. Valor = média por mês nos {AVG_MONTHS} últimos meses fechados.
+                  </p>
+                  {incomeList.length === 0 ? (
+                    <p className="text-center text-sm text-slate-400 py-8">{q ? 'Nada encontrado.' : 'Nenhuma categoria de receita.'}</p>
+                  ) : (
+                    <div className="mt-2 divide-y divide-slate-100 dark:divide-slate-700/60">
+                      {incomeList.map(p => renderParent(p, 'receita', incomeMax))}
+                    </div>
+                  )}
+                </div>
+                <div className="border-t border-slate-100 dark:border-slate-700 px-5 py-3 bg-slate-50 dark:bg-slate-700/40 flex justify-between items-center">
+                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    {incomeList.length} categoria{incomeList.length === 1 ? '' : 's'} de receita
+                  </span>
+                  <span className="text-sm font-bold text-slate-800 dark:text-slate-100 tabular-nums">{money(incomeTotal)}/mês</span>
+                </div>
+              </section>
+              </div>
+
+              <div className="space-y-4 lg:sticky lg:top-6">
                 {/* Vale organizar — o que falta arrumar, com botão */}
                 {(unlabeledList.length > 0 || strandedKids.length > 0 || outrosDirect.length > 0) && (
                   <section className="bg-amber-50/60 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 rounded-xl p-4">
@@ -849,7 +879,7 @@ export default function CategoriesPage() {
                         <li className="flex items-start gap-3 py-2.5">
                           <div className="flex-1 min-w-0 text-xs text-slate-600 dark:text-slate-300">
                             <p className="font-semibold text-slate-700 dark:text-slate-200">{unlabeledList.length} categoria{unlabeledList.length === 1 ? '' : 's'} sem pilar</p>
-                            <p className="truncate">{unlabeledList.slice(0, 3).map(p => p.name).join(', ')}{unlabeledList.length > 3 ? '…' : ''} — fora do 50/30/20.</p>
+                            <p className="mt-0.5 leading-relaxed">{unlabeledList.slice(0, 5).map(p => p.name).join(', ')}{unlabeledList.length > 5 ? '…' : ''} — fora do 50/30/20 do Planejamento.</p>
                           </div>
                           <button type="button" onClick={() => openEdit(unlabeledList[0])} className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0">Definir</button>
                         </li>
@@ -858,7 +888,7 @@ export default function CategoriesPage() {
                         <li className="flex items-start gap-3 py-2.5">
                           <div className="flex-1 min-w-0 text-xs text-slate-600 dark:text-slate-300">
                             <p className="font-semibold text-slate-700 dark:text-slate-200">{strandedKids.length} subcategoria{strandedKids.length === 1 ? '' : 's'} dentro de &ldquo;Outros&rdquo;</p>
-                            <p className="truncate">{strandedKids.slice(0, 3).map(k => k.name).join(', ')} — escolha a categoria certa.</p>
+                            <p className="mt-0.5 leading-relaxed">{strandedKids.slice(0, 5).map(k => k.name).join(', ')}{strandedKids.length > 5 ? '…' : ''} — escolha a categoria certa.</p>
                           </div>
                           <button type="button" onClick={() => setMergeState({ from: strandedKids[0], toId: '', mode: 'mover' })} className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0">Mover</button>
                         </li>
@@ -867,7 +897,7 @@ export default function CategoriesPage() {
                         <li className="flex items-start gap-3 py-2.5">
                           <div className="flex-1 min-w-0 text-xs text-slate-600 dark:text-slate-300">
                             <p className="font-semibold text-slate-700 dark:text-slate-200">{outrosDirect.length} lançamento{outrosDirect.length === 1 ? '' : 's'} em &ldquo;Outros&rdquo;</p>
-                            <p>Categorize e o app cria a regra.</p>
+                            <p className="mt-0.5 leading-relaxed">Categorize por descrição e o app cria a regra para os próximos.</p>
                           </div>
                           <button type="button" onClick={reviewOutros} className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0">Revisar</button>
                         </li>
@@ -902,16 +932,6 @@ export default function CategoriesPage() {
                   <p className="text-[11px] text-slate-400 mt-3">O pilar de cada categoria alimenta o Planejamento.</p>
                 </OverviewSection>
 
-                {/* Receitas */}
-                <OverviewSection icon={TrendingUp} iconClass="text-green-600" title="Receitas" subtitle="Categorias de entrada">
-                  {incomeList.length === 0 ? (
-                    <p className="text-xs text-slate-400 mt-3">{q ? 'Nada encontrado.' : 'Nenhuma categoria de receita.'}</p>
-                  ) : (
-                    <div className="mt-1 divide-y divide-slate-100 dark:divide-slate-700/60">
-                      {incomeList.map(p => renderParent(p, 'receita', 0, true))}
-                    </div>
-                  )}
-                </OverviewSection>
               </div>
             </div>
           )}
