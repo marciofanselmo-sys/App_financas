@@ -155,7 +155,7 @@ export async function resolveUser(
     return { error: `evento de um e-mail sem conta no app (${email}) — nada a fazer` }
   }
 
-  const redirectTo = `${siteUrl}/primeiro-acesso`
+  const redirectTo = `${siteUrl}/auth/confirm?next=/primeiro-acesso`
   const invite = await admin.auth.admin.generateLink({
     type: 'invite',
     email,
@@ -163,11 +163,22 @@ export async function resolveUser(
   })
 
   if (!invite.error && invite.data?.user) {
+    // O link do e-mail é montado por nós, não é o `action_link` do Supabase.
+    // O action_link passa pelo endpoint de verificação deles e devolve a
+    // sessão no fragmento da URL (`#access_token`), que nunca chega ao
+    // servidor: o cliente clicava, a sessão não virava cookie e ele caía no
+    // login sem ter senha. Com o `hashed_token` a troca acontece em
+    // /auth/confirm, no servidor, e aí sim a sessão existe.
+    const hash = invite.data.properties?.hashed_token
+    const link = hash
+      ? `${siteUrl}/auth/confirm?token_hash=${encodeURIComponent(hash)}&type=invite&next=/primeiro-acesso`
+      : invite.data.properties?.action_link
+
     return {
       userId: invite.data.user.id,
       email,
       created: true,
-      inviteLink: invite.data.properties?.action_link,
+      inviteLink: link,
     }
   }
 
