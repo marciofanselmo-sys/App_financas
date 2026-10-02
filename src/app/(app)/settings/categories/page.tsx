@@ -36,6 +36,13 @@ const BUCKET_LABELS: Record<CategoryBucket, string> = {
   essencial: 'Essencial', estilo: 'Estilo de vida', futuro: 'Futuro',
 }
 
+// Mesmas cores do card "Pilares 50/30/20".
+const BUCKET_BADGE: Record<CategoryBucket, string> = {
+  essencial: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+  estilo: 'bg-pink-50 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300',
+  futuro: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+}
+
 const NO_BUCKET = '__nenhuma__'
 const NO_PARENT = '__principal__'
 
@@ -637,7 +644,7 @@ export default function CategoriesPage() {
             </span>
             {!compact && type === 'despesa' && (
               parent.bucket ? (
-                <Badge className="hidden md:inline-flex text-[10px] shrink-0 border-0 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                <Badge className={cn('hidden md:inline-flex text-[10px] shrink-0 border-0', BUCKET_BADGE[parent.bucket])}>
                   {BUCKET_LABELS[parent.bucket]}
                 </Badge>
               ) : !isOutros(parent) ? (
@@ -835,7 +842,9 @@ export default function CategoriesPage() {
                       <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
                       <h2 className="text-base font-semibold text-amber-800 dark:text-amber-300">Vale organizar</h2>
                     </div>
-                    <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-0.5 ml-6">Deixa relatórios e Planejamento mais certos</p>
+                    <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-0.5 ml-6">
+                      {[unlabeledList.length > 0, strandedKids.length > 0, outrosDirect.length > 0].filter(Boolean).length} ajuste(s) deixam relatórios e Planejamento mais certos
+                    </p>
                     <ul className="mt-3 divide-y divide-amber-200/70 dark:divide-amber-700/40">
                       {unlabeledList.length > 0 && (
                         <li className="flex items-start gap-3 py-2.5">
