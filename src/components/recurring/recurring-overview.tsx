@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import {
   ChartBar, CalendarDays, ChevronRight, RotateCcw, CreditCard, ArrowRight, SearchX,
@@ -10,6 +10,7 @@ import { DisplayItem } from '@/lib/recurring-groups'
 import { InstallmentItem } from '@/hooks/use-recurring'
 import { Kpi, OverviewSection } from '@/components/ui/overview-blocks'
 import { cn } from '@/lib/utils'
+import { CategoryIcon } from '@/lib/category-icons'
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -24,6 +25,8 @@ export interface CategoryGroup {
   color: string
   items: DisplayItem[]
   total: number
+  /** Ícone da categoria (o mesmo de Categorias e Análise). */
+  iconKey: string
 }
 
 /**
@@ -164,149 +167,155 @@ export function MissingAlert({ items, today }: { items: DisplayItem[]; today: Da
   )
 }
 
-// ── Tabela por categoria (Despesas fixas / Receitas fixas) ─────────────────
-export function FixedTable({ groups, total, totalClass, installments, today, onUndo }: {
+// ── Lista por categoria — mesmo modelo de "Despesas por Categoria" da Análise ─
+export function FixedCategoryCard({ title, subtitle, icon: Icon, iconClass, groups, total, totalLabel, totalClass, installments, today, onUndo }: {
+  title: string
+  subtitle: string
+  icon: LucideIcon
+  iconClass: string
   groups: CategoryGroup[]
   total: number
+  totalLabel: string
   totalClass: string
   /** Só em Despesas: Cartões & Parcelas, sempre conta como fixo. */
   installments?: InstallmentItem[]
   today: Date
   onUndo: (item: DisplayItem) => void
 }) {
-  const [open, setOpen] = useState<Set<string>>(new Set())
-  const toggle = (k: string) => setOpen(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n })
+  const [open, setOpen] = useState<string | null>(null)
   // Mesmo critério do total da página (todas as parcelas listadas).
   const parcelasTotal = (installments ?? []).reduce((s, i) => s + i.monthlyAmount, 0)
   const rows = [
-    ...groups.map(g => ({ kind: 'cat' as const, key: g.name, g, value: g.total })),
-    ...(installments && installments.length > 0 ? [{ kind: 'parcelas' as const, key: '__parcelas__', g: null, value: parcelasTotal }] : []),
+    ...groups.map(g => ({ key: g.name, g, value: g.total })),
+    ...(installments && installments.length > 0 ? [{ key: '__parcelas__', g: null, value: parcelasTotal }] : []),
   ].sort((a, b) => b.value - a.value)
+  const max = rows[0]?.value || 1
 
   return (
-    <div className="bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100 dark:border-white/[0.06]">
-            <th className="text-left font-semibold px-4 py-2.5">Categoria</th>
-            <th className="text-left font-semibold px-3 py-2.5 hidden md:table-cell">Cai no dia</th>
-            <th className="text-left font-semibold px-3 py-2.5 hidden md:table-cell">Frequência</th>
-            <th className="text-right font-semibold px-3 py-2.5">Por mês</th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden sm:table-cell">Peso</th>
-            <th className="w-10" />
-          </tr>
-        </thead>
-        <tbody>
+    <section className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
+      <div className="p-5 pb-2">
+        <div className="mb-3">
+          <div className="flex items-center gap-2">
+            <Icon className={cn('h-4 w-4 shrink-0', iconClass)} />
+            <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">{title}</h2>
+          </div>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 ml-6">{subtitle}</p>
+        </div>
+
+        <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
           {rows.map(r => {
-            const isOpen = open.has(r.key)
+            const isOpen = open === r.key
+            const isParcelas = r.g == null
+            const color = isParcelas ? PARCELAS_COLOR : r.g!.color
             const share = total > 0 ? (r.value / total) * 100 : 0
-            const color = r.kind === 'parcelas' ? PARCELAS_COLOR : r.g!.color
-            const days = r.kind === 'cat' ? [...new Set(r.g!.items.map(i => dayOf(i.lastDate)))].sort((a, b) => a - b) : []
-            const hasMissing = r.kind === 'cat' && r.g!.items.some(i => missingSince(i, today))
+            const count = isParcelas ? (installments ?? []).length : r.g!.items.length
+            const hasMissing = !isParcelas && r.g!.items.some(i => missingSince(i, today))
+            const bar = (
+              <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${(r.value / max) * 100}%`, backgroundColor: color }} />
+              </div>
+            )
             return (
-              <Fragment key={r.key}>
-                <tr onClick={() => toggle(r.key)} className="cursor-pointer border-b border-slate-100 dark:border-white/[0.06] hover:bg-slate-50 dark:hover:bg-white/[0.02]">
-                  <td className="px-4 py-2.5">
-                    <span className="inline-flex items-center gap-2 min-w-0">
-                      <ChevronRight className={cn('h-3.5 w-3.5 text-slate-400 shrink-0 transition-transform', isOpen && 'rotate-90')} />
-                      <span className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: color + '22' }}>
-                        {r.kind === 'parcelas' ? <CreditCard className="h-3.5 w-3.5" style={{ color }} /> : <Tag className="h-3.5 w-3.5" style={{ color }} />}
-                      </span>
-                      <span className="font-semibold text-slate-800 dark:text-slate-100 truncate">{r.kind === 'parcelas' ? 'Cartões & Parcelas' : r.g!.name}</span>
-                      <span className="text-[11px] text-slate-400 shrink-0">
-                        · {r.kind === 'parcelas' ? 'sempre conta' : `${r.g!.items.length} fixo${r.g!.items.length === 1 ? '' : 's'}`}
-                      </span>
-                      {hasMissing && <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" title="Tem fixo que não apareceu no último mês" />}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5 hidden md:table-cell text-xs text-slate-400">
-                    {r.kind === 'parcelas' ? 'na fatura' : days.length > 2 ? `${days.length} datas` : days.map(d => `dia ${d}`).join(', ')}
-                  </td>
-                  <td className="px-3 py-2.5 hidden md:table-cell" />
-                  <td className={cn('px-3 py-2.5 text-right font-semibold tabular-nums whitespace-nowrap', totalClass)}>{fmt(r.value)}</td>
-                  <td className="px-3 py-2.5 hidden sm:table-cell">
-                    <div className="flex items-center justify-end gap-2">
-                      <div className="w-20 h-1.5 bg-slate-100 dark:bg-white/[0.08] rounded-full overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${share}%`, backgroundColor: color }} />
-                      </div>
-                      <span className="text-[11px] text-slate-400 tabular-nums w-8 text-right">{pct(share)}</span>
+              <div key={r.key} className="py-3">
+                <button className="w-full text-left group" onClick={() => setOpen(isOpen ? null : r.key)} aria-expanded={isOpen}>
+                  <div className="flex items-center gap-3">
+                    <ChevronRight className={cn('h-4 w-4 text-slate-400 shrink-0 transition-transform', isOpen && 'rotate-90')} />
+                    <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${color}1f`, color }}>
+                      {isParcelas ? <CreditCard className="h-4 w-4" /> : <CategoryIcon iconKey={r.g!.iconKey} className="h-4 w-4" />}
                     </div>
-                  </td>
-                  <td />
-                </tr>
-                {isOpen && r.kind === 'cat' && [...r.g!.items].sort((a, b) => b.avgAmount - a.avgAmount).map(item => (
-                  <ItemRow key={item.key} item={item} today={today} onUndo={() => onUndo(item)} />
-                ))}
-                {isOpen && r.kind === 'parcelas' && (
-                  <>
-                    {(installments ?? []).map(i => (
-                      <tr key={`${i.description}|${i.totalInstallments}|${i.board_id ?? ''}`} className="bg-slate-50/70 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/[0.06]">
-                        <td className="pl-14 pr-3 py-2 text-[13px] text-slate-700 dark:text-slate-200">{i.description}</td>
-                        <td className="px-3 py-2 hidden md:table-cell text-xs text-slate-400">na fatura</td>
-                        <td className="px-3 py-2 hidden md:table-cell text-xs text-slate-400">parcela {i.currentInstallment}/{i.totalInstallments}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-[13px] font-semibold text-slate-700 dark:text-slate-200">{fmt(i.monthlyAmount)}</td>
-                        <td className="hidden sm:table-cell" /><td />
-                      </tr>
-                    ))}
-                    <tr className="bg-slate-50/70 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/[0.06]">
-                      <td colSpan={6} className="pl-14 py-2">
-                        <Link href="/recurring" className="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 hover:underline">
-                          Ver em Cartões & Parcelas <ArrowRight className="h-3 w-3" />
-                        </Link>
-                      </td>
-                    </tr>
-                  </>
+                    <div className="min-w-0 flex-1 sm:flex-none sm:w-48">
+                      <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate group-hover:underline flex items-center gap-1.5">
+                        <span className="truncate">{isParcelas ? 'Cartões & Parcelas' : r.g!.name}</span>
+                        {hasMissing && <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" title="Tem fixo que não apareceu no último mês" />}
+                      </p>
+                      <p className="text-[11px] text-slate-400 truncate">
+                        {isParcelas
+                          ? `${count} parcelamento${count === 1 ? '' : 's'} · sempre conta`
+                          : `${count} fixo${count === 1 ? '' : 's'}`}
+                      </p>
+                    </div>
+                    <div className="hidden sm:block flex-1 min-w-0">{bar}</div>
+                    <div className="shrink-0 text-right w-24">
+                      <p className={cn('text-sm font-semibold whitespace-nowrap tabular-nums', totalClass)}>{fmt(r.value)}</p>
+                      <p className="text-[11px] text-slate-400">{share.toFixed(0)}%</p>
+                    </div>
+                  </div>
+                  <div className="sm:hidden mt-2 ml-[76px]">{bar}</div>
+                </button>
+
+                {isOpen && (
+                  <div className="mt-2 ml-1.5 pl-3 border-l-2 border-slate-100 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700/60">
+                    {isParcelas ? (
+                      <>
+                        {(installments ?? []).map(i => (
+                          <div key={`${i.description}|${i.totalInstallments}|${i.board_id ?? ''}`} className="py-2">
+                            <div className="flex items-baseline gap-2">
+                              <p className="flex-1 min-w-0 text-[13px] text-slate-700 dark:text-slate-200 truncate">{i.description}</p>
+                              <span className={cn('text-[13px] font-medium tabular-nums shrink-0', totalClass)}>{fmt(i.monthlyAmount)}</span>
+                            </div>
+                            <p className="mt-1 text-[11px] text-slate-400">Parcela {i.currentInstallment}/{i.totalInstallments} · cai na fatura</p>
+                          </div>
+                        ))}
+                        <div className="py-2">
+                          <Link href="/recurring" className="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 hover:underline">
+                            Ver em Cartões & Parcelas <ArrowRight className="h-3 w-3" />
+                          </Link>
+                        </div>
+                      </>
+                    ) : (
+                      [...r.g!.items].sort((a, b) => b.avgAmount - a.avgAmount).map(item => (
+                        <FixedItem key={item.key} item={item} today={today} totalClass={totalClass} onUndo={() => onUndo(item)} />
+                      ))
+                    )}
+                  </div>
                 )}
-              </Fragment>
+              </div>
             )
           })}
-        </tbody>
-      </table>
-    </div>
+        </div>
+      </div>
+      <div className="border-t border-slate-100 dark:border-slate-700 px-5 py-3 bg-slate-50 dark:bg-slate-700/40 flex justify-between items-center">
+        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{totalLabel}</span>
+        <span className="text-sm font-bold text-slate-800 dark:text-slate-100 tabular-nums">{fmt(total)}/mês</span>
+      </div>
+    </section>
   )
 }
 
-function ItemRow({ item, today, onUndo }: { item: DisplayItem; today: Date; onUndo: () => void }) {
+// Um fixo dentro da categoria — duas linhas, como os lançamentos na Análise.
+function FixedItem({ item, today, totalClass, onUndo }: { item: DisplayItem; today: Date; totalClass: string; onUndo: () => void }) {
   const [open, setOpen] = useState(false)
   const gone = missingSince(item, today)
   return (
-    <>
-      <tr className="group bg-slate-50/70 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/[0.06]">
-        <td className="pl-14 pr-3 py-2">
-          <button type="button" disabled={!item.isGroup} onClick={() => setOpen(v => !v)} className="text-left disabled:cursor-default min-w-0">
-            <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-slate-700 dark:text-slate-200">
-              {item.name}
-              {item.isGroup && (
-                <span className="text-[11px] text-slate-400 inline-flex items-center">
-                  {item.descriptions.length} descriç{item.descriptions.length === 1 ? 'ão' : 'ões'}
-                  <ChevronRight className={cn('h-3 w-3 transition-transform', open && 'rotate-90')} />
-                </span>
-              )}
-              {gone && <span className="text-[10px] font-bold text-red-700 bg-red-50 dark:bg-red-900/30 dark:text-red-400 px-1.5 py-0.5 rounded-full">Não veio em {gone}</span>}
-            </span>
-          </button>
-        </td>
-        <td className="px-3 py-2 hidden md:table-cell text-xs text-slate-400">todo dia {dayOf(item.lastDate)}</td>
-        <td className="px-3 py-2 hidden md:table-cell text-xs text-slate-400">{item.monthsCount} de 12 meses</td>
-        <td className="px-3 py-2 text-right tabular-nums text-[13px] font-semibold text-slate-700 dark:text-slate-200 whitespace-nowrap">{fmt(item.avgAmount)}</td>
-        <td className="hidden sm:table-cell" />
-        <td className="pr-3 py-2 text-right">
-          <button
-            type="button"
-            onClick={onUndo}
-            title="Desfazer confirmação"
-            className="h-7 w-7 inline-flex items-center justify-center rounded-lg text-slate-300 hover:text-slate-600 dark:text-slate-600 dark:hover:text-slate-300 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </button>
-        </td>
-      </tr>
-      {open && item.descriptions.map(d => (
-        <tr key={d} className="bg-slate-50/70 dark:bg-white/[0.02]">
-          <td colSpan={6} className="pl-20 pr-3 py-1 text-xs text-slate-400 truncate">• {d}</td>
-        </tr>
-      ))}
-    </>
+    <div className="group py-2">
+      <div className="flex items-baseline gap-2">
+        <button type="button" disabled={!item.isGroup} onClick={() => setOpen(v => !v)}
+          className="flex-1 min-w-0 text-left disabled:cursor-default text-[13px] text-slate-700 dark:text-slate-200 truncate">
+          {item.name}
+          {item.isGroup && <ChevronRight className={cn('inline h-3 w-3 ml-1 text-slate-400 transition-transform', open && 'rotate-90')} />}
+        </button>
+        <span className={cn('text-[13px] font-medium tabular-nums shrink-0', totalClass)}>{fmt(item.avgAmount)}</span>
+        <button
+          type="button"
+          onClick={onUndo}
+          title="Desfazer confirmação"
+          className="shrink-0 h-6 w-6 inline-flex items-center justify-center rounded-md text-slate-300 hover:text-slate-600 dark:text-slate-600 dark:hover:text-slate-300 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity self-center"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <p className="mt-1 text-[11px] text-slate-400 flex flex-wrap items-center gap-x-1.5">
+        <span>todo dia {dayOf(item.lastDate)}</span>
+        <span>· {item.monthsCount} de 12 meses</span>
+        {item.isGroup && <span>· {item.descriptions.length} descriç{item.descriptions.length === 1 ? 'ão' : 'ões'}</span>}
+        {gone && <span className="text-[10px] font-bold text-red-700 bg-red-50 dark:bg-red-900/30 dark:text-red-400 px-1.5 py-0.5 rounded-full">Não veio em {gone}</span>}
+      </p>
+      {item.isGroup && open && (
+        <div className="mt-1 space-y-0.5">
+          {item.descriptions.map(d => <p key={d} className="text-[11px] text-slate-400 truncate">• {d}</p>)}
+        </div>
+      )}
+    </div>
   )
 }
 

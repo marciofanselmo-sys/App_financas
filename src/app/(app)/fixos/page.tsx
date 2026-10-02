@@ -14,11 +14,12 @@ import { TransactionType } from '@/types'
 import {
   RefreshCw, CheckCircle, EyeOff, Eye, AlertCircle, RotateCcw,
   Tag, ChevronRight,
-  TrendingDown, TrendingUp, } from 'lucide-react'
+  TrendingDown, TrendingUp, type LucideIcon } from 'lucide-react'
 import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 import { EmptyState } from '@/components/ui/empty-state'
+import { categoryIconKey, guessIconKey } from '@/lib/category-icons'
 import {
-  RecurringSummary, IncomeSplit, MonthCalendar, MissingAlert, FixedTable, RecurringHelp,
+  RecurringSummary, IncomeSplit, MonthCalendar, MissingAlert, FixedCategoryCard, RecurringHelp,
   PARCELAS_COLOR, type CategoryGroup,
 } from '@/components/recurring/recurring-overview'
 import { Button } from '@/components/ui/button'
@@ -115,18 +116,17 @@ function ItemRow({
 const TYPE_SECTIONS: {
   type: TransactionType
   label: string
-  icon: React.ElementType
+  icon: LucideIcon
   iconColor: string
-  iconBg: string
   totalColor: string
   help: string
 }[] = [
   {
-    type: 'despesa', label: 'Despesas', icon: TrendingDown, iconColor: 'text-red-500', iconBg: 'bg-red-50 dark:bg-red-900/20', totalColor: 'text-red-500',
+    type: 'despesa', label: 'Despesas', icon: TrendingDown, iconColor: 'text-red-500', totalColor: 'text-red-500',
     help: 'Cobranças que se repetem todo mês (assinaturas, contas fixas). Confirmar aqui alimenta o total "Despesas fixas / mês" e o campo "Gastos Previstos" do Planejamento.',
   },
   {
-    type: 'receita', label: 'Receitas', icon: TrendingUp, iconColor: 'text-green-500', iconBg: 'bg-green-50 dark:bg-green-900/20', totalColor: 'text-green-600',
+    type: 'receita', label: 'Receitas', icon: TrendingUp, iconColor: 'text-green-500', totalColor: 'text-green-600',
     help: 'Entradas fixas que se repetem todo mês (ex: salário). Confirmar ajuda a identificar sua renda previsível — não entra no total de gasto fixo.',
   },
 ]
@@ -296,15 +296,24 @@ function FixosPage() {
   }
 
   const today = new Date()
-  const despesaGroups: CategoryGroup[] = byMother(confirmedDespesaItems).map(g => ({ ...g, color: categoryColor(g.name) }))
-  const receitaGroups: CategoryGroup[] = byMother(confirmedReceitaItems).map(g => ({ ...g, color: categoryColor(g.name) }))
+  // Cor e ícone da categoria-mãe do tipo certo — os mesmos de Categorias e Análise.
+  function styleOf(name: string, type: 'despesa' | 'receita') {
+    const same = categories.filter(c => !c.parent_id && c.name === name)
+    const mother = same.find(c => c.type === type) ?? same.find(c => c.type === 'ambos') ?? same[0]
+    return {
+      color: mother?.color ?? categoryColor(name),
+      iconKey: mother ? categoryIconKey(mother, categories) : guessIconKey(name),
+    }
+  }
+  const despesaGroups: CategoryGroup[] = byMother(confirmedDespesaItems).map(g => ({ ...g, ...styleOf(g.name, 'despesa') }))
+  const receitaGroups: CategoryGroup[] = byMother(confirmedReceitaItems).map(g => ({ ...g, ...styleOf(g.name, 'receita') }))
   // Para a barra "Para onde vai": parcelas entram como uma fatia própria.
   const splitGroups: CategoryGroup[] = [
     ...despesaGroups,
-    ...(installments.length > 0 ? [{ name: 'Cartões & Parcelas', color: PARCELAS_COLOR, items: [], total: installmentsMonthly }] : []),
+    ...(installments.length > 0 ? [{ name: 'Cartões & Parcelas', color: PARCELAS_COLOR, iconKey: 'card', items: [], total: installmentsMonthly }] : []),
   ].sort((x, y) => y.total - x.total)
 
-  const renderTypeSection = ({ type, label, icon: Icon, iconColor, iconBg, totalColor, help }: typeof TYPE_SECTIONS[number]) => {
+  const renderTypeSection = ({ type, label, icon: Icon, iconColor, totalColor, help }: typeof TYPE_SECTIONS[number]) => {
     const typeConfirmed = type === 'despesa' ? confirmedDespesaItems : confirmedReceitaItems
     const typeIgnored   = ignoredItems.filter(i => i.type === type)
     const showInstallments = type === 'despesa' && installments.length > 0
@@ -316,25 +325,21 @@ function FixosPage() {
 
     return (
       <section key={type} className="space-y-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <div className={cn('h-7 w-7 rounded-lg flex items-center justify-center', iconBg)}>
-              <Icon className={cn('h-4 w-4', iconColor)} />
-            </div>
-            <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{label} fixas</h2>
-            {typeConfirmedTotal > 0 && (
-              <span className={cn('text-sm font-semibold ml-auto', totalColor)}>{fmt(typeConfirmedTotal)}/mês</span>
-            )}
-          </div>
-          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 ml-9">{help}</p>
-        </div>
-
         {typeConfirmed.length === 0 && !showInstallments ? (
-          <p className="text-sm text-slate-400 dark:text-slate-500 ml-9">Nada confirmado ainda.</p>
+          <div className="flex items-center gap-2">
+            <Icon className={cn('h-4 w-4', iconColor)} />
+            <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">{label} fixas</h2>
+            <span className="text-sm text-slate-400">· nada confirmado ainda</span>
+          </div>
         ) : (
-          <FixedTable
+          <FixedCategoryCard
+            title={`${label} fixas por categoria`}
+            subtitle={help}
+            icon={Icon}
+            iconClass={iconColor}
             groups={type === 'despesa' ? despesaGroups : receitaGroups}
             total={typeConfirmedTotal}
+            totalLabel={`Total de ${label.toLowerCase()} fixas`}
             totalClass={totalColor}
             installments={showInstallments ? installments : undefined}
             today={today}
