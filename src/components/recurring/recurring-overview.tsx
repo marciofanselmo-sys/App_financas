@@ -73,16 +73,16 @@ export function IncomeSplit({ groups, despesa, receita }: { groups: CategoryGrou
   const parts = [...groups.map(g => ({ name: g.name, color: g.color, value: g.total }))]
   if (receita > despesa) parts.push({ name: 'Sobra livre', color: FREE_COLOR, value: receita - despesa })
   return (
-    <OverviewSection icon={ChartPie} title="Para onde vai sua receita fixa"
+    <OverviewSection className="h-full flex flex-col" icon={ChartPie} title="Para onde vai sua receita fixa"
       subtitle={receita > 0 ? 'Cada fixo como parte da sua renda fixa do mês — o que sobra é seu' : 'Sem receita fixa confirmada: mostra o peso de cada despesa fixa'}>
       {base > 0 ? (
         // Rosca no mesmo formato de "Distribuição das despesas" da Análise;
         // no centro, o que fica livre.
-        <div className="flex flex-col sm:flex-row items-center gap-5 mt-4">
-          <div className="relative h-44 w-44 shrink-0 [&_path]:stroke-white dark:[&_path]:stroke-[#111c2d]">
+        <div className="flex-1 flex flex-col sm:flex-row items-center gap-6 mt-4">
+          <div className="relative h-60 w-60 sm:h-64 sm:w-64 shrink-0 [&_path]:stroke-white dark:[&_path]:stroke-[#111c2d]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={parts} dataKey="value" nameKey="name" innerRadius="64%" outerRadius="100%" strokeWidth={2}
+                <Pie data={parts} dataKey="value" nameKey="name" innerRadius="66%" outerRadius="100%" strokeWidth={2}
                   startAngle={90} endAngle={-270} isAnimationActive={false}>
                   {parts.map(p => <Cell key={p.name} fill={p.color} />)}
                 </Pie>
@@ -92,24 +92,24 @@ export function IncomeSplit({ groups, despesa, receita }: { groups: CategoryGrou
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
               {receita > despesa ? (
                 <>
-                  <span className="text-base font-extrabold tabular-nums text-blue-700 dark:text-blue-400">{fmt(receita - despesa)}</span>
-                  <span className="text-[11px] text-slate-400">livres · {pct(((receita - despesa) / base) * 100)}</span>
+                  <span className="text-xl font-extrabold tabular-nums text-blue-700 dark:text-blue-400">{fmt(receita - despesa)}</span>
+                  <span className="text-xs text-slate-400">livres · {pct(((receita - despesa) / base) * 100)}</span>
                 </>
               ) : (
                 <>
-                  <span className="text-base font-extrabold tabular-nums text-red-500">{fmt(despesa)}</span>
+                  <span className="text-xl font-extrabold tabular-nums text-red-500">{fmt(despesa)}</span>
                   <span className="text-[11px] text-slate-400">{receita > 0 ? 'nada sobra' : 'despesa fixa'}</span>
                 </>
               )}
             </div>
           </div>
-          <ul className="flex-1 min-w-0 w-full space-y-1.5">
+          <ul className="flex-1 min-w-0 w-full space-y-2">
             {parts.map(p => (
-              <li key={p.name} className="flex items-center gap-2 text-xs">
+              <li key={p.name} className="flex items-center gap-2 text-[11px]">
                 <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
                 <span className={cn('flex-1 min-w-0 truncate text-slate-600 dark:text-slate-300', p.name === 'Sobra livre' && 'font-semibold text-blue-700 dark:text-blue-400')}>{p.name}</span>
-                <span className="tabular-nums text-slate-400 w-9 text-right">{pct((p.value / base) * 100)}</span>
-                <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-200 w-24 text-right">{fmt(p.value)}</span>
+                <span className="tabular-nums text-slate-400 w-8 text-right">{pct((p.value / base) * 100)}</span>
+                <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-200 w-[84px] text-right">{fmt(p.value)}</span>
               </li>
             ))}
           </ul>
