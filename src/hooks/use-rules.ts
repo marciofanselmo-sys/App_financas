@@ -41,7 +41,7 @@ export type PairSides = 'both' | 'out' | 'in'
 
 export const isInternalRule = (r: Pick<CategorizationRule, 'action'>) => r.action === 'internal'
 
-function matchesRule(description: string, rule: CategorizationRule): boolean {
+export function matchesRule(description: string, rule: CategorizationRule): boolean {
   const desc = description.toUpperCase()
   const kw   = rule.keyword.toUpperCase()
   switch (rule.match_type) {

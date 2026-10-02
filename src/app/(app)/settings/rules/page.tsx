@@ -3,25 +3,27 @@
 import { withPlan } from '@/components/plan/with-plan'
 
 import { useState, useMemo, useEffect } from 'react'
-import { useRules, CategorizationRule, applyRuleToExisting, isInternalRule } from '@/hooks/use-rules'
+import { useRules, CategorizationRule, applyRuleToExisting, isInternalRule, matchesRule } from '@/hooks/use-rules'
+import { useTransactions } from '@/hooks/use-transactions'
+import Link from 'next/link'
+import { CategoryRulesList, type RuleFilter } from '@/components/rules/category-rules-list'
+import { AportesRulesTab } from '@/components/rules/aportes-rules-tab'
+import { RuleKindIntro, type RuleKind } from '@/components/rules/rule-kind-intro'
+import { RulesHelp } from '@/components/rules/rules-help'
+import { OverviewSection } from '@/components/ui/overview-blocks'
 import { InternalRulesSection } from '@/components/rules/internal-rules-section'
 import { useCategories } from '@/hooks/use-categories'
 import { CategoryOptions } from '@/components/categories/category-options'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { CategoryType } from '@/types'
-import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import {
-  Plus, Pencil, Trash2, Zap, ToggleLeft, ToggleRight, ChevronDown, ChevronRight, CheckCircle2, X,
-  TrendingDown, TrendingUp, Layers,
-} from 'lucide-react'
+import { Plus, Zap, CheckCircle2, X, AlertCircle, FlaskConical } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
-import { InfoBox } from '@/components/ui/info-box'
 
 type MatchType = 'contains' | 'starts_with' | 'ends_with' | 'exact'
 // Tipo é só um filtro client-side pra achar a categoria certa mais rápido — a
@@ -51,194 +53,7 @@ const MATCH_LABELS: Record<MatchType, string> = {
   exact:       'Igual a',
 }
 
-function matchDescription(rule: CategorizationRule): string {
-  const mt = (rule as CategorizationRule & { match_type?: MatchType }).match_type ?? 'contains'
-  return `${MATCH_LABELS[mt]} "${rule.keyword}"`
-}
-
-function RuleRow({
-  rule, boardName, onToggle, onEdit, onDelete,
-}: {
-  rule: CategorizationRule
-  boardName?: string
-  onToggle: () => void
-  onEdit: () => void
-  onDelete: () => void
-}) {
-  return (
-    <div className={cn('flex items-center gap-3 px-4 py-3', !rule.active && 'opacity-50')}>
-      <button onClick={onToggle} className="shrink-0 text-slate-400 hover:text-blue-500 transition-colors">
-        {rule.active
-          ? <ToggleRight className="h-5 w-5 text-blue-500" />
-          : <ToggleLeft className="h-5 w-5" />
-        }
-      </button>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-xs font-mono bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-2 py-0.5 rounded font-semibold">
-            {rule.keyword}
-          </span>
-          <span className="text-xs text-slate-400">
-            ({matchDescription(rule).split('"')[0].trim()})
-          </span>
-          {rule.auto_created && (
-            <span className="text-[10px] font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/30 px-1.5 py-0.5 rounded-full">
-              Automática
-            </span>
-          )}
-        </div>
-        {boardName && (
-          <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">→ conta: {boardName}</p>
-        )}
-      </div>
-      <div className="flex gap-1 shrink-0">
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit}>
-          <Pencil className="h-3 w-3 text-slate-400" />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={onDelete}>
-          <Trash2 className="h-3 w-3 text-slate-400" />
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-type RuleHandlers = {
-  boardMap: Record<string, string>
-  onToggle: (id: string, active: boolean) => void
-  onEdit: (rule: CategorizationRule) => void
-  onDelete: (rule: CategorizationRule) => void
-}
-
-function ruleList(rules: CategorizationRule[], h: RuleHandlers) {
-  return rules.map(rule => (
-    <RuleRow
-      key={rule.id}
-      rule={rule}
-      boardName={(rule as CategorizationRule & { board_id?: string }).board_id ? h.boardMap[(rule as CategorizationRule & { board_id?: string }).board_id!] : undefined}
-      onToggle={() => h.onToggle(rule.id, !rule.active)}
-      onEdit={() => h.onEdit(rule)}
-      onDelete={() => h.onDelete(rule)}
-    />
-  ))
-}
-
-const ativas = (rules: CategorizationRule[]) => {
-  const n = rules.filter(r => r.active).length
-  return `${n}/${rules.length} ativa${rules.length !== 1 ? 's' : ''}`
-}
-
-// Subcategoria dentro do cartão da categoria — também recolhida.
-function SubGroup({ name, rules, direct, forceOpen, h }: {
-  name: string
-  rules: CategorizationRule[]
-  /** Regras que apontam para a própria categoria principal. */
-  direct?: boolean
-  forceOpen: boolean
-  h: RuleHandlers
-}) {
-  const [open, setOpen] = useState(false)
-  const isOpen = open || forceOpen
-  return (
-    <div>
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-2.5 pl-10 pr-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors"
-      >
-        {isOpen
-          ? <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-          : <ChevronRight className="h-3.5 w-3.5 text-slate-400 shrink-0" />}
-        <span className="flex-1 min-w-0 text-sm text-slate-600 dark:text-slate-300 truncate">
-          {name}
-          {direct && (
-            <span className="ml-2 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400">
-              sem subcategoria
-            </span>
-          )}
-        </span>
-        <span className="text-xs text-slate-400 dark:text-slate-500 shrink-0">{ativas(rules)}</span>
-      </button>
-      {isOpen && (
-        <div className="ml-10 mr-3 mb-2 rounded-xl border border-slate-100 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700 overflow-hidden">
-          {ruleList(rules, h)}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// Categoria principal: recolhida, com as subcategorias dentro.
-function MotherGroup({ mother, direct, subs, forceOpen, h }: {
-  mother: string
-  direct: CategorizationRule[]
-  subs: [string, CategorizationRule[]][]
-  forceOpen: boolean
-  h: RuleHandlers
-}) {
-  const [open, setOpen] = useState(false)
-  const isOpen = open || forceOpen
-  const all = [...direct, ...subs.flatMap(([, r]) => r)]
-  return (
-    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
-      >
-        {isOpen
-          ? <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
-          : <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />}
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm text-slate-700 dark:text-slate-200 truncate">{mother}</p>
-          {subs.length > 0 && (
-            <p className="text-[11px] text-slate-400 dark:text-slate-500">
-              {subs.length} subcategoria{subs.length === 1 ? '' : 's'}
-            </p>
-          )}
-        </div>
-        <span className="text-xs text-slate-400 dark:text-slate-500 shrink-0">{ativas(all)}</span>
-      </button>
-
-      {isOpen && (
-        <div className="border-t border-slate-100 dark:border-slate-700 py-1">
-          {/* Sem subcategorias: as regras aparecem direto, sem um nível a mais */}
-          {subs.length === 0 ? (
-            <div className="divide-y divide-slate-100 dark:divide-slate-700">{ruleList(direct, h)}</div>
-          ) : (
-            <>
-              {direct.length > 0 && <SubGroup name={mother} direct rules={direct} forceOpen={forceOpen} h={h} />}
-              {subs.map(([name, rules]) => (
-                <SubGroup key={name} name={name} rules={rules} forceOpen={forceOpen} h={h} />
-              ))}
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
 type RetroResult = { count: number; keyword: string; schemaWarning?: boolean; error?: string }
-
-// Categorias tipo "Ambos" (ex: "Outros") valem pros três tipos de transação —
-// regras que apontam pra elas caem nesta seção em vez de uma específica. Se uma
-type SectionKey = 'despesa' | 'receita' | 'ambos'
-
-const SECTION_ORDER: SectionKey[] = ['despesa', 'receita', 'ambos']
-
-const SECTION_META: Record<SectionKey, { label: string; icon: React.ElementType; iconColor: string; iconBg: string; help: string }> = {
-  despesa: {
-    label: 'Despesas', icon: TrendingDown, iconColor: 'text-red-500', iconBg: 'bg-red-50 dark:bg-red-900/20',
-    help: 'Regras que apontam pra uma categoria de despesa.',
-  },
-  receita: {
-    label: 'Receitas', icon: TrendingUp, iconColor: 'text-green-500', iconBg: 'bg-green-50 dark:bg-green-900/20',
-    help: 'Regras que apontam pra uma categoria de receita.',
-  },
-  ambos: {
-    label: 'Ambos', icon: Layers, iconColor: 'text-violet-500', iconBg: 'bg-violet-50 dark:bg-violet-900/20',
-    help: 'Regras que apontam pra uma categoria do tipo "Ambos" (ex: "Outros") — vale pra despesa e receita ao mesmo tempo, por isso não entra numa seção específica.',
-  },
-}
 
 function RulesPage() {
   const { rules: allRules, loading, createRule, updateRule, deleteRule } = useRules()
@@ -247,7 +62,7 @@ function RulesPage() {
   const rules = useMemo(() => allRules.filter(r => !isInternalRule(r)), [allRules])
   const internalRules = useMemo(() => allRules.filter(isInternalRule), [allRules])
   const { categories } = useCategories()
-  const { boards } = useTransactionBoards()
+  const { boards, updateBoard } = useTransactionBoards()
 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<CategorizationRule | null>(null)
@@ -256,6 +71,10 @@ function RulesPage() {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [retroResult, setRetroResult] = useState<RetroResult | null>(null)
+  const [tab, setTab] = useState<RuleKind>('categorias')
+  const [ruleFilter, setRuleFilter] = useState<RuleFilter>('all')
+  const [testText, setTestText] = useState('')
+  const { transactions, refetch: refetchTransactions } = useTransactions()
 
   const boardMap = useMemo(() => {
     const m: Record<string, string> = {}
@@ -269,61 +88,12 @@ function RulesPage() {
     return m
   }, [categories])
 
-  function sectionFor(categoryName: string): SectionKey {
-    const type = categoryTypeMap.get(categoryName)
-    if (type === 'despesa' || type === 'receita') return type
-    return 'ambos'
+  function openCreate(category = '') {
+    const t = categoryTypeMap.get(category)
+    setEditing(null)
+    setForm({ ...EMPTY, category, type: t === 'receita' ? 'receita' : 'despesa' })
+    setFormOpen(true)
   }
-
-  const grouped = useMemo(() => {
-    // Busca também pelo nome da categoria principal ("Transporte" acha 99, Buser...).
-    const mothers = motherNameByCategory(categories)
-    const q = search.trim().toLowerCase()
-    const filtered = q
-      ? rules.filter(r =>
-          r.keyword.toLowerCase().includes(q) ||
-          r.category.toLowerCase().includes(q) ||
-          motherOf(r.category, mothers).toLowerCase().includes(q)
-        )
-      : rules
-    const map = new Map<string, CategorizationRule[]>()
-    for (const rule of filtered) {
-      const arr = map.get(rule.category) ?? []
-      arr.push(rule)
-      map.set(rule.category, arr)
-    }
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b, 'pt-BR'))
-  }, [rules, search, categories])
-
-  // Categoria principal › subcategoria › regras, como no resto do app.
-  type MotherEntry = { mother: string; direct: CategorizationRule[]; subs: [string, CategorizationRule[]][] }
-  const groupedBySection = useMemo(() => {
-    const mothers = motherNameByCategory(categories)
-    const byMother = new Map<string, MotherEntry>()
-    for (const [category, catRules] of grouped) {
-      const mother = motherOf(category, mothers)
-      const entry = byMother.get(mother) ?? { mother, direct: [], subs: [] }
-      if (category === mother) entry.direct.push(...catRules)
-      else entry.subs.push([category, catRules])
-      byMother.set(mother, entry)
-    }
-    const buckets: Record<SectionKey, MotherEntry[]> = { despesa: [], receita: [], ambos: [] }
-    for (const entry of [...byMother.values()].sort((a, b) => a.mother.localeCompare(b.mother, 'pt-BR'))) {
-      entry.subs.sort(([a], [b]) => a.localeCompare(b, 'pt-BR'))
-      buckets[sectionFor(entry.mother)].push(entry)
-    }
-    return buckets
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [grouped, categories, categoryTypeMap])
-  const motherCount = SECTION_ORDER.reduce((n, k) => n + groupedBySection[k].length, 0)
-  const handlers: RuleHandlers = {
-    boardMap,
-    onToggle: (id, active) => updateRule(id, { active }),
-    onEdit: openEdit,
-    onDelete: setDeleteTarget,
-  }
-
-  function openCreate() { setEditing(null); setForm(EMPTY); setFormOpen(true) }
   function openEdit(r: CategorizationRule) {
     const ext = r as CategorizationRule & { match_type?: MatchType; board_id?: string }
     // Categoria "Ambos" (ex: Outros) vale pros 3 tipos — nesse caso não tem
@@ -393,56 +163,94 @@ function RulesPage() {
     setRetroResult({ count, keyword, schemaWarning, error: retroError })
   }
 
+  // ── Números por regra, conflitos e o que falta revisar ──
+  const ruleUses = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const r of rules) m.set(r.id, transactions.filter(t => matchesRule(t.description, r)).length)
+    return m
+  }, [rules, transactions])
+  const conflicts = useMemo(() => {
+    // Uma regra cuja palavra está dentro da palavra de outra, com categoria
+    // diferente: a criada primeiro "engole" os lançamentos da outra.
+    const ids = new Set<string>()
+    const pairs: [CategorizationRule, CategorizationRule][] = []
+    const act = rules.filter(r => r.active)
+    for (const a of act) {
+      const mt = (a as CategorizationRule & { match_type?: MatchType }).match_type ?? 'contains'
+      if (mt === 'exact') continue
+      const ka = a.keyword.trim().toUpperCase()
+      if (ka.length < 2) continue
+      for (const b of act) {
+        if (a.id === b.id || a.category === b.category) continue
+        const kb = b.keyword.trim().toUpperCase()
+        if (kb !== ka && kb.includes(ka)) { ids.add(a.id); ids.add(b.id); pairs.push([a, b]) }
+      }
+    }
+    return { ids, pairs }
+  }, [rules])
+  const zeroCount = rules.filter(r => r.active && (ruleUses.get(r.id) ?? 0) === 0).length
+  const outrosSemRegra = useMemo(
+    () => transactions.filter(t => t.type === 'despesa' && (t.category ?? '').toLowerCase() === 'outros' && !rules.some(r => r.active && matchesRule(t.description, r))).length,
+    [transactions, rules],
+  )
+  const autoCount = rules.filter(r => r.auto_created).length
+
+  // Entre minhas contas × Aportes: o destino decide.
+  const investmentIds = useMemo(() => new Set(boards.filter(b => b.is_investment).map(b => b.id)), [boards])
+  const aporteRules = internalRules.filter(r => r.target_board_id && investmentIds.has(r.target_board_id))
+  const entreRules = internalRules.filter(r => !(r.target_board_id && investmentIds.has(r.target_board_id)))
+
+  function goFilter(f: RuleFilter) {
+    setTab('categorias')
+    setSearch('')
+    setRuleFilter(f)
+  }
+
+  // Testar uma descrição: o que cada tipo de regra faria com ela.
+  const test = useMemo(() => {
+    const d = testText.trim()
+    if (d.length < 2) return null
+    const cat = rules.filter(r => r.active && matchesRule(d, r))
+    const internal = internalRules.filter(r => r.active && matchesRule(d, r))
+    return { first: cat[0] ?? null, others: cat.slice(1), internal }
+  }, [testText, rules, internalRules])
+
+  const tabs: { key: RuleKind; label: string; count: number }[] = [
+    { key: 'categorias', label: 'Categorias', count: rules.length },
+    { key: 'entre', label: 'Entre minhas contas', count: entreRules.length },
+    { key: 'aportes', label: 'Aportes', count: aporteRules.length },
+  ]
+
   if (loading) return null
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Regras de categorização</h1>
+          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Regras automáticas</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            {rules.length} regra{rules.length !== 1 ? 's' : ''} em {motherCount} categoria{motherCount !== 1 ? 's' : ''}
+            {rules.length} de categoria ({autoCount} criadas sozinhas) · {entreRules.length} entre minhas contas · {aporteRules.length} de aporte
           </p>
         </div>
-        <Button onClick={openCreate} className="gap-2 shrink-0">
-          <Plus className="h-4 w-4" /> Nova regra
-        </Button>
+        {tab === 'categorias' && (
+          <Button onClick={() => openCreate()} className="gap-2 shrink-0">
+            <Plus className="h-4 w-4" /> Nova regra
+          </Button>
+        )}
       </div>
 
-      {/* Info */}
-      <InfoBox id="rules-como-funciona">
-        <p className="text-blue-600 dark:text-blue-400">
-          Na importação, cada transação é testada contra as regras ativas e a primeira que combinar define a categoria automaticamente.
-          Ao criar ou editar uma regra aqui, todas as transações anteriores que combinam são atualizadas imediatamente — mantendo o histórico sempre correto.
-        </p>
-        <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
-          <p className="font-semibold mb-1 flex items-center gap-1.5">
-            <Zap className="h-3.5 w-3.5" /> Regras automáticas
-            <span className="text-[10px] font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/30 px-1.5 py-0.5 rounded-full">Automática</span>
-          </p>
-          <p className="text-blue-600 dark:text-blue-400">
-            Você não precisa criar regra na mão pra corrigir uma categoria: mude a categoria de qualquer transação (em Contas e Cartões ou Análise) e o app já cria — ou atualiza, se já existir uma pra essa descrição — uma regra de correspondência exata sozinho, aplicando a mudança em todo o histórico. Essas regras aparecem aqui com a etiqueta roxa &ldquo;Automática&rdquo;, junto com as que você cria manualmente, e podem ser editadas ou excluídas como qualquer outra.
-          </p>
-        </div>
-        <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
-          <p className="font-semibold mb-1">Não achou sua regra na seção esperada?</p>
-          <p className="text-blue-600 dark:text-blue-400">
-          </p>
-        </div>
-        <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
-          <p className="font-semibold mb-1">Categoria isolada fica de fora das regras</p>
-          <p className="text-blue-600 dark:text-blue-400">
-            Categorias isoladas (presas a um mês específico) nunca entram nesse sistema de regras — nem criam regra automática, nem são sobrescritas por nenhuma regra. Uma vez que você marca uma transação com categoria isolada, ela fica só ali, sem afetar nem ser afetada pelas outras.
-          </p>
-        </div>
-        <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
-          <p className="font-semibold mb-1">Não quer criar regra pra uma edição específica?</p>
-          <p className="text-blue-600 dark:text-blue-400">
-            Ao editar a categoria de uma transação (em Contas e Cartões), marque a opção &ldquo;Mudar só esta transação&rdquo; que aparece no formulário — a categoria muda só ali, sem criar/atualizar regra nem afetar outras transações com a mesma descrição.
-          </p>
-        </div>
-      </InfoBox>
+      {/* Abas: três tipos de regra, cada um explicado */}
+      <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl w-fit">
+        {tabs.map(t => (
+          <button key={t.key} type="button" onClick={() => setTab(t.key)}
+            className={cn('px-4 py-1.5 rounded-lg text-sm font-medium transition-colors',
+              tab === t.key
+                ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700')}>
+            {t.label} · {t.count}
+          </button>
+        ))}
+      </div>
 
       {/* Retroactive result banner */}
       {retroResult && retroResult.count === -1 && (
@@ -493,71 +301,149 @@ function RulesPage() {
         </div>
       )}
 
-      <InternalRulesSection
-        rules={internalRules}
-        boards={boards}
-        createRule={createRule}
-        updateRule={updateRule}
-        deleteRule={deleteRule}
-      />
 
-      {/* Search */}
-      {rules.length > 0 && (
-        <Input
-          placeholder="Buscar por palavra-chave ou categoria..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="bg-white dark:bg-slate-800"
-        />
-      )}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
+        <div className="space-y-4 min-w-0">
+          <RuleKindIntro kind={tab} />
 
-      {/* Empty */}
-      {rules.length === 0 ? (
-        <EmptyState
-          icon={Zap}
-          iconColor="text-amber-500"
-          iconBg="bg-amber-50 dark:bg-amber-500/15"
-          title="Nenhuma regra criada"
-          description="Regras automatizam a categorização das suas importações. Ex: tudo que contém 'UBER' vai para Transporte."
-          primaryLabel="Criar primeira regra"
-          primaryOnClick={openCreate}
-          secondaryLabel="Ver ajuda"
-          secondaryHref="/help"
-        />
-      ) : grouped.length === 0 ? (
-        <p className="text-center text-sm text-slate-400 py-10">Nenhuma regra encontrada para &ldquo;{search}&rdquo;</p>
-      ) : (
-        <div className="space-y-6">
-          {SECTION_ORDER.map(key => {
-            const entries = groupedBySection[key]
-            if (entries.length === 0) return null
-            const { label, icon: Icon, iconColor, iconBg, help } = SECTION_META[key]
-            return (
-              <section key={key} className="space-y-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <div className={cn('h-7 w-7 rounded-lg flex items-center justify-center', iconBg)}>
-                      <Icon className={cn('h-4 w-4', iconColor)} />
-                    </div>
-                    <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">{label}</h2>
-                  </div>
-                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 ml-9">{help}</p>
-                </div>
-                {entries.map(entry => (
-                  <MotherGroup
-                    key={entry.mother}
-                    mother={entry.mother}
-                    direct={entry.direct}
-                    subs={entry.subs}
-                    forceOpen={!!search.trim()}
-                    h={handlers}
-                  />
-                ))}
-              </section>
-            )
-          })}
+          {tab === 'categorias' && (rules.length === 0 ? (
+            <EmptyState
+              icon={Zap}
+              iconColor="text-amber-500"
+              iconBg="bg-amber-50 dark:bg-amber-500/15"
+              title="Nenhuma regra criada"
+              description="Regras automatizam a categorização das suas importações. Ex: tudo que contém 'UBER' vai para Transporte."
+              primaryLabel="Criar primeira regra"
+              primaryOnClick={() => openCreate()}
+              secondaryLabel="Ver ajuda"
+              secondaryHref="/help"
+            />
+          ) : (
+            <CategoryRulesList
+              rules={rules}
+              categories={categories}
+              uses={ruleUses}
+              conflictIds={conflicts.ids}
+              filter={ruleFilter}
+              onFilter={setRuleFilter}
+              search={search}
+              onSearch={setSearch}
+              boardMap={boardMap}
+              onToggle={r => updateRule(r.id, { active: !r.active })}
+              onEdit={openEdit}
+              onDelete={setDeleteTarget}
+              onCreateIn={c => openCreate(c)}
+            />
+          ))}
+
+          {tab === 'entre' && (
+            <InternalRulesSection
+              rules={entreRules}
+              boards={boards}
+              createRule={createRule}
+              updateRule={updateRule}
+              deleteRule={deleteRule}
+            />
+          )}
+
+          {tab === 'aportes' && (
+            <AportesRulesTab
+              boards={boards}
+              rules={allRules}
+              transactions={transactions}
+              createRule={createRule}
+              updateRule={updateRule}
+              updateBoard={updateBoard}
+              onDelete={setDeleteTarget}
+              onChanged={refetchTransactions}
+            />
+          )}
         </div>
-      )}
+
+        <div className="space-y-4 lg:sticky lg:top-6">
+          {(zeroCount > 0 || conflicts.pairs.length > 0 || outrosSemRegra > 0) && (
+            <section className="bg-amber-50/60 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 rounded-xl p-4">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+                <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Vale revisar</h2>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5 ml-6">Deixa a categorização da importação mais certa</p>
+              <ul className="mt-2 divide-y divide-amber-200/70 dark:divide-amber-800/40">
+                {zeroCount > 0 && (
+                  <li className="flex items-start gap-3 py-2.5">
+                    <div className="flex-1 min-w-0 text-xs text-slate-600 dark:text-slate-300">
+                      <p className="font-semibold text-slate-700 dark:text-slate-200">{zeroCount} regra{zeroCount === 1 ? '' : 's'} não pega{zeroCount === 1 ? '' : 'm'} nenhum lançamento</p>
+                      <p className="mt-0.5 leading-relaxed">Palavra digitada errada ou loja que mudou de nome.</p>
+                    </div>
+                    <button type="button" onClick={() => goFilter('zero')} className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0">Ver</button>
+                  </li>
+                )}
+                {conflicts.pairs.length > 0 && (
+                  <li className="flex items-start gap-3 py-2.5">
+                    <div className="flex-1 min-w-0 text-xs text-slate-600 dark:text-slate-300">
+                      <p className="font-semibold text-slate-700 dark:text-slate-200">{conflicts.ids.size} regras em conflito</p>
+                      <p className="mt-0.5 leading-relaxed">
+                        &ldquo;{conflicts.pairs[0][0].keyword}&rdquo; ({conflicts.pairs[0][0].category}) também pega &ldquo;{conflicts.pairs[0][1].keyword}&rdquo; ({conflicts.pairs[0][1].category}).
+                      </p>
+                    </div>
+                    <button type="button" onClick={() => goFilter('conflict')} className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0">Ver</button>
+                  </li>
+                )}
+                {outrosSemRegra > 0 && (
+                  <li className="flex items-start gap-3 py-2.5">
+                    <div className="flex-1 min-w-0 text-xs text-slate-600 dark:text-slate-300">
+                      <p className="font-semibold text-slate-700 dark:text-slate-200">{outrosSemRegra} lançamento{outrosSemRegra === 1 ? '' : 's'} em &ldquo;Outros&rdquo; sem regra</p>
+                      <p className="mt-0.5 leading-relaxed">Categorize por descrição e a regra nasce sozinha.</p>
+                    </div>
+                    <Link href="/settings/categories" className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0">Revisar</Link>
+                  </li>
+                )}
+              </ul>
+            </section>
+          )}
+
+          <OverviewSection icon={FlaskConical} iconClass="text-green-600" title="Testar uma descrição" subtitle="Veja o que cada tipo de regra faria na importação">
+            <Input
+              value={testText}
+              onChange={e => setTestText(e.target.value)}
+              placeholder="Ex: UBER EATS *PEDIDO 4471"
+              className="mt-3 font-mono text-sm"
+            />
+            {test && (
+              <div className="mt-3 space-y-2 text-xs">
+                <div className={cn('rounded-lg border px-3 py-2',
+                  test.first ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300'
+                    : 'bg-slate-50 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.1] text-slate-500')}>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide opacity-70">Categoria</p>
+                  {test.first ? (
+                    <>
+                      <p className="font-semibold text-sm">→ {test.first.category}</p>
+                      <p>pela regra &ldquo;{test.first.keyword}&rdquo; · {test.first.auto_created ? 'automática' : 'manual'}</p>
+                      {test.others.length > 0 && (
+                        <p className="text-slate-500 mt-1">Também combinaria: {test.others.slice(0, 3).map(o => `"${o.keyword}" → ${o.category}`).join(', ')}</p>
+                      )}
+                    </>
+                  ) : <p>Nenhuma regra de categoria — o app tenta pelo histórico ou deixa em &ldquo;Outros&rdquo;.</p>}
+                </div>
+                <div className="rounded-lg border border-slate-200 dark:border-white/[0.1] bg-slate-50 dark:bg-white/[0.04] px-3 py-2 text-slate-600 dark:text-slate-300">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Entre minhas contas / Aporte</p>
+                  {test.internal.length > 0 ? test.internal.slice(0, 3).map(r => {
+                    const isAporte = !!r.target_board_id && investmentIds.has(r.target_board_id)
+                    return (
+                      <p key={r.id} className="mt-0.5">
+                        <strong>{isAporte ? `Aporte em ${boardMap[r.target_board_id!] ?? 'investimento'}` : 'Entre minhas contas'}</strong>
+                        {' '}pela regra &ldquo;{r.keyword}&rdquo;{r.scope_board_id ? ` (só na conta ${boardMap[r.scope_board_id] ?? ''})` : ''}
+                      </p>
+                    )
+                  }) : <p className="mt-0.5">Nenhuma — conta como gasto ou receita normal.</p>}
+                </div>
+              </div>
+            )}
+          </OverviewSection>
+        </div>
+      </div>
+
+      <RulesHelp />
 
       {/* Form Modal */}
       <Dialog open={formOpen} onOpenChange={v => { if (!v) setFormOpen(false) }}>
