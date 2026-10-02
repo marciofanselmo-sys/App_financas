@@ -33,6 +33,8 @@ interface EventSummary {
   first: string | null
   last: string | null
   cats: { name: string; value: number; color: string }[]
+  /** Entradas do evento (estornos, reembolsos) por categoria. */
+  incomeCats: { name: string; value: number; color: string }[]
   /** Só no filtro de período: gastos do período que não estão marcados no evento. */
   untaggedCount: number
   untaggedValue: number
@@ -133,23 +135,23 @@ export function EventsTab({
   function build(ev: AppEvent, txs: Transaction[]): EventSummary {
     let spent = 0, back = 0
     const cats = new Map<string, { name: string; value: number; color: string }>()
+    const incomeCats = new Map<string, { name: string; value: number; color: string }>()
     for (const t of txs) {
       const v = Number(t.amount)
-      if (t.type === 'despesa') {
-        spent += v
-        const info = catInfo(t.category || 'Outros')
-        const c = cats.get(info.mother) ?? { name: info.mother, value: 0, color: info.color }
-        c.value += v
-        cats.set(info.mother, c)
-      } else {
-        back += v
-      }
+      const info = catInfo(t.category || 'Outros')
+      const target = t.type === 'despesa' ? cats : incomeCats
+      if (t.type === 'despesa') spent += v
+      else back += v
+      const c = target.get(info.mother) ?? { name: info.mother, value: 0, color: info.color }
+      c.value += v
+      target.set(info.mother, c)
     }
     return {
       event: ev, txs, spent, back, net: spent - back,
       first: txs.length ? txs[txs.length - 1].date : null,
       last: txs.length ? txs[0].date : null,
       cats: [...cats.values()].sort((a, b) => b.value - a.value),
+      incomeCats: [...incomeCats.values()].sort((a, b) => b.value - a.value),
       untaggedCount: 0,
       untaggedValue: 0,
     }
@@ -504,8 +506,6 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
   // Muitos dias: o gráfico fica mais largo que o card e rola para o lado.
   const chartMinWidth = series.length * (byDay ? 22 : 44)
   const txs = showAll ? s.txs : s.txs.slice(0, 8)
-  const catTotal = s.cats.reduce((a, c) => a + c.value, 0)
-
   return (
     <section className="bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] p-5 space-y-4">
       <div className="flex items-center gap-3">
@@ -563,36 +563,28 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
           ) : <p className="text-xs text-slate-400 mt-4">Nenhum gasto {monthLabel ? 'neste mês' : 'ainda'}.</p>}
         </OverviewSection>
 
-        <OverviewSection icon={ChartPie} title="Por categoria" subtitle="O lançamento continua na categoria — aqui você vê o peso de cada uma no evento">
-          {catTotal > 0 ? (
-            <div className="flex flex-col sm:flex-row items-center gap-5 mt-4">
-              <div className="relative h-40 w-40 shrink-0 [&_path]:stroke-white dark:[&_path]:stroke-[#111c2d]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={s.cats} dataKey="value" nameKey="name" innerRadius="64%" outerRadius="100%" strokeWidth={2} startAngle={90} endAngle={-270} isAnimationActive={false}>
-                      {s.cats.map(c => <Cell key={c.name} fill={c.color} />)}
-                    </Pie>
-                    <Tooltip formatter={v => money(Number(v))} contentStyle={{ borderRadius: 12, fontSize: 12 }} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
-                  <span className="text-sm font-extrabold tabular-nums text-[#0B2D6B] dark:text-slate-100">{money(s.spent)}</span>
-                  <span className="text-[10px] text-slate-400">gasto</span>
-                </div>
-              </div>
-              <ul className="flex-1 min-w-0 w-full space-y-1.5">
-                {s.cats.map(c => (
-                  <li key={c.name} className="flex items-center gap-2 text-xs">
-                    <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
-                    <span className="flex-1 min-w-0 truncate text-slate-600 dark:text-slate-300">{c.name}</span>
-                    <span className="tabular-nums text-slate-400">{Math.round(c.value / catTotal * 100)}%</span>
-                    <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-200 w-24 text-right">{money(c.value)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : <p className="text-xs text-slate-400 mt-4">Nenhum gasto {monthLabel ? 'neste mês' : 'ainda'}.</p>}
-        </OverviewSection>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <CategoryDonut
+            title="Despesas por categoria"
+            subtitle="O lançamento continua na categoria — aqui você vê o peso de cada uma no evento"
+            iconClass="text-red-500"
+            cats={s.cats}
+            total={s.spent}
+            centerLabel="gasto"
+            centerClass="text-red-500"
+            empty={`Nenhum gasto ${monthLabel ? 'neste mês' : 'ainda'}.`}
+          />
+          <CategoryDonut
+            title="Receitas por categoria"
+            subtitle="O que voltou no evento: estornos, reembolsos, vendas"
+            iconClass="text-green-600"
+            cats={s.incomeCats}
+            total={s.back}
+            centerLabel="voltou"
+            centerClass="text-green-600 dark:text-green-400"
+            empty={`Nenhuma entrada ${monthLabel ? 'neste mês' : 'neste evento'}.`}
+          />
+        </div>
 
 
       <OverviewSection icon={ReceiptText} title="Lançamentos" subtitle="De todas as contas · para trocar a categoria, abra na conta">
@@ -656,5 +648,51 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
         )}
       </OverviewSection>
     </section>
+  )
+}
+
+// Rosca por categoria (mesmo formato da Análise), usada para despesas e receitas.
+function CategoryDonut({ title, subtitle, iconClass, cats, total, centerLabel, centerClass, empty }: {
+  title: string
+  subtitle: string
+  iconClass: string
+  cats: { name: string; value: number; color: string }[]
+  total: number
+  centerLabel: string
+  centerClass: string
+  empty: string
+}) {
+  const sum = cats.reduce((a, c) => a + c.value, 0)
+  return (
+    <OverviewSection icon={ChartPie} iconClass={iconClass} title={title} subtitle={subtitle}>
+      {sum > 0 ? (
+        <div className="flex flex-col sm:flex-row items-center gap-5 mt-4">
+          <div className="relative h-40 w-40 shrink-0 [&_path]:stroke-white dark:[&_path]:stroke-[#111c2d]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={cats} dataKey="value" nameKey="name" innerRadius="64%" outerRadius="100%" strokeWidth={2} startAngle={90} endAngle={-270} isAnimationActive={false}>
+                  {cats.map(c => <Cell key={c.name} fill={c.color} />)}
+                </Pie>
+                <Tooltip formatter={v => money(Number(v))} contentStyle={{ borderRadius: 12, fontSize: 12 }} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
+              <span className={cn('text-sm font-extrabold tabular-nums', centerClass)}>{money(total)}</span>
+              <span className="text-[10px] text-slate-400">{centerLabel}</span>
+            </div>
+          </div>
+          <ul className="flex-1 min-w-0 w-full space-y-1.5">
+            {cats.map(c => (
+              <li key={c.name} className="flex items-center gap-2 text-xs">
+                <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                <span className="flex-1 min-w-0 truncate text-slate-600 dark:text-slate-300">{c.name}</span>
+                <span className="tabular-nums text-slate-400">{Math.round(c.value / sum * 100)}%</span>
+                <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-200 w-24 text-right">{money(c.value)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : <p className="text-xs text-slate-400 mt-4">{empty}</p>}
+    </OverviewSection>
   )
 }
