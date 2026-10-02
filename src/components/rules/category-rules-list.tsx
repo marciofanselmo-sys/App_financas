@@ -43,6 +43,7 @@ export function CategoryRulesList({
   onCreateIn: (category: string) => void
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set())
+  const [openSubs, setOpenSubs] = useState<Set<string>>(new Set())
   const mothers = motherNameByCategory(categories)
   const q = search.trim().toLowerCase()
 
@@ -73,6 +74,42 @@ export function CategoryRulesList({
     auto: rules.filter(r => r.auto_created).length,
     off: rules.filter(r => !r.active).length,
   }
+  function renderRule(r: CategorizationRule) {
+    const n = uses.get(r.id) ?? 0
+    const mt = (r as CategorizationRule & { match_type?: string }).match_type ?? 'contains'
+    const boardId = (r as CategorizationRule & { board_id?: string | null }).board_id
+    return (
+      <div key={r.id} className={cn('flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg px-2 py-2 hover:bg-slate-50 dark:hover:bg-white/[0.03]', !r.active && 'opacity-50')}>
+        <button type="button" onClick={() => onToggle(r)} className="shrink-0" title={r.active ? 'Desativar' : 'Ativar'}>
+          {r.active ? <ToggleRight className="h-5 w-5 text-blue-500" /> : <ToggleLeft className="h-5 w-5 text-slate-400" />}
+        </button>
+        <span className="text-xs font-mono font-semibold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-2 py-0.5 rounded">{r.keyword}</span>
+        <span className="text-[11px] text-slate-400">{MATCH_LABELS[mt] ?? 'Contém'}</span>
+        
+        <span className={cn('text-[10px] font-bold rounded-full px-1.5 py-0.5',
+          r.auto_created ? 'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300' : 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300')}>
+          {r.auto_created ? 'Automática' : 'Manual'}
+        </span>
+        {!usesLoading && r.active && n === 0 && <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">não pega nada</span>}
+        {conflictIds.has(r.id) && <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400">em conflito</span>}
+        {boardId && boardMap[boardId] && <span className="text-[11px] text-slate-400">· conta {boardMap[boardId]}</span>}
+        <span className="ml-auto text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap">{usesLoading ? 'contando…' : `${n} lançamento${n === 1 ? '' : 's'}`}</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger className="h-7 w-7 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-white/[0.06] shrink-0" aria-label="Ações da regra">
+            <MoreVertical className="h-4 w-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onClick={() => onEdit(r)}><Pencil className="h-4 w-4 mr-2" /> Editar</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onToggle(r)}>
+              {r.active ? <><ToggleLeft className="h-4 w-4 mr-2" /> Desativar</> : <><ToggleRight className="h-4 w-4 mr-2" /> Ativar</>}
+            </DropdownMenuItem>
+            <DropdownMenuItem className="text-red-600 focus:text-red-600" onClick={() => onDelete(r)}><Trash2 className="h-4 w-4 mr-2" /> Excluir</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    )
+  }
+
   const chip = (on: boolean) => cn(
     'rounded-full border px-3 py-1 text-xs transition-colors',
     on ? 'bg-blue-600 border-blue-600 text-white'
@@ -144,41 +181,45 @@ export function CategoryRulesList({
 
                   {isOpen && (
                     <div className="mt-2 ml-[30px] pl-3 border-l-2 border-slate-100 dark:border-white/[0.08]">
-                      {list.map(r => {
-                        const n = uses.get(r.id) ?? 0
-                        const mt = (r as CategorizationRule & { match_type?: string }).match_type ?? 'contains'
-                        const boardId = (r as CategorizationRule & { board_id?: string | null }).board_id
-                        return (
-                          <div key={r.id} className={cn('flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg px-2 py-2 hover:bg-slate-50 dark:hover:bg-white/[0.03]', !r.active && 'opacity-50')}>
-                            <button type="button" onClick={() => onToggle(r)} className="shrink-0" title={r.active ? 'Desativar' : 'Ativar'}>
-                              {r.active ? <ToggleRight className="h-5 w-5 text-blue-500" /> : <ToggleLeft className="h-5 w-5 text-slate-400" />}
-                            </button>
-                            <span className="text-xs font-mono font-semibold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-2 py-0.5 rounded">{r.keyword}</span>
-                            <span className="text-[11px] text-slate-400">{MATCH_LABELS[mt] ?? 'Contém'}</span>
-                            {r.category !== mother && <span className="text-[11px] text-slate-500 dark:text-slate-400">→ {r.category}</span>}
-                            <span className={cn('text-[10px] font-bold rounded-full px-1.5 py-0.5',
-                              r.auto_created ? 'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300' : 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300')}>
-                              {r.auto_created ? 'Automática' : 'Manual'}
-                            </span>
-                            {!usesLoading && r.active && n === 0 && <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">não pega nada</span>}
-                            {conflictIds.has(r.id) && <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400">em conflito</span>}
-                            {boardId && boardMap[boardId] && <span className="text-[11px] text-slate-400">· conta {boardMap[boardId]}</span>}
-                            <span className="ml-auto text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap">{usesLoading ? 'contando…' : `${n} lançamento${n === 1 ? '' : 's'}`}</span>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger className="h-7 w-7 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-white/[0.06] shrink-0" aria-label="Ações da regra">
-                                <MoreVertical className="h-4 w-4" />
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-44">
-                                <DropdownMenuItem onClick={() => onEdit(r)}><Pencil className="h-4 w-4 mr-2" /> Editar</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => onToggle(r)}>
-                                  {r.active ? <><ToggleLeft className="h-4 w-4 mr-2" /> Desativar</> : <><ToggleRight className="h-4 w-4 mr-2" /> Ativar</>}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem className="text-red-600 focus:text-red-600" onClick={() => onDelete(r)}><Trash2 className="h-4 w-4 mr-2" /> Excluir</DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        )
-                      })}
+                      {(() => {
+                        // Subcategorias recolhidas; regras direto na categoria
+                        // ficam num grupo próprio. Sem subcategorias, lista direto.
+                        const subs = new Map<string, CategorizationRule[]>()
+                        for (const r of list) subs.set(r.category, [...(subs.get(r.category) ?? []), r])
+                        const entries = [...subs.entries()].sort(([x], [y]) => {
+                          if (x === mother) return -1
+                          if (y === mother) return 1
+                          return x.localeCompare(y, 'pt-BR')
+                        })
+                        if (entries.length === 1 && entries[0][0] === mother) return list.map(renderRule)
+                        return entries.map(([sub, subRules]) => {
+                          const key = `${mother}|${sub}`
+                          const subOpen = forceOpen || openSubs.has(key)
+                          const subActive = subRules.filter(r => r.active).length
+                          return (
+                            <div key={key}>
+                              <button type="button" aria-expanded={subOpen}
+                                onClick={() => setOpenSubs(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n })}
+                                className="w-full flex items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-slate-50 dark:hover:bg-white/[0.03]">
+                                <ChevronRight className={cn('h-3.5 w-3.5 text-slate-400 shrink-0 transition-transform', subOpen && 'rotate-90')} />
+                                <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                                <span className="flex-1 min-w-0 text-[13px] text-slate-700 dark:text-slate-200 truncate">
+                                  {sub}
+                                  {sub === mother && (
+                                    <span className="ml-2 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400">sem subcategoria</span>
+                                  )}
+                                </span>
+                                <span className="text-[11px] text-slate-400 shrink-0">{subRules.length} regra{subRules.length === 1 ? '' : 's'} · {subActive} ativa{subActive === 1 ? '' : 's'}</span>
+                              </button>
+                              {subOpen && (
+                                <div className="ml-5 pl-3 border-l-2 border-slate-100 dark:border-white/[0.08] mb-1">
+                                  {subRules.map(renderRule)}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })
+                      })()}
                       <button type="button" onClick={() => onCreateIn(mother)} className="mt-1 ml-2 flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">
                         <Plus className="h-3.5 w-3.5" /> Nova regra em {mother}
                       </button>
