@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+
 import { withPlan } from '@/components/plan/with-plan'
 
 import { useState } from 'react'
@@ -141,6 +143,10 @@ function GoalsPage() {
   const [importingFor, setImportingFor]       = useState<Goal | null>(null)
   const [boardPickerOpen, setBoardPickerOpen] = useState(false)
   const investmentBoardsWithPosition = boards.filter(b => b.is_investment && b.last_position_import)
+  // Todas as contas criadas em Investimentos aparecem para vincular; as que
+  // ainda não têm valor ficam visíveis mas sem poder escolher (a meta
+  // começaria em R$ 0 achando que está ligada).
+  const investmentBoards = boards.filter(b => b.is_investment)
 
   async function pullFromBoard(goal: Goal, board: (typeof boards)[number]) {
     if (!board.last_position_import) return
@@ -431,7 +437,7 @@ function GoalsPage() {
                           Atualizar valor
                         </Button>
                       )}
-                      {investmentBoardsWithPosition.length > 0 && (
+                      {investmentBoards.length > 0 && (
                         <Button
                           size="sm" variant="outline" className="text-xs gap-1.5 h-8 border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400"
                           onClick={() => openBoardPicker(goal)}
@@ -494,7 +500,7 @@ function GoalsPage() {
 
             <div className="space-y-2">
               <Label>Valor atual</Label>
-              {investmentBoardsWithPosition.length > 0 ? (
+              {investmentBoards.length > 0 ? (
                 <>
                   <div className="grid grid-cols-2 gap-2">
                     <button
@@ -522,7 +528,7 @@ function GoalsPage() {
                   </div>
                   {form.linkMode === 'board' ? (
                     <div className="space-y-1.5 pt-1">
-                      {investmentBoardsWithPosition.map(board => (
+                      {investmentBoards.map(board => board.last_position_import ? (
                         <button
                           key={board.id}
                           type="button"
@@ -534,8 +540,16 @@ function GoalsPage() {
                           }`}
                         >
                           <span className="font-medium text-sm text-slate-800 dark:text-slate-100">{board.name}</span>
-                          <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{fmt(board.last_position_import!.patrimonio)}</span>
+                          <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{fmt(board.last_position_import.patrimonio)}</span>
                         </button>
+                      ) : (
+                        <div key={board.id} className="w-full flex items-center justify-between gap-3 p-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 opacity-80">
+                          <span className="font-medium text-sm text-slate-500 dark:text-slate-400">{board.name}</span>
+                          <span className="text-[11px] text-slate-400 text-right">
+                            sem valor ainda ·{' '}
+                            <Link href="/investments" className="text-blue-600 dark:text-blue-400 hover:underline">Informar valor em Investimentos</Link>
+                          </span>
+                        </div>
                       ))}
                     </div>
                   ) : (
@@ -603,15 +617,20 @@ function GoalsPage() {
         <DialogContent className="sm:max-w-sm">
           <DialogHeader><DialogTitle>Puxar de qual conta?</DialogTitle></DialogHeader>
           <div className="space-y-2 pt-2">
-            {investmentBoardsWithPosition.map(board => (
+            {investmentBoards.map(board => board.last_position_import ? (
               <button
                 key={board.id}
                 onClick={() => importingFor && pullFromBoard(importingFor, board)}
                 className="w-full flex items-center justify-between gap-3 p-3 rounded-xl border-2 border-slate-200 dark:border-slate-600 hover:border-violet-400 dark:hover:border-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-all text-left"
               >
                 <span className="font-medium text-sm text-slate-800 dark:text-slate-100">{board.name}</span>
-                <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{fmt(board.last_position_import!.patrimonio)}</span>
+                <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{fmt(board.last_position_import.patrimonio)}</span>
               </button>
+            ) : (
+              <div key={board.id} className="w-full flex items-center justify-between gap-3 p-3 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700">
+                <span className="font-medium text-sm text-slate-500 dark:text-slate-400">{board.name}</span>
+                <Link href="/investments" className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline">Sem valor · informar em Investimentos</Link>
+              </div>
             ))}
           </div>
         </DialogContent>
