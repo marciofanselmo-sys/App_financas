@@ -615,6 +615,8 @@ export const HELP_SECTIONS: HelpSection[] = [
           'Uma regra liga um texto da descrição a uma categoria: contém, começa com, termina com ou igual a.',
           '> "IFOOD" → Alimentação · "NETFLIX" → Assinatura · "UBER" → Transporte',
           'Corrigir a categoria de uma transação já cria a regra sozinho — ela aparece com a etiqueta "Automática".',
+          'A tela tem três abas, uma para cada tipo de regra: Categorias (decide a categoria), Entre minhas contas (tira dos totais o que só mudou de conta) e Aportes (dinheiro que vai para uma conta de investimento).',
+          'Em "Testar uma descrição", digite um texto do extrato e veja o que cada tipo de regra faria com ele.',
         ],
         link: { href: '/settings/rules', label: 'Abrir Regras automáticas' },
       },
