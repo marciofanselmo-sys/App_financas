@@ -5,6 +5,8 @@ import { withPlan } from '@/components/plan/with-plan'
 import { useState, useEffect } from 'react'
 import { useGoals } from '@/hooks/use-goals'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
+import { useInvestmentContributions } from '@/hooks/use-investment-contributions'
+import { investmentValueOf } from '@/lib/investment-contributions'
 import { Goal, GoalType, GOAL_COLORS } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -134,17 +136,24 @@ function GoalsPage() {
   // valor: a meta ligada acompanha o valor da conta (ver o efeito abaixo e
   // syncGoalsLinkedToBoard), então começar em R$ 0 não deixa ela parada.
   const investmentBoards = boards.filter(b => b.is_investment)
+  const { linked, loading: linkedLoading } = useInvestmentContributions(investmentBoards.map(b => b.id))
+  // O valor da conta é o mesmo que ela mostra em Investimentos: o extrato, se
+  // houver; senão a soma dos aportes. Nunca os dois somados.
+  const boardValue = (board: (typeof boards)[number]) => {
+    const v = investmentValueOf(board, linked)
+    return { value: v.value, has: v.source !== 'none' }
+  }
 
   // Meta ligada acompanha a conta: ao abrir a tela, quem estiver diferente do
   // valor atual da conta é atualizado (cobre valores informados antes).
   useEffect(() => {
-    if (loading || boards.length === 0) return
+    if (loading || linkedLoading || boards.length === 0) return
     for (const goal of goals) {
       const imp = goal.lastImport
       if (imp?.source !== 'board' || !imp.boardId) continue
       const board = boards.find(b => b.id === imp.boardId)
       if (!board) continue
-      const value = board.last_position_import?.patrimonio ?? 0
+      const value = boardValue(board).value
       if (Math.abs(value - goal.currentAmount) < 0.005 && imp.boardName === board.name) continue
       updateGoal(goal.id, {
         currentAmount: value,
@@ -152,12 +161,12 @@ function GoalsPage() {
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, boards, goals.map(g => `${g.id}:${g.currentAmount}`).join('|')])
+  }, [loading, linkedLoading, boards, linked, goals.map(g => `${g.id}:${g.currentAmount}`).join('|')])
 
   async function pullFromBoard(goal: Goal, board: (typeof boards)[number]) {
     // Conta sem valor ainda: liga mesmo assim, em R$ 0 — a meta passa a
     // acompanhar quando o valor for informado ou a posição importada.
-    const value = board.last_position_import?.patrimonio ?? 0
+    const value = boardValue(board).value
     const { error: updateError } = await updateGoal(goal.id, {
       currentAmount: value,
       lastImport: {
@@ -227,13 +236,13 @@ function GoalsPage() {
       ? investmentBoards.find(b => b.id === form.linkedBoardId)
       : undefined
     const current = linkedBoard
-      ? linkedBoard.last_position_import?.patrimonio ?? 0
+      ? boardValue(linkedBoard).value
       : parseFloat(form.currentAmount.replace(',', '.')) || 0
     const lastImport = linkedBoard
       ? {
           source: 'board' as const,
           importedAt: linkedBoard.last_position_import?.importedAt ?? new Date().toISOString(),
-          patrimonio: linkedBoard.last_position_import?.patrimonio ?? 0,
+          patrimonio: current,
           boardId: linkedBoard.id,
           boardName: linkedBoard.name,
         }
@@ -285,7 +294,10 @@ function GoalsPage() {
         typeLabel: typeConf.label,
         TypeIcon: typeConf.icon,
         status: goalStatus(goal),
-        awaitingBoard: imp?.source === 'board' && !boards.find(b => b.id === imp.boardId)?.last_position_import,
+        awaitingBoard: imp?.source === 'board' && (() => {
+          const board = boards.find(b => b.id === imp.boardId)
+          return !board || !boardValue(board).has
+        })(),
       }
     })
 
@@ -428,7 +440,7 @@ function GoalsPage() {
                   </div>
                   {form.linkMode === 'board' ? (
                     <div className="space-y-1.5 pt-1">
-                      {investmentBoards.map(board => board.last_position_import ? (
+                      {investmentBoards.map(board => boardValue(board).has ? (
                         <button
                           key={board.id}
                           type="button"
@@ -440,7 +452,7 @@ function GoalsPage() {
                           }`}
                         >
                           <span className="font-medium text-sm text-slate-800 dark:text-slate-100">{board.name}</span>
-                          <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{fmt(board.last_position_import.patrimonio)}</span>
+                          <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{fmt(boardValue(board).value)}</span>
                         </button>
                       ) : (
                         <button
@@ -523,14 +535,14 @@ function GoalsPage() {
         <DialogContent className="sm:max-w-sm">
           <DialogHeader><DialogTitle>Puxar de qual conta?</DialogTitle></DialogHeader>
           <div className="space-y-2 pt-2">
-            {investmentBoards.map(board => board.last_position_import ? (
+            {investmentBoards.map(board => boardValue(board).has ? (
               <button
                 key={board.id}
                 onClick={() => importingFor && pullFromBoard(importingFor, board)}
                 className="w-full flex items-center justify-between gap-3 p-3 rounded-xl border-2 border-slate-200 dark:border-slate-600 hover:border-violet-400 dark:hover:border-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-all text-left"
               >
                 <span className="font-medium text-sm text-slate-800 dark:text-slate-100">{board.name}</span>
-                <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{fmt(board.last_position_import.patrimonio)}</span>
+                <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{fmt(boardValue(board).value)}</span>
               </button>
             ) : (
               <button
