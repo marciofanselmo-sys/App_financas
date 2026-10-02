@@ -74,7 +74,7 @@ function RulesPage() {
   const [tab, setTab] = useState<RuleKind>('categorias')
   const [ruleFilter, setRuleFilter] = useState<RuleFilter>('all')
   const [testText, setTestText] = useState('')
-  const { transactions, refetch: refetchTransactions } = useTransactions()
+  const { transactions, loading: txLoading, refetch: refetchTransactions } = useTransactions()
 
   const boardMap = useMemo(() => {
     const m: Record<string, string> = {}
@@ -188,10 +188,11 @@ function RulesPage() {
     }
     return { ids, pairs }
   }, [rules])
-  const zeroCount = rules.filter(r => r.active && (ruleUses.get(r.id) ?? 0) === 0).length
+  // Enquanto os lançamentos carregam, toda regra pareceria "não pega nada".
+  const zeroCount = txLoading ? 0 : rules.filter(r => r.active && (ruleUses.get(r.id) ?? 0) === 0).length
   const outrosSemRegra = useMemo(
-    () => transactions.filter(t => t.type === 'despesa' && (t.category ?? '').toLowerCase() === 'outros' && !rules.some(r => r.active && matchesRule(t.description, r))).length,
-    [transactions, rules],
+    () => txLoading ? 0 : transactions.filter(t => t.type === 'despesa' && (t.category ?? '').toLowerCase() === 'outros' && !rules.some(r => r.active && matchesRule(t.description, r))).length,
+    [transactions, rules, txLoading],
   )
   const autoCount = rules.filter(r => r.auto_created).length
 
@@ -323,6 +324,7 @@ function RulesPage() {
               rules={rules}
               categories={categories}
               uses={ruleUses}
+              usesLoading={txLoading}
               conflictIds={conflicts.ids}
               filter={ruleFilter}
               onFilter={setRuleFilter}

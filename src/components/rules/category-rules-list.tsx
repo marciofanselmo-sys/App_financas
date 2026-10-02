@@ -22,13 +22,15 @@ const MATCH_LABELS: Record<string, string> = {
  * correspondência, Manual/Automática, quantos lançamentos pega e ⋮.
  */
 export function CategoryRulesList({
-  rules, categories, uses, conflictIds, filter, onFilter, search, onSearch, boardMap,
+  rules, categories, uses, usesLoading = false, conflictIds, filter, onFilter, search, onSearch, boardMap,
   onToggle, onEdit, onDelete, onCreateIn,
 }: {
   rules: CategorizationRule[]
   categories: Category[]
   /** Quantos lançamentos cada regra pega hoje (por id). */
   uses: Map<string, number>
+  /** Lançamentos ainda carregando: não mostrar contagem nem "não pega nada". */
+  usesLoading?: boolean
   conflictIds: Set<string>
   filter: RuleFilter
   onFilter: (f: RuleFilter) => void
@@ -158,10 +160,10 @@ export function CategoryRulesList({
                               r.auto_created ? 'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300' : 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300')}>
                               {r.auto_created ? 'Automática' : 'Manual'}
                             </span>
-                            {r.active && n === 0 && <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">não pega nada</span>}
+                            {!usesLoading && r.active && n === 0 && <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">não pega nada</span>}
                             {conflictIds.has(r.id) && <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400">em conflito</span>}
                             {boardId && boardMap[boardId] && <span className="text-[11px] text-slate-400">· conta {boardMap[boardId]}</span>}
-                            <span className="ml-auto text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap">{n} lançamento{n === 1 ? '' : 's'}</span>
+                            <span className="ml-auto text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap">{usesLoading ? 'contando…' : `${n} lançamento${n === 1 ? '' : 's'}`}</span>
                             <DropdownMenu>
                               <DropdownMenuTrigger className="h-7 w-7 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-white/[0.06] shrink-0" aria-label="Ações da regra">
                                 <MoreVertical className="h-4 w-4" />
