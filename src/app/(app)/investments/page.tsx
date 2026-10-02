@@ -105,9 +105,12 @@ function InvestmentsPage() {
   )
   // Rendimento só das contas com valor E aportes — misturar contas sem
   // aporte configurado daria um "rendimento" igual ao valor inteiro delas.
-  // Valor de cada conta pela regra (investmentValueOf): extrato + aportes
-  // depois dele, ou, sem extrato, a soma dos aportes.
+  // Valor de cada conta pela regra (investmentValueOf): o extrato, se houver;
+  // sem extrato, a soma dos aportes. Nunca os dois somados.
   const values = useMemo(() => new Map(boards.map(b => [b.id, investmentValueOf(b, linked)])), [boards, linked])
+  const aportesOnly = boards
+    .filter(b => values.get(b.id)?.source === 'aportes')
+    .map(b => ({ name: b.name, value: values.get(b.id)!.value }))
   const gainBoards = boards.filter(b => values.get(b.id)?.gain != null)
   const totalInvested = gainBoards.reduce((s, b) => s + (values.get(b.id)?.aportado ?? 0), 0)
   const totalValue = gainBoards.reduce((s, b) => s + (values.get(b.id)?.value ?? 0), 0)
@@ -292,6 +295,7 @@ function InvestmentsPage() {
           <InvestmentsSummary
             boards={boards}
             total={[...values.values()].reduce((sum, v) => sum + v.value, 0)}
+            aportesOnlyCount={aportesOnly.length}
             contributions={monthlyContributions}
             target={investTarget}
             income={monthIncome}
@@ -327,10 +331,16 @@ function InvestmentsPage() {
             </div>
           )}
 
-          {hasPositions && (
+          {/* "Onde está o dinheiro" fecha no mesmo total do topo: inclui conta
+              com valor informado e conta só com aportes, não só planilha. */}
+          {hasPositions ? (
             <div className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)] items-start">
-              <AllocationCard boards={boards} />
+              <AllocationCard boards={boards} aportesOnly={aportesOnly} />
               <PositionsTable boards={boards} />
+            </div>
+          ) : (boards.some(b => b.last_position_import) || aportesOnly.length > 0) && (
+            <div className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)] items-start">
+              <AllocationCard boards={boards} aportesOnly={aportesOnly} />
             </div>
           )}
 

@@ -27,8 +27,12 @@ export function classColor(name: string, i = 0) {
 
 const withPosition = (boards: TransactionBoard[]) => boards.filter(b => b.last_position_import)
 
-/** Classes de ativo somadas + o dinheiro parado na corretora, fechando no patrimônio. */
-export function allocationOf(boards: TransactionBoard[]) {
+/**
+ * Classes de ativo somadas + o dinheiro parado na corretora, fechando no patrimônio.
+ * `aportesOnly`: contas sem extrato, que valem a soma dos aportes — entram com
+ * o nome da conta, para o gráfico fechar no mesmo total do topo.
+ */
+export function allocationOf(boards: TransactionBoard[], aportesOnly: { name: string; value: number }[] = []) {
   const map = new Map<string, number>()
   let cash = 0
   for (const b of withPosition(boards)) {
@@ -48,6 +52,11 @@ export function allocationOf(boards: TransactionBoard[]) {
     }
     // O que o patrimônio tem a mais que os ativos é saldo sem aplicar.
     cash += Math.max(0, imp.patrimonio - inAssets)
+  }
+  for (const a of aportesOnly) {
+    if (a.value <= 0.005) continue
+    const label = `${a.name.trim()} · soma dos aportes`
+    map.set(label, (map.get(label) ?? 0) + a.value)
   }
   const items = [...map.entries()].sort((a, b) => b[1] - a[1])
     .map(([name, value], i) => ({ name, value, color: classColor(name, i) }))
@@ -82,8 +91,10 @@ const daysAgo = (iso: string) => {
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')
 
 // ── 1. Os quatro números do topo ───────────────────────────────────────────
-export function InvestmentsSummary({ boards, total: shownTotal, contributions, target, income, goal }: {
+export function InvestmentsSummary({ boards, total: shownTotal, aportesOnlyCount = 0, contributions, target, income, goal }: {
   boards: TransactionBoard[]
+  /** Quantas contas entram no total pela soma dos aportes (sem extrato). */
+  aportesOnlyCount?: number
   /** Soma do valor que cada conta mostra (extrato, ou aportes sem extrato). */
   total?: number
   contributions: number
@@ -107,8 +118,13 @@ export function InvestmentsSummary({ boards, total: shownTotal, contributions, t
         <p className="text-[11px] uppercase tracking-wide text-blue-100">Patrimônio investido</p>
         <p className="font-heading text-2xl font-extrabold mt-1 tabular-nums">{formatCurrency(total)}</p>
         <p className="text-[11px] text-blue-100 mt-1">
-          {lastAt ? <>Atualizado em {shortDate(lastAt)} · {daysAgo(lastAt)}</> : 'Nenhum valor informado ainda'}
+          {lastAt ? <>Atualizado em {shortDate(lastAt)} · {daysAgo(lastAt)}</> : aportesOnlyCount > 0 ? 'Pela soma dos aportes' : 'Nenhum valor informado ainda'}
         </p>
+        {lastAt && aportesOnlyCount > 0 && (
+          <p className="text-[11px] text-blue-100/80">
+            + {aportesOnlyCount} conta{aportesOnlyCount === 1 ? '' : 's'} pela soma dos aportes
+          </p>
+        )}
       </div>
 
       <div className="bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] p-4">
@@ -175,8 +191,8 @@ export function InvestmentsSummary({ boards, total: shownTotal, contributions, t
 }
 
 // ── 2. Onde está o dinheiro ────────────────────────────────────────────────
-export function AllocationCard({ boards }: { boards: TransactionBoard[] }) {
-  const items = allocationOf(boards)
+export function AllocationCard({ boards, aportesOnly = [] }: { boards: TransactionBoard[]; aportesOnly?: { name: string; value: number }[] }) {
+  const items = allocationOf(boards, aportesOnly)
   const total = items.reduce((s, i) => s + i.value, 0)
   if (items.length === 0) return null
   const hasCash = items.some(i => i.name === 'Saldo na corretora')

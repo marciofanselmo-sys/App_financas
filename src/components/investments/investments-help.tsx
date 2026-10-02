@@ -33,8 +33,9 @@ export function InvestmentsHelp() {
           <div className="space-y-4">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Os números</p>
             <Item icon={Wallet} title="Patrimônio investido.">
-              Vem da planilha de posição da corretora ou de um valor que você informa (&ldquo;Atualizar valor&rdquo;) —
-              não é a soma de lançamentos. Muda quando você importa uma posição nova ou atualiza o valor.
+              A soma do valor de cada conta. Conta com extrato (planilha da corretora ou &ldquo;Atualizar valor&rdquo;)
+              vale o extrato; conta sem extrato vale a soma dos aportes. Nunca os dois somados. É o mesmo total do
+              Dashboard.
             </Item>
             <Item icon={ArrowDownToLine} title="Aportes do mês.">
               Saídas das suas contas marcadas como aporte numa conta de investimento (no extrato, ⋮ → &ldquo;Aporte
