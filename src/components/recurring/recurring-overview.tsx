@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import Link from 'next/link'
 import {
-  ChartBar, CalendarDays, ChevronRight, RotateCcw, CreditCard, ArrowRight, SearchX,
+  ChartBar, ChartPie, CalendarDays, ChevronRight, RotateCcw, CreditCard, ArrowRight, SearchX,
   Info, CheckCircle2, EyeOff, ListChecks, Tag, Eye, type LucideIcon,
 } from 'lucide-react'
 import { DisplayItem } from '@/lib/recurring-groups'
@@ -72,27 +73,47 @@ export function IncomeSplit({ groups, despesa, receita }: { groups: CategoryGrou
   const parts = [...groups.map(g => ({ name: g.name, color: g.color, value: g.total }))]
   if (receita > despesa) parts.push({ name: 'Sobra livre', color: FREE_COLOR, value: receita - despesa })
   return (
-    <OverviewSection icon={ChartBar} title="Para onde vai sua receita fixa"
+    <OverviewSection icon={ChartPie} title="Para onde vai sua receita fixa"
       subtitle={receita > 0 ? 'Cada fixo como parte da sua renda fixa do mês — o que sobra é seu' : 'Sem receita fixa confirmada: mostra o peso de cada despesa fixa'}>
       {base > 0 ? (
-        <>
-          <div className="flex h-5 rounded-lg overflow-hidden mt-4 bg-slate-100 dark:bg-white/[0.08]">
-            {parts.map(p => <div key={p.name} title={`${p.name}: ${fmt(p.value)}`} style={{ width: `${(p.value / base) * 100}%`, backgroundColor: p.color }} />)}
+        // Rosca no mesmo formato de "Distribuição das despesas" da Análise;
+        // no centro, o que fica livre.
+        <div className="flex flex-col sm:flex-row items-center gap-5 mt-4">
+          <div className="relative h-44 w-44 shrink-0 [&_path]:stroke-white dark:[&_path]:stroke-[#111c2d]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={parts} dataKey="value" nameKey="name" innerRadius="64%" outerRadius="100%" strokeWidth={2}
+                  startAngle={90} endAngle={-270} isAnimationActive={false}>
+                  {parts.map(p => <Cell key={p.name} fill={p.color} />)}
+                </Pie>
+                <Tooltip formatter={v => fmt(Number(v))} contentStyle={{ borderRadius: 12, fontSize: 12 }} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
+              {receita > despesa ? (
+                <>
+                  <span className="text-base font-extrabold tabular-nums text-blue-700 dark:text-blue-400">{fmt(receita - despesa)}</span>
+                  <span className="text-[11px] text-slate-400">livres · {pct(((receita - despesa) / base) * 100)}</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-base font-extrabold tabular-nums text-red-500">{fmt(despesa)}</span>
+                  <span className="text-[11px] text-slate-400">{receita > 0 ? 'nada sobra' : 'despesa fixa'}</span>
+                </>
+              )}
+            </div>
           </div>
-          <ul className="grid sm:grid-cols-2 gap-x-6 gap-y-2 mt-4 text-xs">
+          <ul className="flex-1 min-w-0 w-full space-y-1.5">
             {parts.map(p => (
-              <li key={p.name} className="flex items-center justify-between gap-2 min-w-0">
-                <span className="inline-flex items-center gap-2 min-w-0 text-slate-500 dark:text-slate-400">
-                  <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
-                  <span className="truncate">{p.name}</span>
-                </span>
-                <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-200 shrink-0">
-                  {pct((p.value / base) * 100)} · {fmt(p.value)}
-                </span>
+              <li key={p.name} className="flex items-center gap-2 text-xs">
+                <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
+                <span className={cn('flex-1 min-w-0 truncate text-slate-600 dark:text-slate-300', p.name === 'Sobra livre' && 'font-semibold text-blue-700 dark:text-blue-400')}>{p.name}</span>
+                <span className="tabular-nums text-slate-400 w-9 text-right">{pct((p.value / base) * 100)}</span>
+                <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-200 w-24 text-right">{fmt(p.value)}</span>
               </li>
             ))}
           </ul>
-        </>
+        </div>
       ) : (
         <p className="text-xs text-slate-400 mt-4">Confirme seus fixos para ver a divisão.</p>
       )}
