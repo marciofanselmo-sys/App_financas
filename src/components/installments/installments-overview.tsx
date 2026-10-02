@@ -7,6 +7,7 @@ import { InstallmentItem } from '@/hooks/use-recurring'
 import { TransactionBoard } from '@/types'
 import { currentYearMonth } from '@/utils/local-date'
 import { cn } from '@/lib/utils'
+import { Kpi, OverviewSection } from '@/components/ui/overview-blocks'
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -107,35 +108,10 @@ export function InstallmentsSummary({ o }: { o: Overview }) {
   )
 }
 
-function Kpi({ title, value, sub, valueClass }: { title: string; value: string; sub: string; valueClass?: string }) {
-  return (
-    <div className="bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] p-4">
-      <p className="text-[11px] uppercase tracking-wide text-slate-400">{title}</p>
-      <p className={cn('text-xl font-bold mt-1 tabular-nums text-slate-800 dark:text-slate-100', valueClass)}>{value}</p>
-      <p className="text-[11px] text-slate-400 mt-0.5">{sub}</p>
-    </div>
-  )
-}
-
-function Section({ icon: Icon, title, subtitle, children, className }: {
-  icon: typeof CreditCard; title: string; subtitle: string; children: React.ReactNode; className?: string
-}) {
-  return (
-    <section className={cn('bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] p-5', className)}>
-      <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 text-violet-600 dark:text-violet-400 shrink-0" />
-        <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">{title}</h2>
-      </div>
-      <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 ml-6">{subtitle}</p>
-      {children}
-    </section>
-  )
-}
-
 // ── Quanto sai nos próximos meses ──────────────────────────────────────────
 export function ReliefChart({ o }: { o: Overview }) {
   return (
-    <Section icon={CalendarClock} title="Quanto sai em parcelas nos próximos meses" subtitle="Já comprado — mostra quando o orçamento vai aliviar">
+    <OverviewSection icon={CalendarClock} iconClass="text-violet-600 dark:text-violet-400" title="Quanto sai em parcelas nos próximos meses" subtitle="Já comprado — mostra quando o orçamento vai aliviar">
       <div className="h-56 mt-4 -ml-2">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={o.chart} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
@@ -167,14 +143,14 @@ export function ReliefChart({ o }: { o: Overview }) {
           ? <>Em <strong className="text-violet-700 dark:text-violet-300">{o.halfLabel}</strong> suas parcelas caem para menos da metade de hoje.</>
           : 'Suas parcelas seguem altas pelos próximos 12 meses.'}
       </p>
-    </Section>
+    </OverviewSection>
   )
 }
 
 // ── Por cartão ─────────────────────────────────────────────────────────────
 export function ByCard({ o }: { o: Overview }) {
   return (
-    <Section icon={CreditCard} title="Por cartão" subtitle="Parcelas por mês em cada cartão">
+    <OverviewSection icon={CreditCard} iconClass="text-violet-600 dark:text-violet-400" title="Por cartão" subtitle="Parcelas por mês em cada cartão">
       <ul className="mt-3 divide-y divide-slate-100 dark:divide-white/[0.06]">
         {o.groups.map(g => {
           const pct = o.monthly > 0 ? (g.monthly / o.monthly) * 100 : 0
@@ -197,7 +173,7 @@ export function ByCard({ o }: { o: Overview }) {
           )
         })}
       </ul>
-    </Section>
+    </OverviewSection>
   )
 }
 

@@ -13,12 +13,15 @@ import { useSubcategoryNames } from '@/hooks/use-subcategory-names'
 import { TransactionType } from '@/types'
 import {
   RefreshCw, CheckCircle, EyeOff, Eye, AlertCircle, RotateCcw,
-  Tag, ChevronDown, ChevronRight, CreditCard, ArrowRight,
+  Tag, ChevronRight,
   TrendingDown, TrendingUp, } from 'lucide-react'
 import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 import { EmptyState } from '@/components/ui/empty-state'
+import {
+  RecurringSummary, IncomeSplit, MonthCalendar, MissingAlert, FixedTable, RecurringHelp,
+  PARCELAS_COLOR, type CategoryGroup,
+} from '@/components/recurring/recurring-overview'
 import { Button } from '@/components/ui/button'
-import { InfoBox } from '@/components/ui/info-box'
 import { cn } from '@/lib/utils'
 
 const fmt = (v: number) =>
@@ -102,44 +105,6 @@ function ItemRow({
           {item.descriptions.map(d => (
             <p key={d} className="text-xs text-slate-400 dark:text-slate-500 truncate">• {d}</p>
           ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Card de categoria (recolhido por padrão) ─────────────────────────────────
-function CategoryCard({
-  name, color, icon: Icon = Tag, summary, total, totalColor, children,
-}: {
-  name: string
-  color: string
-  icon?: React.ElementType
-  summary: string
-  total: number
-  totalColor: string
-  children: React.ReactNode
-}) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors">
-      <button type="button" onClick={() => setOpen(v => !v)} className="w-full flex items-center gap-3 px-3 py-3 text-left">
-        {open ? <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" /> : <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />}
-        <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: color + '25' }}>
-          <Icon className="h-4 w-4" style={{ color }} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm text-slate-700 dark:text-slate-200 truncate">{name}</p>
-          <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{summary}</p>
-        </div>
-        <div className="text-right shrink-0">
-          <p className={cn('text-sm font-bold tabular-nums', totalColor)}>{fmt(total)}</p>
-          <p className="text-[11px] text-slate-400">por mês</p>
-        </div>
-      </button>
-      {open && (
-        <div className="pb-2 pl-10 pr-2">
-          <div className="border-l-2 border-slate-100 dark:border-white/[0.08] pl-2">{children}</div>
         </div>
       )}
     </div>
@@ -330,12 +295,20 @@ function FixosPage() {
       .sort((x, y) => y.total - x.total)
   }
 
+  const today = new Date()
+  const despesaGroups: CategoryGroup[] = byMother(confirmedDespesaItems).map(g => ({ ...g, color: categoryColor(g.name) }))
+  const receitaGroups: CategoryGroup[] = byMother(confirmedReceitaItems).map(g => ({ ...g, color: categoryColor(g.name) }))
+  // Para a barra "Para onde vai": parcelas entram como uma fatia própria.
+  const splitGroups: CategoryGroup[] = [
+    ...despesaGroups,
+    ...(installments.length > 0 ? [{ name: 'Cartões & Parcelas', color: PARCELAS_COLOR, items: [], total: installmentsMonthly }] : []),
+  ].sort((x, y) => y.total - x.total)
+
   const renderTypeSection = ({ type, label, icon: Icon, iconColor, iconBg, totalColor, help }: typeof TYPE_SECTIONS[number]) => {
-    const typeConfirmed = confirmedItems.filter(i => i.type === type)
+    const typeConfirmed = type === 'despesa' ? confirmedDespesaItems : confirmedReceitaItems
     const typeIgnored   = ignoredItems.filter(i => i.type === type)
     const showInstallments = type === 'despesa' && installments.length > 0
-    const typeConfirmedTotal = typeConfirmed.reduce((s, i) => s + i.avgAmount, 0) + (type === 'despesa' ? installmentsMonthly : 0)
-    const groups = byMother(typeConfirmed)
+    const typeConfirmedTotal = type === 'despesa' ? totalMonthly : receitaMonthly
 
     if (typeConfirmed.length === 0 && typeIgnored.length === 0 && !showInstallments) {
       return null
@@ -356,62 +329,18 @@ function FixosPage() {
           <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 ml-9">{help}</p>
         </div>
 
-        {groups.length === 0 && !showInstallments && (
+        {typeConfirmed.length === 0 && !showInstallments ? (
           <p className="text-sm text-slate-400 dark:text-slate-500 ml-9">Nada confirmado ainda.</p>
+        ) : (
+          <FixedTable
+            groups={type === 'despesa' ? despesaGroups : receitaGroups}
+            total={typeConfirmedTotal}
+            totalClass={totalColor}
+            installments={showInstallments ? installments : undefined}
+            today={today}
+            onUndo={handleUndo}
+          />
         )}
-
-        <div className="space-y-2">
-          {groups.map(g => (
-            <CategoryCard
-              key={g.name}
-              name={g.name}
-              color={categoryColor(g.name)}
-              summary={`${g.items.length} fixo${g.items.length === 1 ? '' : 's'}`}
-              total={g.total}
-              totalColor={totalColor}
-            >
-              {g.items.map(item => (
-                <ItemRow
-                  key={item.key}
-                  item={item}
-                  pending={false}
-                  label={item.name}
-                  {...rowHandlers(item)}
-                />
-              ))}
-            </CategoryCard>
-          ))}
-
-          {/* Cartões & Parcelas — sempre conta como fixo, sem confirmar */}
-          {showInstallments && (
-            <CategoryCard
-              name="Cartões & Parcelas"
-              color="#8b5cf6"
-              icon={CreditCard}
-              summary={`${installments.length} parcelamento${installments.length === 1 ? '' : 's'} ativo${installments.length === 1 ? '' : 's'} · sempre conta como fixo`}
-              total={installmentsMonthly}
-              totalColor={totalColor}
-            >
-              {installments.map(item => (
-                <div key={item.description} className="flex items-center gap-3 rounded-xl px-3 py-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-slate-700 dark:text-slate-200 truncate">{item.description}</p>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                      Parcela {item.currentInstallment}/{item.totalInstallments}
-                    </p>
-                  </div>
-                  <span className={cn('text-sm font-semibold tabular-nums shrink-0', totalColor)}>{fmt(item.monthlyAmount)}</span>
-                </div>
-              ))}
-              <Link
-                href="/recurring"
-                className="ml-3 mt-1 inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 hover:underline"
-              >
-                Ver em Cartões & Parcelas <ArrowRight className="h-3 w-3" />
-              </Link>
-            </CategoryCard>
-          )}
-        </div>
 
         {typeIgnored.length > 0 && (
           <div className="pt-1">
@@ -444,14 +373,16 @@ function FixosPage() {
     )
   }
 
+  const despesaCount = confirmedDespesaItems.length + (installments.length > 0 ? 1 : 0)
+
   return (
-    <div className="space-y-8 max-w-6xl mx-auto">
+    <div className="space-y-6 max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Recorrências</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Receitas e despesas fixas detectadas nos últimos 12 meses, organizadas por categoria e subcategoria
+            Receitas e despesas fixas detectadas nos últimos 12 meses
           </p>
         </div>
         <Link
@@ -463,48 +394,7 @@ function FixosPage() {
         </Link>
       </div>
 
-      {/* Explicação — essa tela tem bastante lógica não óbvia por trás */}
-      <InfoBox id="fixos-como-funciona">
-        <p className="text-blue-600 dark:text-blue-400">
-          O app detecta sozinho qualquer descrição que se repete em 2 ou mais meses seguidos e mostra em &ldquo;Para revisar&rdquo;. Ao clicar em <strong>Confirmar</strong>, todas as transações passadas com essa descrição são marcadas como recorrentes — e futuras importações da mesma descrição já entram marcadas, sem precisar confirmar de novo. <strong>Ignorar</strong> só tira da lista de pendentes (dá pra restaurar depois); não apaga nem altera a transação além disso.
-        </p>
-        <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
-          <p className="font-semibold mb-1">Como fica organizado</p>
-          <p className="text-blue-600 dark:text-blue-400">
-            O que já é fixo aparece por categoria, igual à tela de Categorias: abra uma categoria para ver as subcategorias
-            e, clicando numa subcategoria, as descrições do extrato que entram nela. Só o lado de <strong>Despesas</strong> entra
-            em &ldquo;Despesa fixa / mês&rdquo; e no &ldquo;Gastos Previstos&rdquo; do Planejamento.
-          </p>
-        </div>
-        <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
-          <p className="font-semibold mb-1 flex items-center gap-1.5">
-            <CreditCard className="h-3.5 w-3.5" /> Cartões & Parcelas sempre conta
-          </p>
-          <p className="text-blue-600 dark:text-blue-400">
-            Parcelamentos ativos aparecem direto dentro de Despesas, sem precisar confirmar — uma compra parcelada já é, por natureza, uma cobrança garantida nos próximos meses.
-          </p>
-        </div>
-      </InfoBox>
-
-      {/* Resumo */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-100 dark:border-slate-700 shadow-sm">
-          <p className="text-xs text-slate-500 dark:text-slate-400">Despesa fixa / mês</p>
-          <p className="text-xl font-bold text-red-500 mt-1">{fmt(totalMonthly)}</p>
-          <p className="text-xs text-slate-400 mt-0.5">
-            {confirmedDespesaItems.length + (installments.length > 0 ? 1 : 0)} item{(confirmedDespesaItems.length + (installments.length > 0 ? 1 : 0)) !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-100 dark:border-slate-700 shadow-sm">
-          <p className="text-xs text-slate-500 dark:text-slate-400">Receita fixa / mês</p>
-          <p className="text-xl font-bold text-green-600 dark:text-green-400 mt-1">{fmt(receitaMonthly)}</p>
-          <p className="text-xs text-slate-400 mt-0.5">
-            {confirmedReceitaItems.length} item{confirmedReceitaItems.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-      </div>
-
-      {recurring.length === 0 && (
+      {recurring.length === 0 && installments.length === 0 ? (
         <EmptyState
           icon={RefreshCw}
           iconColor="text-sky-500"
@@ -516,16 +406,30 @@ function FixosPage() {
           secondaryLabel="Como funciona"
           secondaryHref="/help"
         />
+      ) : (
+        <>
+          <RecurringSummary
+            despesa={totalMonthly}
+            receita={receitaMonthly}
+            despesaCount={despesaCount}
+            receitaCount={confirmedReceitaItems.length}
+          />
+
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px] items-start">
+            <IncomeSplit groups={splitGroups} despesa={totalMonthly} receita={receitaMonthly} />
+            <MonthCalendar despesas={confirmedDespesaItems} receitas={confirmedReceitaItems} installments={installments} />
+          </div>
+        </>
       )}
 
       {/* Para revisar — detectado, ainda sem decisão. Confirmar leva o item
-          para a árvore de categorias lá embaixo. */}
+          para a tabela de categorias lá embaixo. */}
       {pendingItems.length > 0 && (
         <section className="bg-amber-50/60 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 rounded-xl p-3 space-y-1">
           <div className="flex items-center gap-2 px-3 pt-1 pb-1">
             <AlertCircle className="h-4 w-4 text-amber-500" />
             <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Para revisar</p>
-            <span className="text-xs text-slate-400">({pendingItems.length})</span>
+            <span className="text-xs text-slate-400">({pendingItems.length}) — apareceram em 2+ meses seguidos</span>
           </div>
           {[...pendingItems]
             .sort((x, y) => (x.type === y.type ? 0 : x.type === 'despesa' ? -1 : 1) || y.avgAmount - x.avgAmount)
@@ -542,7 +446,11 @@ function FixosPage() {
         </section>
       )}
 
+      <MissingAlert items={confirmedItems} today={today} />
+
       {TYPE_SECTIONS.map(renderTypeSection)}
+
+      <RecurringHelp />
     </div>
   )
 }
