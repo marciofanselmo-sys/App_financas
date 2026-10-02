@@ -10,7 +10,7 @@ import { useTransactions } from '@/hooks/use-transactions'
 import { useCategories } from '@/hooks/use-categories'
 import { useRules, applyTypeToExisting, setTransactionInternal, setTransactionsInternal, setTransactionsAporte } from '@/hooks/use-rules'
 import { useInvestmentContributions } from '@/hooks/use-investment-contributions'
-import { contributionsForBoard } from '@/lib/investment-contributions'
+import { contributionsForBoard, investmentValueOf, investmentValueLabel } from '@/lib/investment-contributions'
 import { isInternalMovement } from '@/lib/internal-movement'
 import { usePositionImport } from '@/hooks/use-position-import'
 import { TransactionTable } from '@/components/transactions/transaction-table'
@@ -565,13 +565,23 @@ export default function BoardDetailPage() {
               <div className="text-right shrink-0">
                 <p className="text-[11px] text-slate-400">Total aportado</p>
                 <p className="text-lg font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(aporteSummary.aportado)}</p>
-                {board.last_position_import && aporteSummary.configured && (() => {
-                  const gain = board.last_position_import.patrimonio - aporteSummary.aportado
+                {(() => {
+                  // Mesma regra do valor usada em Investimentos e no Dashboard.
+                  const iv = investmentValueOf(board, aportesIn)
+                  if (iv.source === 'none') return null
+                  const gain = iv.gain
                   return (
-                    <p className={`text-[11px] font-semibold tabular-nums ${gain >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                      rendimento {gain >= 0 ? '+' : '−'}{formatCurrency(Math.abs(gain))}
-                      {aporteSummary.aportado > 0 && ` (${gain >= 0 ? '+' : ''}${((gain / aporteSummary.aportado) * 100).toFixed(1).replace('.', ',')}%)`}
-                    </p>
+                    <>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        valor atual {formatCurrency(iv.value)} · {investmentValueLabel(iv, formatCurrency)}
+                      </p>
+                      {gain != null && (
+                        <p className={`text-[11px] font-semibold tabular-nums ${gain >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                          rendimento {gain >= 0 ? '+' : '−'}{formatCurrency(Math.abs(gain))}
+                          {aporteSummary.aportado > 0 && ` (${gain >= 0 ? '+' : ''}${((gain / aporteSummary.aportado) * 100).toFixed(1).replace('.', ',')}%)`}
+                        </p>
+                      )}
+                    </>
                   )
                 })()}
               </div>

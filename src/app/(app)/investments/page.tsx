@@ -19,7 +19,7 @@ import {
 import { todayISO } from '@/utils/local-date'
 import { useRules } from '@/hooks/use-rules'
 import { useInvestmentContributions } from '@/hooks/use-investment-contributions'
-import { contributionsForBoard } from '@/lib/investment-contributions'
+import { contributionsForBoard, investmentValueOf, investmentValueLabel } from '@/lib/investment-contributions'
 import { ContributionsSetup } from '@/components/investments/contributions-setup'
 import { EmptyState } from '@/components/ui/empty-state'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -105,9 +105,12 @@ function InvestmentsPage() {
   )
   // Rendimento só das contas com valor E aportes — misturar contas sem
   // aporte configurado daria um "rendimento" igual ao valor inteiro delas.
-  const gainBoards = boards.filter(b => b.last_position_import && contributions.get(b.id)?.configured)
-  const totalInvested = gainBoards.reduce((s, b) => s + (contributions.get(b.id)?.aportado ?? 0), 0)
-  const totalValue = gainBoards.reduce((s, b) => s + (b.last_position_import?.patrimonio ?? 0), 0)
+  // Valor de cada conta pela regra (investmentValueOf): extrato + aportes
+  // depois dele, ou, sem extrato, a soma dos aportes.
+  const values = useMemo(() => new Map(boards.map(b => [b.id, investmentValueOf(b, linked)])), [boards, linked])
+  const gainBoards = boards.filter(b => values.get(b.id)?.gain != null)
+  const totalInvested = gainBoards.reduce((s, b) => s + (values.get(b.id)?.aportado ?? 0), 0)
+  const totalValue = gainBoards.reduce((s, b) => s + (values.get(b.id)?.value ?? 0), 0)
 
   // "Atualizar valor": para contas sem planilha (cripto, previdência, Tesouro,
   // outra corretora) — o valor informado vira a posição atual da conta.
@@ -409,19 +412,19 @@ function InvestmentsPage() {
                         </div>
                       </div>
 
-                      {imp ? (
+                      {(imp || values.get(board.id)?.source === 'aportes') ? (
                         <>
                           <p className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500 mt-3">Patrimônio</p>
-                          <p className="text-lg font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(imp.patrimonio)}</p>
+                          <p className="text-lg font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(values.get(board.id)?.value ?? 0)}</p>
+                          <p className="text-[11px] text-slate-400">{investmentValueLabel(values.get(board.id)!, formatCurrency)}</p>
                           {allocTotal > 0 && (
                             <div className="flex h-1.5 rounded-full overflow-hidden mt-2 bg-slate-100 dark:bg-white/[0.08]">
                               {alloc.map(a => <div key={a.name} title={a.name} style={{ width: `${(a.value / allocTotal) * 100}%`, backgroundColor: a.color }} />)}
                             </div>
                           )}
-                          <p className="text-[11px] text-slate-400 mt-1.5">
-                            {imp.source === 'manual' ? 'valor informado' : `${imp.positions.length} ativo${imp.positions.length === 1 ? '' : 's'}`} · atualizado em{' '}
-                            {new Date(imp.importedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')}
-                          </p>
+                          {imp && imp.source !== 'manual' && (
+                            <p className="text-[11px] text-slate-400 mt-1.5">{imp.positions.length} ativo{imp.positions.length === 1 ? '' : 's'} no extrato</p>
+                          )}
                           {(() => {
                             const c = contributions.get(board.id)
                             if (!c?.configured) {
@@ -435,7 +438,21 @@ function InvestmentsPage() {
                                 </button>
                               )
                             }
-                            const gain = imp.patrimonio - c.aportado
+                            const iv = values.get(board.id)!
+                            if (iv.gain == null) {
+                              return (
+                                <div className="mt-2 pt-2 border-t border-slate-100 dark:border-white/[0.06] text-[11px]" onClick={e => e.stopPropagation()}>
+                                  <p className="text-slate-400">Aportado <span className="font-semibold text-slate-700 dark:text-slate-200 tabular-nums">{formatCurrency(c.aportado)}</span></p>
+                                  <p className="text-slate-400 mt-0.5">
+                                    Rendimento aparece com um extrato ·{' '}
+                                    <button type="button" onClick={() => openManual(board)} className="font-semibold text-blue-600 dark:text-blue-400 hover:underline">informar valor</button>
+                                    {' '}ou{' '}
+                                    <button type="button" onClick={() => openPositionImport(board)} className="font-semibold text-blue-600 dark:text-blue-400 hover:underline">importar planilha</button>
+                                  </p>
+                                </div>
+                              )
+                            }
+                            const gain = iv.gain
                             return (
                               <div className="mt-2 pt-2 border-t border-slate-100 dark:border-white/[0.06] grid grid-cols-2 gap-2 text-[11px]">
                                 <div>
