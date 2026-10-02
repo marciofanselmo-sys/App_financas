@@ -185,7 +185,7 @@ export function MissingAlert({ items, today }: { items: DisplayItem[]; today: Da
             {' '}— {gone.map(g => `${g.item.name} (último em ${MONTHS[Number(g.item.lastDate.slice(5, 7)) - 1]})`).join(', ')}.
           </span>
         </p>
-        <p className="text-xs text-slate-400 mt-0.5">Se foram cancelados, desfaça a confirmação (↺) e eles saem do total.</p>
+        <p className="text-xs text-slate-400 mt-0.5">Se foram cancelados, use Desfixar na linha do item e eles saem do total.</p>
       </div>
     </div>
   )
@@ -322,10 +322,10 @@ function FixedItem({ item, today, totalClass, onUndo }: { item: DisplayItem; tod
         <button
           type="button"
           onClick={onUndo}
-          title="Desfazer confirmação"
-          className="shrink-0 h-6 w-6 inline-flex items-center justify-center rounded-md text-slate-300 hover:text-slate-600 dark:text-slate-600 dark:hover:text-slate-300 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity self-center"
+          title="Desfixar: sai do total e volta para Para revisar"
+          className="shrink-0 self-center inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-white/[0.1] px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:text-slate-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
         >
-          <RotateCcw className="h-3.5 w-3.5" />
+          <RotateCcw className="h-3 w-3" /> Desfixar
         </button>
       </div>
       <p className="mt-1 text-[11px] text-slate-400 flex flex-wrap items-center gap-x-1.5">
@@ -385,7 +385,7 @@ export function RecurringHelp() {
             </HelpItem>
             <HelpItem icon={SearchX} iconClass="text-red-500" title="Fixo que sumiu.">
               Um fixo confirmado que não apareceu no mês passado ganha o aviso &ldquo;Não veio em…&rdquo;. Nada muda
-              sozinho: se foi cancelado, desfaça a confirmação.
+              sozinho: se foi cancelado, use Desfixar.
             </HelpItem>
           </div>
 
@@ -402,8 +402,8 @@ export function RecurringHelp() {
               O que já é fixo aparece por categoria. Abra uma para ver os itens; numa subcategoria, clique para ver as
               descrições do extrato que entram nela.
             </HelpItem>
-            <HelpItem icon={RotateCcw} title="Desfazer.">
-              O ↺ na linha do item volta ele para &ldquo;Para revisar&rdquo; e tira do total.
+            <HelpItem icon={RotateCcw} title="Desfixar.">
+              O botão Desfixar na linha do item tira ele do total e volta para &ldquo;Para revisar&rdquo;. Para tirar de vez, use Ignorar lá.
             </HelpItem>
             <HelpItem icon={Eye} title="Cartões & Parcelas.">
               Parcelamentos ativos entram em Despesas sem precisar confirmar — já são cobranças garantidas.

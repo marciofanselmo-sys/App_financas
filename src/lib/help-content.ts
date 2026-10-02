@@ -524,7 +524,7 @@ export const HELP_SECTIONS: HelpSection[] = [
         title: 'Fixo que não apareceu',
         body: [
           'Um fixo confirmado que não veio no mês passado ganha o aviso "Não veio em…".',
-          'Se foi cancelado, desfaça a confirmação (↺) e ele sai do total. Nada muda sozinho.',
+          'Se foi cancelado, use o botão Desfixar na linha do item e ele sai do total. Nada muda sozinho.',
         ],
         tip: 'Se o extrato do mês ainda não foi importado, o aviso aparece para os fixos daquela conta — importe e ele some.',
       },
