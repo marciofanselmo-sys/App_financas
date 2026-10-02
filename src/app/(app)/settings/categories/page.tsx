@@ -19,7 +19,11 @@ import { Badge } from '@/components/ui/badge'
 import {
   Plus, Pencil, Trash2, Tag, RotateCcw, Search, AlertTriangle, ArrowRight,
   TrendingDown, TrendingUp, ChevronDown, ChevronRight, Sparkles, Lock, Unlock, Loader2,
+  MoreVertical, Split, Compass,
 } from 'lucide-react'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { isInternalMovement } from '@/lib/internal-movement'
+import { CategoriesHelp } from '@/components/categories/categories-help'
 import { cn } from '@/lib/utils'
 import { CATEGORY_ICONS, CategoryIcon, categoryIconKey, guessIconKey } from '@/lib/category-icons'
 
@@ -27,11 +31,6 @@ const TYPE_LABELS: Record<CategoryType, string> = {
   receita: 'Receita', despesa: 'Despesa', ambos: 'Ambos',
 }
 
-const TYPE_BADGE: Record<CategoryType, string> = {
-  receita: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-  despesa: 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400',
-  ambos:   'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
-}
 
 const BUCKET_LABELS: Record<CategoryBucket, string> = {
   essencial: 'Essencial', estilo: 'Estilo de vida', futuro: 'Futuro',
@@ -41,18 +40,6 @@ const NO_BUCKET = '__nenhuma__'
 const NO_PARENT = '__principal__'
 
 type SectionType = 'despesa' | 'receita'
-const SECTION_ORDER: SectionType[] = ['despesa', 'receita']
-
-const SECTION_META: Record<SectionType, { label: string; icon: React.ElementType; iconColor: string; iconBg: string; help: string }> = {
-  despesa: {
-    label: 'Despesas', icon: TrendingDown, iconColor: 'text-red-500', iconBg: 'bg-red-50 dark:bg-red-900/20',
-    help: 'Dinheiro que sai de verdade: contas, compras, assinaturas... Conta como gasto real no saldo, no planejamento e nos relatórios.',
-  },
-  receita: {
-    label: 'Receitas', icon: TrendingUp, iconColor: 'text-green-500', iconBg: 'bg-green-50 dark:bg-green-900/20',
-    help: 'Dinheiro que entra: salário, freelance, vendas... Conta como ganho real no saldo, no dashboard e nos relatórios.',
-  },
-}
 
 const money = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -199,6 +186,27 @@ export default function CategoriesPage() {
       ? (usageCount[`despesa|${n}`] ?? 0) + (usageCount[`receita|${n}`] ?? 0)
       : (usageCount[`${cat.type}|${n}`] ?? 0)
   }
+
+  // Média por mês nos 3 últimos meses fechados, por tipo|nome — o valor de
+  // cada linha (mesmo jeito de ler da Análise). Mês corrente fica de fora
+  // para um mês pela metade não puxar a média para baixo.
+  const AVG_MONTHS = 3
+  const avgByTypeName = useMemo(() => {
+    const now = new Date()
+    const ym = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const end = ym(now)
+    const start = ym(new Date(now.getFullYear(), now.getMonth() - AVG_MONTHS, 1))
+    const map: Record<string, number> = {}
+    for (const t of transactions) {
+      if (!t.category || isInternalMovement(t)) continue
+      const m = t.date.slice(0, 7)
+      if (m < start || m >= end) continue
+      const k = `${t.type}|${t.category.trim().toLowerCase()}`
+      map[k] = (map[k] ?? 0) + Number(t.amount) / AVG_MONTHS
+    }
+    return map
+  }, [transactions])
+  const avgOf = (cat: Category, type: SectionType) => avgByTypeName[`${type}|${cat.name.trim().toLowerCase()}`] ?? 0
 
   // Totais por evento: quanto saiu, quanto voltou (estorno/reembolso) e o período.
   const eventStats = useMemo(() => {
@@ -524,82 +532,140 @@ export default function CategoriesPage() {
     return (cat.parent_id && categories.find(c => c.id === cat.parent_id)?.color) || cat.color
   }
 
-  function renderCategoryRow(cat: Category, isChild: boolean, motherType?: CategoryType) {
-    const count = countOf(cat)
+  // ⋮ de cada linha: as ações que antes eram três ícones soltos.
+  function renderActions(cat: Category, isChild: boolean) {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-white/[0.06] shrink-0"
+          aria-label={`Ações de ${cat.name}`}
+        >
+          <MoreVertical className="h-4 w-4" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52">
+          {!isChild && (
+            <DropdownMenuItem onClick={() => { setExpanded(prev => new Set(prev).add(cat.id)); openCreate(cat.id) }}>
+              <Plus className="h-4 w-4 mr-2" /> Nova subcategoria
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem onClick={() => openEdit(cat)}>
+            <Pencil className="h-4 w-4 mr-2" /> Editar
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setMergeState({ from: cat, toId: '', mode: 'mover' })}>
+            <ArrowRight className="h-4 w-4 mr-2" /> Mover para outra categoria
+          </DropdownMenuItem>
+          {cat.type === 'ambos' && !isOutros(cat) && (
+            <DropdownMenuItem disabled={splitting === cat.id} onClick={() => setSplitState({ cat, parentId: null })}>
+              <Split className="h-4 w-4 mr-2" /> Separar em despesa e receita
+            </DropdownMenuItem>
+          )}
+          {!isOutros(cat) && (
+            <DropdownMenuItem className="text-red-600 focus:text-red-600" onClick={() => { setDeleteError(''); setDeleteTarget(cat) }}>
+              <Trash2 className="h-4 w-4 mr-2" /> Excluir
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+  }
+
+  // Subcategoria: ponto na cor da mãe, nome, lançamentos, média e ⋮.
+  function renderChild(kid: Category, parent: Category, type: SectionType) {
+    const count = countOf(kid)
     // Tipo diferente do da mãe não quebra conta nenhuma (o cálculo usa o tipo
     // do lançamento), mas embaralha a leitura dos relatórios — vale avisar.
-    const typeMismatch = !!motherType && motherType !== 'ambos' && cat.type !== 'ambos' && cat.type !== motherType
+    const typeMismatch = parent.type !== 'ambos' && kid.type !== 'ambos' && kid.type !== parent.type
     return (
-      <div
-        key={cat.id}
-        className={cn(
-          'flex items-center gap-3 rounded-xl px-3 py-2 transition-colors',
-          isChild
-            ? 'hover:bg-slate-50 dark:hover:bg-white/[0.03]'
-            : 'bg-white dark:bg-slate-800 px-4 py-3 shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700',
-        )}
-      >
-        {isChild ? (
-          <span className="h-2 w-2 rounded-full shrink-0 ml-1" style={{ backgroundColor: colorOfMother(cat) }} />
-        ) : (
-          <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: cat.color + '25' }}>
-            <RowIcon iconKey={categoryIconKey(cat, categories)} color={cat.color} />
-          </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <p className={cn('truncate', isChild
-            ? 'text-sm text-slate-600 dark:text-slate-300'
-            : 'font-semibold text-slate-700 dark:text-slate-200 text-sm')}>
-            {cat.name}
-          </p>
-          {count > 0 && (
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-              {count} transaç{count === 1 ? 'ão' : 'ões'}
-            </p>
-          )}
-        </div>
-        {cat.bucket && !isChild && (
-          <Badge className="text-[10px] shrink-0 border-0 bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-            {BUCKET_LABELS[cat.bucket]}
-          </Badge>
-        )}
-        {/* Sempre visível, inclusive nas subcategorias: sem isso não dava para
-            saber se uma subcategoria era de entrada ou de saída. */}
-        <Badge className={`text-xs shrink-0 border-0 ${TYPE_BADGE[cat.type]}`}>{TYPE_LABELS[cat.type]}</Badge>
+      <div key={kid.id} className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-white/[0.03]">
+        <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: colorOfMother(kid) }} />
+        <span className="flex-1 min-w-0 text-[13px] text-slate-600 dark:text-slate-300 truncate">{kid.name}</span>
         {typeMismatch && (
           <span
-            title="Esta subcategoria é de um tipo diferente da categoria em que está. Use a seta (→) para movê-la."
+            title="Esta subcategoria é de um tipo diferente da categoria em que está. Use Mover no menu ⋮."
             className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 shrink-0"
           >
             <AlertTriangle className="h-2.5 w-2.5" /> fora do tipo
           </span>
         )}
-        {cat.type === 'ambos' && cat.name.toLowerCase() !== 'outros' && (
-          <Button
-            variant="ghost" size="sm" className="h-7 text-xs shrink-0 text-blue-600 dark:text-blue-400"
-            title="Cria uma categoria de receita com o mesmo nome e deixa esta como despesa"
-            disabled={splitting === cat.id}
-            onClick={() => setSplitState({ cat, parentId: null })}
-          >
-            {splitting === cat.id ? 'Separando...' : 'Separar'}
-          </Button>
-        )}
-        <div className="flex gap-1 shrink-0">
-          <Button variant="ghost" size="icon" className="h-8 w-8" title="Mover para outra categoria"
-            onClick={() => setMergeState({ from: cat, toId: '', mode: 'mover' })}>
-            <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" title="Editar" onClick={() => openEdit(cat)}>
-            <Pencil className="h-3.5 w-3.5 text-slate-400" />
-          </Button>
-          {!isOutros(cat) && (
-            <Button variant="ghost" size="icon" title="Excluir"
-              className="h-8 w-8 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-              onClick={() => { setDeleteError(''); setDeleteTarget(cat) }}>
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          )}
+        <span className="hidden sm:inline text-[11px] text-slate-400 shrink-0">{count} lançamento{count === 1 ? '' : 's'}</span>
+        <span className="w-24 text-right text-[13px] font-semibold tabular-nums text-slate-700 dark:text-slate-200 shrink-0">
+          {money(avgOf(kid, type))}
+        </span>
+        {renderActions(kid, true)}
+      </div>
+    )
+  }
+
+  // Linha de categoria no modelo da Análise: ícone redondo, nome, pilar,
+  // barra, média por mês e ⋮. `compact` = card de Receitas (sem barra).
+  function renderParent(parent: Category, type: SectionType, max: number, compact = false) {
+    const kids = (childrenOf.get(parent.id) ?? [])
+      // Uma mãe "Ambos" (o Outros) aparece nas duas seções; cada uma mostra
+      // só as subcategorias do tipo dela.
+      .filter(k => k.type === type || k.type === 'ambos')
+      .filter(k => !q || matches(k) || matches(parent))
+    // Buscando, abre sozinho para mostrar a subcategoria encontrada.
+    const open = expanded.has(parent.id) || !!q
+    const total = countOf(parent) + kids.reduce((sum, k) => sum + countOf(k), 0)
+    const value = avgOf(parent, type) + kids.reduce((sum, k) => sum + avgOf(k, type), 0)
+    // Lançamentos direto na mãe só viram linha quando ela tem subcategorias
+    // (sem elas, já são os da própria categoria). "Outros" sempre mostra.
+    const direct = txsByTypeName.get(`${type}|${parent.name.trim().toLowerCase()}`) ?? []
+    const showDirect = direct.length > 0 && (kids.length > 0 || isOutros(parent))
+    const color = parent.color
+    const valueClass = type === 'receita' ? 'text-green-600 dark:text-green-400' : 'text-red-500'
+    const bar = (
+      <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+        <div className="h-full rounded-full" style={{ width: `${max > 0 ? (value / max) * 100 : 0}%`, backgroundColor: color }} />
+      </div>
+    )
+    return (
+      <div key={`${type}:${parent.id}`} id={`cat-${type}-${parent.id}`} className="py-3 scroll-mt-20">
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => toggle(parent.id)} aria-expanded={open}
+            className="flex-1 min-w-0 flex items-center gap-3 text-left group">
+            <ChevronRight className={cn('h-4 w-4 text-slate-400 shrink-0 transition-transform', open && 'rotate-90')} />
+            <span className={cn('rounded-full flex items-center justify-center shrink-0', compact ? 'h-8 w-8' : 'h-9 w-9')}
+              style={{ backgroundColor: `${color}1f`, color }}>
+              <CategoryIcon iconKey={categoryIconKey(parent, categories)} className="h-4 w-4" />
+            </span>
+            <span className={cn('min-w-0', compact ? 'flex-1' : 'flex-1 sm:flex-none sm:w-52')}>
+              <span className="block text-sm font-medium text-slate-700 dark:text-slate-200 truncate group-hover:underline">{parent.name}</span>
+              <span className="block text-[11px] text-slate-400 truncate">
+                {kids.length} subcategoria{kids.length === 1 ? '' : 's'} · {total} lançamento{total === 1 ? '' : 's'}
+              </span>
+            </span>
+            {!compact && type === 'despesa' && (
+              parent.bucket ? (
+                <Badge className="hidden md:inline-flex text-[10px] shrink-0 border-0 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                  {BUCKET_LABELS[parent.bucket]}
+                </Badge>
+              ) : !isOutros(parent) ? (
+                <Badge className="hidden md:inline-flex text-[10px] shrink-0 border-0 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                  sem pilar
+                </Badge>
+              ) : null
+            )}
+            {!compact && <span className="hidden sm:block flex-1 min-w-0">{bar}</span>}
+            <span className="shrink-0 text-right w-24">
+              <span className={cn('block text-sm font-semibold tabular-nums whitespace-nowrap', valueClass)}>{money(value)}</span>
+              <span className="block text-[10.5px] text-slate-400">média/mês</span>
+            </span>
+          </button>
+          {renderActions(parent, false)}
         </div>
+        {!compact && <div className="sm:hidden mt-2 ml-[76px] mr-11">{bar}</div>}
+
+        {open && (
+          <div className={cn('mt-2 pl-3 border-l-2 border-slate-100 dark:border-white/[0.08]', compact ? 'ml-4' : 'ml-[30px]')}>
+            {showDirect && renderDirectRow(parent, type, direct)}
+            {kids.map(kid => renderChild(kid, parent, type))}
+            <button type="button" onClick={() => openCreate(parent.id)}
+              className="mt-1 ml-2 flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">
+              <Plus className="h-3.5 w-3.5" /> Nova subcategoria
+            </button>
+          </div>
+        )}
       </div>
     )
   }
@@ -614,8 +680,74 @@ export default function CategoriesPage() {
     colorUsers.set(c.color, list)
   }
 
+  // ── Números da coluna da direita ──
+  const outrosParent = parents.find(isOutros)
+  const strandedKids = outrosParent ? (childrenOf.get(outrosParent.id) ?? []) : []
+  const unlabeledList = parents.filter(p => !p.bucket && p.type !== 'receita' && !isOutros(p))
+  const outrosDirect = outrosParent ? (txsByTypeName.get(`despesa|${outrosParent.name.trim().toLowerCase()}`) ?? []) : []
+  const parentValue = (p: Category, type: SectionType) =>
+    avgOf(p, type) + (childrenOf.get(p.id) ?? [])
+      .filter(k => k.type === type || k.type === 'ambos')
+      .reduce((sum, k) => sum + avgOf(k, type), 0)
+  const expenseParents = [...bySection.despesa].sort((a, b) => {
+    if (isOutros(a)) return 1
+    if (isOutros(b)) return -1
+    return parentValue(b, 'despesa') - parentValue(a, 'despesa')
+  })
+  const incomeList = [...bySection.receita].sort((a, b) => {
+    if (isOutros(a)) return 1
+    if (isOutros(b)) return -1
+    return parentValue(b, 'receita') - parentValue(a, 'receita')
+  })
+  const expenseMax = Math.max(0, ...expenseParents.map(p => parentValue(p, 'despesa')))
+  const expenseTotal = expenseParents.reduce((sum, p) => sum + parentValue(p, 'despesa'), 0)
+  const PILLARS: { key: CategoryBucket | 'none'; label: string; color: string }[] = [
+    { key: 'essencial', label: 'Essencial', color: '#2563eb' },
+    { key: 'estilo', label: 'Estilo de vida', color: '#db2777' },
+    { key: 'futuro', label: 'Futuro', color: '#16a34a' },
+    { key: 'none', label: 'Sem pilar', color: '#cbd5e1' },
+  ]
+  const allExpenseParents = parents.filter(p => p.type === 'despesa' || p.type === 'ambos')
+  const pillarTotals = PILLARS.map(pl => ({
+    ...pl,
+    value: allExpenseParents
+      .filter(p => (p.bucket ?? 'none') === pl.key)
+      .reduce((sum, p) => sum + parentValue(p, 'despesa'), 0),
+  }))
+  const pillarSum = pillarTotals.reduce((sum, p) => sum + p.value, 0)
+
+  function reviewOutros() {
+    if (!outrosParent) return
+    setSearch('')
+    setExpanded(prev => new Set(prev).add(outrosParent.id))
+    setOpenDirect(`despesa|${outrosParent.id}`)
+    setTimeout(() => document.getElementById(`cat-despesa-${outrosParent.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
+
+  const cardCls = 'bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06]'
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Categorias</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+            Como o app organiza cada lançamento — e o pilar 50/30/20 de cada categoria.
+          </p>
+        </div>
+        {tab === 'categorias' && (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleSeedDefaults} disabled={seeding} className="gap-2">
+              <RotateCcw className={`h-4 w-4 ${seeding ? 'animate-spin' : ''}`} />
+              Restaurar padrões
+            </Button>
+            <Button size="sm" onClick={() => openCreate(null)} className="gap-2">
+              <Plus className="h-4 w-4" /> Nova categoria
+            </Button>
+          </div>
+        )}
+      </div>
+
       <CategoryConversionCard
         categories={categories}
         groups={subcategories}
@@ -631,67 +763,16 @@ export default function CategoriesPage() {
               tab === t
                 ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm'
                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-700')}>
-            {t === 'categorias' ? 'Categorias' : 'Eventos'}
+            {t === 'categorias' ? 'Categorias' : `Eventos${events.events.length ? ` · ${events.events.length}` : ''}`}
           </button>
         ))}
       </div>
 
       {tab === 'categorias' ? (
         <>
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              {parents.length} categorias · {categories.length - parents.length} subcategorias
-            </p>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={handleSeedDefaults} disabled={seeding} className="gap-2">
-                <RotateCcw className={`h-4 w-4 ${seeding ? 'animate-spin' : ''}`} />
-                Restaurar padrões
-              </Button>
-              <Button size="sm" onClick={() => openCreate(null)} className="gap-2">
-                <Plus className="h-4 w-4" /> Nova categoria
-              </Button>
-            </div>
-          </div>
-
           {seedError && (
             <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
               Erro ao restaurar: {seedError}
-            </div>
-          )}
-
-          {(() => {
-            const outros = parents.find(isOutros)
-            const stranded = outros ? (childrenOf.get(outros.id) ?? []).length : 0
-            const unlabeled = parents.filter(p => !p.bucket && p.type !== 'receita' && !isOutros(p)).length
-            if (stranded === 0 && unlabeled === 0) return null
-            return (
-              <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-xl p-3.5">
-                <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
-                <div className="text-sm text-amber-700 dark:text-amber-300 space-y-1">
-                  <p className="font-semibold">Vale organizar</p>
-                  {stranded > 0 && (
-                    <p>
-                      <strong>{stranded}</strong> subcategoria{stranded === 1 ? ' está' : 's estão'} dentro de &ldquo;Outros&rdquo;.
-                      Edite cada uma e escolha a categoria certa no campo <strong>Dentro de</strong> — os relatórios e o
-                      Planejamento passam a fazer sentido.
-                    </p>
-                  )}
-                  {unlabeled > 0 && (
-                    <p>
-                      <strong>{unlabeled}</strong> categoria{unlabeled === 1 ? '' : 's'} de despesa sem a etiqueta
-                      Essencial / Estilo de vida / Futuro. Sem ela, o painel 50/30/20 do Planejamento fica incompleto.
-                    </p>
-                  )}
-                </div>
-              </div>
-            )
-          })()}
-
-          {categories.length > 0 && (
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <Input placeholder="Buscar categoria ou subcategoria..." value={search}
-                onChange={e => setSearch(e.target.value)} className="pl-9" />
             </div>
           )}
 
@@ -711,82 +792,129 @@ export default function CategoriesPage() {
                 {seeding ? 'Criando...' : 'Criar categorias padrão'}
               </Button>
             </div>
-          ) : visibleParents.length === 0 ? (
-            <p className="text-center text-sm text-slate-400 py-10">Nada encontrado para &ldquo;{search}&rdquo;</p>
           ) : (
-            <div className="space-y-6">
-              {SECTION_ORDER.map(type => {
-                const items = bySection[type]
-                if (items.length === 0) return null
-                const { label, icon: Icon, iconColor, iconBg, help } = SECTION_META[type]
-                return (
-                  <section key={type} className="space-y-2">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
+              {/* Despesas por categoria — mesmo modelo da Análise */}
+              <section className={cn(cardCls, 'overflow-hidden')}>
+                <div className="p-5 pb-2">
+                  <div className="flex items-center gap-2">
+                    <TrendingDown className="h-4 w-4 text-red-500 shrink-0" />
+                    <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Despesas por categoria</h2>
+                  </div>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 ml-6">
+                    Clique numa categoria para ver e criar subcategorias. Valor = média por mês nos {AVG_MONTHS} últimos meses fechados.
+                  </p>
+                  <div className="relative mt-3">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <Input placeholder="Buscar categoria ou subcategoria..." value={search}
+                      onChange={e => setSearch(e.target.value)} className="pl-9" />
+                  </div>
+                  {expenseParents.length === 0 ? (
+                    <p className="text-center text-sm text-slate-400 py-10">
+                      {q ? <>Nada encontrado para &ldquo;{search}&rdquo;</> : 'Nenhuma categoria de despesa.'}
+                    </p>
+                  ) : (
+                    <div className="mt-2 divide-y divide-slate-100 dark:divide-slate-700/60">
+                      {expenseParents.map(p => renderParent(p, 'despesa', expenseMax))}
+                    </div>
+                  )}
+                </div>
+                <div className="border-t border-slate-100 dark:border-slate-700 px-5 py-3 bg-slate-50 dark:bg-slate-700/40 flex justify-between items-center">
+                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    {expenseParents.length} categoria{expenseParents.length === 1 ? '' : 's'} de despesa
+                  </span>
+                  <span className="text-sm font-bold text-slate-800 dark:text-slate-100 tabular-nums">{money(expenseTotal)}/mês</span>
+                </div>
+              </section>
+
+              <div className="space-y-4">
+                {/* Vale organizar — o que falta arrumar, com botão */}
+                {(unlabeledList.length > 0 || strandedKids.length > 0 || outrosDirect.length > 0) && (
+                  <section className="rounded-2xl border border-amber-200 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/20 p-5">
                     <div className="flex items-center gap-2">
-                      <div className={cn('h-7 w-7 rounded-lg flex items-center justify-center', iconBg)}>
-                        <Icon className={cn('h-4 w-4', iconColor)} />
-                      </div>
-                      <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">{label}</h2>
-                      <span className="text-xs text-slate-400">({items.length})</span>
+                      <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+                      <h2 className="text-base font-semibold text-amber-800 dark:text-amber-300">Vale organizar</h2>
                     </div>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 ml-9 -mt-1">{help}</p>
-
-                    <div className="space-y-2">
-                      {items.map(parent => {
-                        // Uma mãe "Ambos" (o Outros) aparece nas duas seções.
-                        // Cada seção mostra só as subcategorias do tipo dela,
-                        // senão a mesma lista se repete em Despesas e em
-                        // Receitas e parece que está tudo duplicado.
-                        const kids = (childrenOf.get(parent.id) ?? [])
-                          .filter(k => k.type === type || k.type === 'ambos')
-                          .filter(k => !q || matches(k) || matches(parent))
-                        // Buscando, abre sozinho para mostrar a subcategoria encontrada.
-                        const open = expanded.has(parent.id) || !!q
-                        const total = countOf(parent) + kids.reduce((sum, k) => sum + countOf(k), 0)
-                        // Só aparece quando a mãe já tem subcategorias: sem elas,
-                        // os lançamentos diretos já são os da própria categoria.
-                        // "Outros" é a exceção — sempre mostra, para reorganizar.
-                        const direct = txsByTypeName.get(`${type}|${parent.name.trim().toLowerCase()}`) ?? []
-                        const showDirect = direct.length > 0 && (kids.length > 0 || isOutros(parent))
-                        return (
-                          <div key={parent.id} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors">
-                            <div className="flex items-center gap-1 pl-2">
-                              <button type="button" onClick={() => toggle(parent.id)}
-                                className="h-7 w-7 flex items-center justify-center text-slate-400 hover:text-slate-600 shrink-0"
-                                title={open ? 'Recolher' : 'Expandir'}>
-                                {kids.length > 0 || showDirect
-                                  ? (open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />)
-                                  : <span className="h-4 w-4" />}
-                              </button>
-                              <div className="flex-1 min-w-0">{renderCategoryRow(parent, false)}</div>
-                            </div>
-
-                            {open && (
-                              <div className="pb-2 pl-10 pr-2">
-                                {(kids.length > 0 || showDirect) && (
-                                  <div className="border-l-2 border-slate-100 dark:border-white/[0.08] pl-2">
-                                    {showDirect && renderDirectRow(parent, type, direct)}
-                                    {kids.map(kid => renderCategoryRow(kid, true, parent.type))}
-                                  </div>
-                                )}
-                                <button type="button" onClick={() => openCreate(parent.id)}
-                                  className="mt-1 ml-3 flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">
-                                  <Plus className="h-3.5 w-3.5" /> Nova subcategoria
-                                </button>
-                              </div>
-                            )}
-
-                            {!open && total > 0 && (
-                              <p className="px-4 pb-2 text-xs text-slate-400 dark:text-slate-500">
-                                {kids.length} subcategoria{kids.length === 1 ? '' : 's'} · {total} transaç{total === 1 ? 'ão' : 'ões'} no total
-                              </p>
-                            )}
+                    <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-0.5 ml-6">Deixa relatórios e Planejamento mais certos</p>
+                    <ul className="mt-3 divide-y divide-amber-200/70 dark:divide-amber-700/40">
+                      {unlabeledList.length > 0 && (
+                        <li className="flex items-start gap-3 py-2.5">
+                          <div className="flex-1 min-w-0 text-xs text-amber-800 dark:text-amber-300">
+                            <p className="font-semibold">{unlabeledList.length} categoria{unlabeledList.length === 1 ? '' : 's'} sem pilar</p>
+                            <p className="truncate">{unlabeledList.slice(0, 3).map(p => p.name).join(', ')}{unlabeledList.length > 3 ? '…' : ''} — fora do 50/30/20.</p>
                           </div>
-                        )
-                      })}
-                    </div>
+                          <button type="button" onClick={() => openEdit(unlabeledList[0])} className="text-xs font-bold text-amber-700 dark:text-amber-300 hover:underline shrink-0">Definir</button>
+                        </li>
+                      )}
+                      {strandedKids.length > 0 && (
+                        <li className="flex items-start gap-3 py-2.5">
+                          <div className="flex-1 min-w-0 text-xs text-amber-800 dark:text-amber-300">
+                            <p className="font-semibold">{strandedKids.length} subcategoria{strandedKids.length === 1 ? '' : 's'} dentro de &ldquo;Outros&rdquo;</p>
+                            <p className="truncate">{strandedKids.slice(0, 3).map(k => k.name).join(', ')} — escolha a categoria certa.</p>
+                          </div>
+                          <button type="button" onClick={() => setMergeState({ from: strandedKids[0], toId: '', mode: 'mover' })} className="text-xs font-bold text-amber-700 dark:text-amber-300 hover:underline shrink-0">Mover</button>
+                        </li>
+                      )}
+                      {outrosDirect.length > 0 && (
+                        <li className="flex items-start gap-3 py-2.5">
+                          <div className="flex-1 min-w-0 text-xs text-amber-800 dark:text-amber-300">
+                            <p className="font-semibold">{outrosDirect.length} lançamento{outrosDirect.length === 1 ? '' : 's'} em &ldquo;Outros&rdquo;</p>
+                            <p>Categorize e o app cria a regra.</p>
+                          </div>
+                          <button type="button" onClick={reviewOutros} className="text-xs font-bold text-amber-700 dark:text-amber-300 hover:underline shrink-0">Revisar</button>
+                        </li>
+                      )}
+                    </ul>
                   </section>
-                )
-              })}
+                )}
+
+                {/* Pilares 50/30/20 */}
+                <section className={cn(cardCls, 'p-5')}>
+                  <div className="flex items-center gap-2">
+                    <Compass className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                    <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Pilares 50/30/20</h2>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5 ml-6">Seu gasto médio por pilar</p>
+                  {pillarSum > 0 ? (
+                    <>
+                      <div className="flex h-3 rounded-full overflow-hidden mt-3 bg-slate-100 dark:bg-white/[0.08]">
+                        {pillarTotals.map(pl => pl.value > 0 && (
+                          <div key={pl.key} title={`${pl.label}: ${money(pl.value)}`} style={{ width: `${(pl.value / pillarSum) * 100}%`, backgroundColor: pl.color }} />
+                        ))}
+                      </div>
+                      <ul className="mt-3 space-y-1.5">
+                        {pillarTotals.map(pl => (
+                          <li key={pl.key} className="flex items-center gap-2 text-xs">
+                            <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: pl.color }} />
+                            <span className="flex-1 text-slate-600 dark:text-slate-300">{pl.label}</span>
+                            <span className="tabular-nums text-slate-400">{Math.round((pl.value / pillarSum) * 100)}%</span>
+                            <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-200 w-24 text-right">{money(pl.value)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : (
+                    <p className="text-xs text-slate-400 mt-3">Sem gastos nos últimos meses para dividir.</p>
+                  )}
+                  <p className="text-[11px] text-slate-400 mt-3">O pilar de cada categoria alimenta o Planejamento.</p>
+                </section>
+
+                {/* Receitas */}
+                <section className={cn(cardCls, 'p-5')}>
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-green-600 shrink-0" />
+                    <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Receitas</h2>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5 ml-6">Categorias de entrada</p>
+                  {incomeList.length === 0 ? (
+                    <p className="text-xs text-slate-400 mt-3">{q ? 'Nada encontrado.' : 'Nenhuma categoria de receita.'}</p>
+                  ) : (
+                    <div className="mt-1 divide-y divide-slate-100 dark:divide-slate-700/60">
+                      {incomeList.map(p => renderParent(p, 'receita', 0, true))}
+                    </div>
+                  )}
+                </section>
+              </div>
             </div>
           )}
         </>
@@ -927,6 +1055,8 @@ export default function CategoriesPage() {
           )}
         </>
       )}
+
+      <CategoriesHelp />
 
       {/* FORM CATEGORIA */}
       <Dialog open={formOpen} onOpenChange={v => { if (!v) setFormOpen(false) }}>
