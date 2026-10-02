@@ -603,6 +603,8 @@ export const HELP_SECTIONS: HelpSection[] = [
           'Evento é uma etiqueta por cima da categoria: uma viagem, uma reforma, um campeonato.',
           'O lançamento continua na categoria normal (Alimentação, Transporte…) e também soma no evento — você vê quanto custou sem bagunçar os relatórios do mês.',
           'Quando acabar, encerre o evento: ele some da lista ao lançar, mas continua nos relatórios.',
+          'Cada evento mostra o gasto, o que voltou (estornos e reembolsos) e o custo final. Clique num evento para ver por categoria, dia a dia e os lançamentos de todas as contas.',
+          'Em "Por mês", escolha um mês e veja quanto cada evento gastou naquele mês.',
         ],
       },
       {
