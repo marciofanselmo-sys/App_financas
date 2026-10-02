@@ -4,7 +4,7 @@ import Link from 'next/link'
 
 import { withPlan } from '@/components/plan/with-plan'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useGoals } from '@/hooks/use-goals'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { Goal, GoalType, GOAL_COLORS } from '@/types'
@@ -142,20 +142,40 @@ function GoalsPage() {
   // (2026-07-09), por pedido também.
   const [importingFor, setImportingFor]       = useState<Goal | null>(null)
   const [boardPickerOpen, setBoardPickerOpen] = useState(false)
-  const investmentBoardsWithPosition = boards.filter(b => b.is_investment && b.last_position_import)
-  // Todas as contas criadas em Investimentos aparecem para vincular; as que
-  // ainda não têm valor ficam visíveis mas sem poder escolher (a meta
-  // começaria em R$ 0 achando que está ligada).
+  // Todas as contas criadas em Investimentos podem ser vinculadas, com ou sem
+  // valor: a meta ligada acompanha o valor da conta (ver o efeito abaixo e
+  // syncGoalsLinkedToBoard), então começar em R$ 0 não deixa ela parada.
   const investmentBoards = boards.filter(b => b.is_investment)
 
+  // Meta ligada acompanha a conta: ao abrir a tela, quem estiver diferente do
+  // valor atual da conta é atualizado (cobre valores informados antes).
+  useEffect(() => {
+    if (loading || boards.length === 0) return
+    for (const goal of goals) {
+      const imp = goal.lastImport
+      if (imp?.source !== 'board' || !imp.boardId) continue
+      const board = boards.find(b => b.id === imp.boardId)
+      if (!board) continue
+      const value = board.last_position_import?.patrimonio ?? 0
+      if (Math.abs(value - goal.currentAmount) < 0.005 && imp.boardName === board.name) continue
+      updateGoal(goal.id, {
+        currentAmount: value,
+        lastImport: { ...imp, patrimonio: value, boardName: board.name, importedAt: board.last_position_import?.importedAt ?? imp.importedAt },
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, boards, goals.map(g => `${g.id}:${g.currentAmount}`).join('|')])
+
   async function pullFromBoard(goal: Goal, board: (typeof boards)[number]) {
-    if (!board.last_position_import) return
+    // Conta sem valor ainda: liga mesmo assim, em R$ 0 — a meta passa a
+    // acompanhar quando o valor for informado ou a posição importada.
+    const value = board.last_position_import?.patrimonio ?? 0
     const { error: updateError } = await updateGoal(goal.id, {
-      currentAmount: board.last_position_import.patrimonio,
+      currentAmount: value,
       lastImport: {
         source: 'board',
-        importedAt: new Date().toISOString(),
-        patrimonio: board.last_position_import.patrimonio,
+        importedAt: board.last_position_import?.importedAt ?? new Date().toISOString(),
+        patrimonio: value,
         boardId: board.id,
         boardName: board.name,
       },
@@ -174,7 +194,7 @@ function GoalsPage() {
   // sem reabrir o seletor. Se a conta foi excluída, cai pra abrir o seletor de novo.
   function quickRefreshFromBoard(goal: Goal) {
     const board = boards.find(b => b.id === goal.lastImport?.boardId)
-    if (!board?.last_position_import) { openBoardPicker(goal); return }
+    if (!board) { openBoardPicker(goal); return }
     pullFromBoard(goal, board)
   }
 
@@ -216,16 +236,16 @@ function GoalsPage() {
 
     // Valor atual: vinculado a uma conta de investimento, ou digitado à mão.
     const linkedBoard = form.linkMode === 'board'
-      ? investmentBoardsWithPosition.find(b => b.id === form.linkedBoardId)
+      ? investmentBoards.find(b => b.id === form.linkedBoardId)
       : undefined
-    const current = linkedBoard?.last_position_import
-      ? linkedBoard.last_position_import.patrimonio
+    const current = linkedBoard
+      ? linkedBoard.last_position_import?.patrimonio ?? 0
       : parseFloat(form.currentAmount.replace(',', '.')) || 0
-    const lastImport = linkedBoard?.last_position_import
+    const lastImport = linkedBoard
       ? {
           source: 'board' as const,
-          importedAt: new Date().toISOString(),
-          patrimonio: linkedBoard.last_position_import.patrimonio,
+          importedAt: linkedBoard.last_position_import?.importedAt ?? new Date().toISOString(),
+          patrimonio: linkedBoard.last_position_import?.patrimonio ?? 0,
           boardId: linkedBoard.id,
           boardName: linkedBoard.name,
         }
@@ -356,7 +376,9 @@ function GoalsPage() {
                                 <Link2 className="h-3 w-3" /> {imp.boardName} ·
                               </span>
                             )}
-                            Atualizado em {format(new Date(imp.importedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                            {imp.source === 'board' && !boards.find(b => b.id === imp.boardId)?.last_position_import
+                              ? <>aguardando o valor da conta · <Link href="/investments" className="text-blue-600 dark:text-blue-400 hover:underline">informar em Investimentos</Link></>
+                              : <>Atualizado em {format(new Date(imp.importedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</>}
                           </p>
                         )}
                       </div>
@@ -543,13 +565,19 @@ function GoalsPage() {
                           <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{fmt(board.last_position_import.patrimonio)}</span>
                         </button>
                       ) : (
-                        <div key={board.id} className="w-full flex items-center justify-between gap-3 p-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 opacity-80">
-                          <span className="font-medium text-sm text-slate-500 dark:text-slate-400">{board.name}</span>
-                          <span className="text-[11px] text-slate-400 text-right">
-                            sem valor ainda ·{' '}
-                            <Link href="/investments" className="text-blue-600 dark:text-blue-400 hover:underline">Informar valor em Investimentos</Link>
-                          </span>
-                        </div>
+                        <button
+                          key={board.id}
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, linkedBoardId: board.id }))}
+                          className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-xl border-2 border-dashed text-left transition-colors ${
+                            form.linkedBoardId === board.id
+                              ? 'border-violet-400 dark:border-violet-500 bg-violet-50 dark:bg-violet-900/20'
+                              : 'border-slate-200 dark:border-slate-600 hover:border-violet-300 dark:hover:border-violet-600'
+                          }`}
+                        >
+                          <span className="font-medium text-sm text-slate-800 dark:text-slate-100">{board.name}</span>
+                          <span className="text-[11px] text-slate-400 text-right">sem valor ainda — a meta acompanha quando você informar</span>
+                        </button>
                       ))}
                     </div>
                   ) : (
@@ -627,10 +655,14 @@ function GoalsPage() {
                 <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{fmt(board.last_position_import.patrimonio)}</span>
               </button>
             ) : (
-              <div key={board.id} className="w-full flex items-center justify-between gap-3 p-3 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700">
-                <span className="font-medium text-sm text-slate-500 dark:text-slate-400">{board.name}</span>
-                <Link href="/investments" className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline">Sem valor · informar em Investimentos</Link>
-              </div>
+              <button
+                key={board.id}
+                onClick={() => importingFor && pullFromBoard(importingFor, board)}
+                className="w-full flex items-center justify-between gap-3 p-3 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-600 hover:border-violet-400 dark:hover:border-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-all text-left"
+              >
+                <span className="font-medium text-sm text-slate-800 dark:text-slate-100">{board.name}</span>
+                <span className="text-[11px] text-slate-400">sem valor ainda — acompanha quando informar</span>
+              </button>
             ))}
           </div>
         </DialogContent>

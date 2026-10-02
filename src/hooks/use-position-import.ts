@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { TransactionBoard } from '@/types'
 import { validateImportFile } from '@/lib/import-limits'
 import { parseRICOXLSX, RICOData } from '@/utils/parse-rico'
+import { syncGoalsLinkedToBoard } from '@/lib/goal-sync'
 
 type UpdateBoardFn = (id: string, data: Partial<Omit<TransactionBoard, 'id' | 'user_id' | 'created_at'>>) => Promise<{ error: string | null }>
 
@@ -74,6 +75,8 @@ export function usePositionImport(updateBoard: UpdateBoardFn) {
       setError('Não foi possível salvar a posição importada. Tente novamente.')
       return
     }
+    // Metas ligadas a esta conta acompanham o valor novo.
+    await syncGoalsLinkedToBoard(importFor.id, importFor.name, preview.patrimonio, preview.importedAt)
 
     setImportFor(null)
     setPreview(null)
@@ -105,6 +108,7 @@ export function usePositionImport(updateBoard: UpdateBoardFn) {
         history: [...history, { patrimonio: value, importedAt }].slice(-48),
       },
     })
+    if (!saveError) await syncGoalsLinkedToBoard(board.id, board.name, value, importedAt)
     setLoading(false)
     return saveError ? { error: 'Não foi possível salvar o valor. Tente novamente.' } : {}
   }
