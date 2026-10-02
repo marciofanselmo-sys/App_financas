@@ -64,6 +64,22 @@ const ola = (nome?: string) => (nome ? `Olá, ${nome.split(' ')[0]}!` : 'Olá!')
 const dataBR = (iso?: string | null) =>
   iso ? iso.slice(0, 10).split('-').reverse().join('/') : ''
 
+// ── 0. Esqueceu a senha (ou o convite expirou) ──────────────────────────────
+export function emailRecuperacaoSenha(params: { nome?: string; link: string }): Email {
+  return {
+    subject: 'Redefinir sua senha do NOBLI',
+    html: moldura(
+      titulo(ola(params.nome)) +
+      p('Recebemos um pedido para entrar na sua conta sem a senha. Use o botão abaixo para definir uma nova.') +
+      botao(params.link, 'Definir nova senha') +
+      p('O link é de uso único e vale por 1 hora.') +
+      p('Se não foi você que pediu, pode ignorar este e-mail — nada muda na sua conta enquanto o link não for usado.'),
+      'Você recebeu este e-mail porque alguém pediu a redefinição de senha desta conta no NOBLI.',
+    ),
+    text: `${ola(params.nome)}\n\nUse este link para definir uma nova senha do NOBLI (uso único, vale 1 hora):\n${params.link}\n\nSe não foi você que pediu, ignore este e-mail.\n\nDúvidas: ${SUPORTE}`,
+  }
+}
+
 // ── 1. Comprou e ainda não tem conta ────────────────────────────────────────
 export function emailBoasVindas(params: { nome?: string; link: string }): Email {
   return {

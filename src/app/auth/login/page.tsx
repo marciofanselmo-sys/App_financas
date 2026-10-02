@@ -30,9 +30,21 @@ export default function LoginPage() {
   const [loading, setLoading]   = useState(false)
   const [confirmEmailNotice, setConfirmEmailNotice] = useState(false)
 
+  const [avisoLink, setAvisoLink] = useState('')
+
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.location.search.includes('confirm=email')) {
-      setConfirmEmailNotice(true)
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('confirm') === 'email') setConfirmEmailNotice(true)
+
+    // Quem chega por aqui veio de um link de e-mail que não valeu mais. Sem
+    // esta mensagem a pessoa cai numa tela de senha que ela nunca definiu e
+    // não entende o que aconteceu.
+    const erro = params.get('erro')
+    if (erro === 'link-expirado') {
+      setAvisoLink('Esse link de acesso já foi usado ou expirou. Peça um novo abaixo — leva um minuto.')
+    } else if (erro === 'link-invalido') {
+      setAvisoLink('Esse link de acesso está incompleto. Peça um novo abaixo.')
     }
   }, [])
 
@@ -108,6 +120,15 @@ export default function LoginPage() {
             </div>
           )}
 
+          {avisoLink && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 text-sm p-3 rounded-xl border border-amber-200 dark:border-amber-800/60 space-y-2">
+              <p>{avisoLink}</p>
+              <Link href="/auth/recuperar" className="inline-block font-semibold underline">
+                Receber novo link de acesso
+              </Link>
+            </div>
+          )}
+
           {error && (
             <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm p-3 rounded-xl border border-red-200 dark:border-red-800/60">
               {error}
@@ -129,7 +150,12 @@ export default function LoginPage() {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="password" className="text-sm font-medium text-slate-700 dark:text-slate-300">Senha</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="password" className="text-sm font-medium text-slate-700 dark:text-slate-300">Senha</Label>
+              <Link href="/auth/recuperar" className="text-xs text-[#2563EB] dark:text-blue-400 hover:underline">
+                Esqueci minha senha
+              </Link>
+            </div>
             <Input
               id="password"
               type="password"
