@@ -8,43 +8,15 @@ import { useRecurring, InstallmentItem } from '@/hooks/use-recurring'
 import { useCategories } from '@/hooks/use-categories'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { createClient } from '@/lib/supabase/client'
-import { CreditCard, Calendar, TrendingDown, CheckCircle, Plus, X, Trash2 } from 'lucide-react'
+import { CreditCard, Plus, X } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
+import { useInstallmentsOverview, InstallmentsSummary, ReliefChart, ByCard, InstallmentsList } from '@/components/installments/installments-overview'
 import { InfoBox } from '@/components/ui/info-box'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-
-const fmt = (v: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
-
-const MONTH_NAMES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
-
-function formatYearMonth(ym: string): string {
-  const [year, month] = ym.split('-')
-  return `${MONTH_NAMES[parseInt(month) - 1]}/${year}`
-}
-
-function InstallmentBadge({ remaining }: { remaining: number }) {
-  if (remaining === 0) return (
-    <span className="text-[11px] font-medium text-green-600 bg-green-50 dark:bg-green-900/30 px-2 py-0.5 rounded-full">
-      Última parcela
-    </span>
-  )
-  if (remaining === 1) return (
-    <span className="text-[11px] font-medium text-amber-600 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded-full">
-      Quase acabando
-    </span>
-  )
-  if (remaining >= 12) return (
-    <span className="text-[11px] font-medium text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full">
-      Longo prazo
-    </span>
-  )
-  return null
-}
 
 interface ManualForm {
   description: string
@@ -98,13 +70,8 @@ function RecurringPage() {
   const expenseCategoriesSpecial = expenseCategoriesAll.filter(c => (c.special_dates?.length ?? 0) > 0)
   const expenseCategoryIsSpecial = expenseCategoriesSpecial.some(c => c.name === form.category)
 
-  const totalMonthly = installments
-    .filter(i => i.remaining > 0)
-    .reduce((s, i) => s + i.monthlyAmount, 0)
-
-  const totalCommitted = installments
-    .filter(i => i.remaining > 0)
-    .reduce((s, i) => s + i.monthlyAmount * i.remaining, 0)
+  // Números, gráfico, grupos por cartão e lista (components/installments).
+  const overview = useInstallmentsOverview(installments, boards)
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -163,6 +130,29 @@ function RecurringPage() {
         </Button>
       </div>
 
+      {installments.length === 0 ? (
+        <EmptyState
+          icon={CreditCard}
+          iconColor="text-violet-500"
+          iconBg="bg-violet-50 dark:bg-violet-500/15"
+          title="Nenhum parcelamento encontrado"
+          description="Importe um extrato para detectar parcelamentos automaticamente, ou adicione um manualmente."
+          primaryLabel="Nova parcela manual"
+          primaryOnClick={() => { setForm(EMPTY_FORM); setError(''); setAddOpen(true) }}
+          secondaryLabel="Importar extrato"
+          secondaryHref="/transactions"
+        />
+      ) : (
+        <>
+          <InstallmentsSummary o={overview} />
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
+            <ReliefChart o={overview} />
+            <ByCard o={overview} />
+          </div>
+          <InstallmentsList o={overview} onRemove={setRemoveTarget} />
+        </>
+      )}
+
       <InfoBox id="recurring-como-funciona">
         <p className="text-blue-600 dark:text-blue-400">
           Esta aba reúne todas as compras parceladas que o app encontrou nas suas transações (via importação de extrato ou lançamento manual). Ela não é uma lista do mês atual — é um acompanhamento das parcelas <strong>em andamento</strong>, olhando do primeiro pagamento até o último, independente de qual mês você está vendo agora.
@@ -174,128 +164,18 @@ function RecurringPage() {
           </p>
         </div>
         <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
-          <p className="font-semibold mb-1">Total comprometido</p>
+          <p className="font-semibold mb-1">Falta pagar</p>
           <p className="text-blue-600 dark:text-blue-400">
             Já esse é o valor que ainda falta pagar no total, somando todas as parcelas futuras (a partir de hoje) de todos os parcelamentos ativos — sua dívida restante em parcelas, de uma vez só.
           </p>
         </div>
-      </InfoBox>
-
-      {/* Summary cards */}
-      {installments.length > 0 && (
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-white dark:bg-[#111c2d] rounded-xl p-4 border border-slate-100 dark:border-white/[0.06] shadow-sm">
-            <p className="text-xs text-slate-500 dark:text-slate-400">Parcelas / mês</p>
-            <p className="text-xl font-bold text-violet-600 dark:text-violet-400 mt-1">{fmt(totalMonthly)}</p>
-            <p className="text-xs text-slate-400 mt-0.5">{installments.filter(i => i.remaining > 0).length} ativo{installments.filter(i => i.remaining > 0).length !== 1 ? 's' : ''}</p>
-          </div>
-          <div className="bg-white dark:bg-[#111c2d] rounded-xl p-4 border border-slate-100 dark:border-white/[0.06] shadow-sm">
-            <p className="text-xs text-slate-500 dark:text-slate-400">Total comprometido</p>
-            <p className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-1">{fmt(totalCommitted)}</p>
-            <p className="text-xs text-slate-400 mt-0.5">em parcelas futuras</p>
-          </div>
+        <div className="border-t border-blue-200 dark:border-blue-800 pt-2.5">
+          <p className="font-semibold mb-1">Alivia, Fica livre e o gráfico</p>
+          <p className="text-blue-600 dark:text-blue-400">
+            <strong>Alivia em</strong> é quanto deixa de sair no mês que vem, porque esses parcelamentos terminam neste mês. <strong>Fica livre em</strong> é o mês da última parcela das compras que você já fez. O gráfico mostra, mês a mês, quanto já está comprometido — separado por cartão (a conta de onde vem a parcela; sem conta, aparece como &ldquo;Sem cartão&rdquo;).
+          </p>
         </div>
-      )}
-
-      {/* List */}
-      <div className="space-y-3">
-        {installments.length === 0 ? (
-          <EmptyState
-            icon={CreditCard}
-            iconColor="text-violet-500"
-            iconBg="bg-violet-50 dark:bg-violet-500/15"
-            title="Nenhum parcelamento encontrado"
-            description="Importe um extrato para detectar parcelamentos automaticamente, ou adicione um manualmente."
-            primaryLabel="Nova parcela manual"
-            primaryOnClick={() => { setForm(EMPTY_FORM); setError(''); setAddOpen(true) }}
-            secondaryLabel="Importar extrato"
-            secondaryHref="/transactions"
-          />
-        ) : (
-          installments.map((item, i) => {
-            const pct = Math.round((item.currentInstallment / item.totalInstallments) * 100)
-            const isLast = item.remaining === 0
-            const totalCommittedItem = item.monthlyAmount * item.remaining
-
-            return (
-              <div key={i} className="bg-white dark:bg-[#111c2d] rounded-2xl border border-slate-100 dark:border-white/[0.06] shadow-sm overflow-hidden">
-                <div className={`h-1 ${
-                  isLast ? 'bg-green-400' :
-                  item.remaining === 1 ? 'bg-amber-400' :
-                  item.remaining >= 12 ? 'bg-blue-400' :
-                  'bg-violet-400'
-                }`} />
-
-                <div className="p-4">
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <p className="font-semibold text-sm text-slate-800 dark:text-slate-100">{item.description}</p>
-                        <InstallmentBadge remaining={item.remaining} />
-                      </div>
-                      <span className="text-xs text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">
-                        {item.category}
-                      </span>
-                    </div>
-                    <div className="text-right shrink-0 flex items-start gap-2">
-                      <div>
-                        <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{fmt(item.monthlyAmount)}</p>
-                        <p className="text-xs text-slate-400">por mês</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setRemoveTarget(item)}
-                        title="Remover da lista de parcelamentos"
-                        className="text-slate-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-colors shrink-0 mt-0.5"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="mb-3">
-                    <div className="flex justify-between text-xs text-slate-400 mb-1.5">
-                      <span className="font-medium">{item.currentInstallment}/{item.totalInstallments} parcelas</span>
-                      <span>{pct}% concluído</span>
-                    </div>
-                    <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          isLast ? 'bg-green-500' : item.remaining === 1 ? 'bg-amber-400' : 'bg-violet-500'
-                        }`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4 flex-wrap text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-100 dark:border-white/[0.05]">
-                    {!isLast ? (
-                      <>
-                        <span className="flex items-center gap-1">
-                          <TrendingDown className="h-3 w-3" />
-                          {item.remaining} restante{item.remaining !== 1 ? 's' : ''}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          até {formatYearMonth(item.endYearMonth)}
-                        </span>
-                        <span className="font-medium text-slate-500 dark:text-slate-400">
-                          Total restante: {fmt(totalCommittedItem)}
-                        </span>
-                      </>
-                    ) : (
-                      <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
-                        <CheckCircle className="h-3 w-3" />
-                        Última parcela — {formatYearMonth(item.endYearMonth)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )
-          })
-        )}
-      </div>
+      </InfoBox>
 
       {/* ADD MANUAL INSTALLMENT MODAL */}
       <Dialog open={addOpen} onOpenChange={v => { if (!v) setAddOpen(false) }}>
