@@ -19,11 +19,12 @@ import { Badge } from '@/components/ui/badge'
 import {
   Plus, Pencil, Trash2, Tag, RotateCcw, Search, AlertTriangle, ArrowRight,
   TrendingDown, TrendingUp, ChevronDown, ChevronRight, Sparkles, Lock, Unlock, Loader2,
-  MoreVertical, Split, Compass,
+  MoreVertical, Split, Compass, AlertCircle,
 } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { isInternalMovement } from '@/lib/internal-movement'
 import { CategoriesHelp } from '@/components/categories/categories-help'
+import { OverviewSection } from '@/components/ui/overview-blocks'
 import { cn } from '@/lib/utils'
 import { CATEGORY_ICONS, CategoryIcon, categoryIconKey, guessIconKey } from '@/lib/category-icons'
 
@@ -731,8 +732,6 @@ export default function CategoriesPage() {
     setTimeout(() => document.getElementById(`cat-despesa-${outrosParent.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
   }
 
-  const cardCls = 'bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06]'
-
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -802,7 +801,7 @@ export default function CategoriesPage() {
           ) : (
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
               {/* Despesas por categoria — mesmo modelo da Análise */}
-              <section className={cn(cardCls, 'overflow-hidden')}>
+              <section className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
                 <div className="p-5 pb-2">
                   <div className="flex items-center gap-2">
                     <TrendingDown className="h-4 w-4 text-red-500 shrink-0" />
@@ -837,40 +836,40 @@ export default function CategoriesPage() {
               <div className="space-y-4">
                 {/* Vale organizar — o que falta arrumar, com botão */}
                 {(unlabeledList.length > 0 || strandedKids.length > 0 || outrosDirect.length > 0) && (
-                  <section className="rounded-2xl border border-amber-200 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/20 p-5">
+                  <section className="bg-amber-50/60 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 rounded-xl p-4">
                     <div className="flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
-                      <h2 className="text-base font-semibold text-amber-800 dark:text-amber-300">Vale organizar</h2>
+                      <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+                      <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Vale organizar</h2>
                     </div>
-                    <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-0.5 ml-6">
+                    <p className="text-xs text-slate-400 mt-0.5 ml-6">
                       {[unlabeledList.length > 0, strandedKids.length > 0, outrosDirect.length > 0].filter(Boolean).length} ajuste(s) deixam relatórios e Planejamento mais certos
                     </p>
-                    <ul className="mt-3 divide-y divide-amber-200/70 dark:divide-amber-700/40">
+                    <ul className="mt-2 divide-y divide-amber-200/70 dark:divide-amber-800/40">
                       {unlabeledList.length > 0 && (
                         <li className="flex items-start gap-3 py-2.5">
-                          <div className="flex-1 min-w-0 text-xs text-amber-800 dark:text-amber-300">
-                            <p className="font-semibold">{unlabeledList.length} categoria{unlabeledList.length === 1 ? '' : 's'} sem pilar</p>
+                          <div className="flex-1 min-w-0 text-xs text-slate-600 dark:text-slate-300">
+                            <p className="font-semibold text-slate-700 dark:text-slate-200">{unlabeledList.length} categoria{unlabeledList.length === 1 ? '' : 's'} sem pilar</p>
                             <p className="truncate">{unlabeledList.slice(0, 3).map(p => p.name).join(', ')}{unlabeledList.length > 3 ? '…' : ''} — fora do 50/30/20.</p>
                           </div>
-                          <button type="button" onClick={() => openEdit(unlabeledList[0])} className="text-xs font-bold text-amber-700 dark:text-amber-300 hover:underline shrink-0">Definir</button>
+                          <button type="button" onClick={() => openEdit(unlabeledList[0])} className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0">Definir</button>
                         </li>
                       )}
                       {strandedKids.length > 0 && (
                         <li className="flex items-start gap-3 py-2.5">
-                          <div className="flex-1 min-w-0 text-xs text-amber-800 dark:text-amber-300">
-                            <p className="font-semibold">{strandedKids.length} subcategoria{strandedKids.length === 1 ? '' : 's'} dentro de &ldquo;Outros&rdquo;</p>
+                          <div className="flex-1 min-w-0 text-xs text-slate-600 dark:text-slate-300">
+                            <p className="font-semibold text-slate-700 dark:text-slate-200">{strandedKids.length} subcategoria{strandedKids.length === 1 ? '' : 's'} dentro de &ldquo;Outros&rdquo;</p>
                             <p className="truncate">{strandedKids.slice(0, 3).map(k => k.name).join(', ')} — escolha a categoria certa.</p>
                           </div>
-                          <button type="button" onClick={() => setMergeState({ from: strandedKids[0], toId: '', mode: 'mover' })} className="text-xs font-bold text-amber-700 dark:text-amber-300 hover:underline shrink-0">Mover</button>
+                          <button type="button" onClick={() => setMergeState({ from: strandedKids[0], toId: '', mode: 'mover' })} className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0">Mover</button>
                         </li>
                       )}
                       {outrosDirect.length > 0 && (
                         <li className="flex items-start gap-3 py-2.5">
-                          <div className="flex-1 min-w-0 text-xs text-amber-800 dark:text-amber-300">
-                            <p className="font-semibold">{outrosDirect.length} lançamento{outrosDirect.length === 1 ? '' : 's'} em &ldquo;Outros&rdquo;</p>
+                          <div className="flex-1 min-w-0 text-xs text-slate-600 dark:text-slate-300">
+                            <p className="font-semibold text-slate-700 dark:text-slate-200">{outrosDirect.length} lançamento{outrosDirect.length === 1 ? '' : 's'} em &ldquo;Outros&rdquo;</p>
                             <p>Categorize e o app cria a regra.</p>
                           </div>
-                          <button type="button" onClick={reviewOutros} className="text-xs font-bold text-amber-700 dark:text-amber-300 hover:underline shrink-0">Revisar</button>
+                          <button type="button" onClick={reviewOutros} className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0">Revisar</button>
                         </li>
                       )}
                     </ul>
@@ -878,12 +877,7 @@ export default function CategoriesPage() {
                 )}
 
                 {/* Pilares 50/30/20 */}
-                <section className={cn(cardCls, 'p-5')}>
-                  <div className="flex items-center gap-2">
-                    <Compass className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                    <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Pilares 50/30/20</h2>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-0.5 ml-6">Seu gasto médio por pilar</p>
+                <OverviewSection icon={Compass} title="Pilares 50/30/20" subtitle="Seu gasto médio por pilar">
                   {pillarSum > 0 ? (
                     <>
                       <div className="flex h-3 rounded-full overflow-hidden mt-3 bg-slate-100 dark:bg-white/[0.08]">
@@ -906,15 +900,10 @@ export default function CategoriesPage() {
                     <p className="text-xs text-slate-400 mt-3">Sem gastos nos últimos meses para dividir.</p>
                   )}
                   <p className="text-[11px] text-slate-400 mt-3">O pilar de cada categoria alimenta o Planejamento.</p>
-                </section>
+                </OverviewSection>
 
                 {/* Receitas */}
-                <section className={cn(cardCls, 'p-5')}>
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 text-green-600 shrink-0" />
-                    <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Receitas</h2>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-0.5 ml-6">Categorias de entrada</p>
+                <OverviewSection icon={TrendingUp} iconClass="text-green-600" title="Receitas" subtitle="Categorias de entrada">
                   {incomeList.length === 0 ? (
                     <p className="text-xs text-slate-400 mt-3">{q ? 'Nada encontrado.' : 'Nenhuma categoria de receita.'}</p>
                   ) : (
@@ -922,7 +911,7 @@ export default function CategoriesPage() {
                       {incomeList.map(p => renderParent(p, 'receita', 0, true))}
                     </div>
                   )}
-                </section>
+                </OverviewSection>
               </div>
             </div>
           )}
@@ -1263,7 +1252,7 @@ export default function CategoriesPage() {
               <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-xl p-3.5">
                 <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
                 <div className="text-sm text-amber-700 dark:text-amber-300">
-                  <p className="font-semibold">Atenção</p>
+                  <p className="font-semibold text-slate-700 dark:text-slate-200">Atenção</p>
                   {deleteCount > 0 && (
                     <p className="mt-0.5">
                       {deleteCount} transaç{deleteCount === 1 ? 'ão usa' : 'ões usam'} essa categoria. Elas vão para &ldquo;Outros&rdquo;,
