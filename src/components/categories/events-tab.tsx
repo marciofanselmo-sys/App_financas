@@ -367,8 +367,9 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
   const router = useRouter()
   const ev = s.event
   const days = s.first && s.last ? daysBetween(s.first, s.last) : 0
-  // Dia a dia até ~2 meses; acima disso, mês a mês.
-  const byDay = days <= 62
+  // Dia a dia até ~4 meses, com TODOS os dias do período (inclusive os sem
+  // gasto, para dar a noção de tempo); acima disso, mês a mês.
+  const byDay = days <= 120
   const series = useMemo(() => {
     const map = new Map<string, number>()
     for (const t of s.txs) {
@@ -376,9 +377,23 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
       const k = byDay ? t.date : t.date.slice(0, 7)
       map.set(k, (map.get(k) ?? 0) + Number(t.amount))
     }
+    if (byDay && s.first && s.last) {
+      const out: { label: string; value: number }[] = []
+      const d = new Date(Date.UTC(+s.first.slice(0, 4), +s.first.slice(5, 7) - 1, +s.first.slice(8, 10)))
+      const end = s.last
+      for (let i = 0; i < 400; i++) {
+        const iso = d.toISOString().slice(0, 10)
+        if (iso > end) break
+        out.push({ label: `${iso.slice(8, 10)}/${iso.slice(5, 7)}`, value: map.get(iso) ?? 0 })
+        d.setUTCDate(d.getUTCDate() + 1)
+      }
+      return out
+    }
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([k, v]) => ({ label: byDay ? k.slice(8, 10) + '/' + k.slice(5, 7) : `${SHORT[Number(k.slice(5, 7)) - 1]}/${k.slice(2, 4)}`, value: v }))
-  }, [s.txs, byDay])
+      .map(([k, v]) => ({ label: `${SHORT[Number(k.slice(5, 7)) - 1]}/${k.slice(2, 4)}`, value: v }))
+  }, [s.txs, s.first, s.last, byDay])
+  // Muitos dias: o gráfico fica mais largo que o card e rola para o lado.
+  const chartMinWidth = byDay ? Math.max(0, series.length * 22) : 0
   const txs = showAll ? s.txs : s.txs.slice(0, 8)
   const catTotal = s.cats.reduce((a, c) => a + c.value, 0)
 
@@ -412,7 +427,25 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+        <OverviewSection icon={CalendarDays} title={byDay ? 'Dia a dia' : 'Mês a mês'} subtitle={byDay ? `Quanto saiu em cada um dos ${series.length} dias do período` : 'Quanto saiu em cada mês do evento'}>
+          {series.length > 0 ? (
+            <div className="mt-4 -ml-2 overflow-x-auto">
+              <div className="h-56" style={{ minWidth: chartMinWidth }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={series} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.6} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={8} />
+                  <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={44}
+                    tickFormatter={v => Number(v) >= 1000 ? `${(Number(v) / 1000).toFixed(1).replace('.', ',')}k` : String(v)} />
+                  <Tooltip cursor={{ fill: 'rgba(37,99,235,0.06)' }} contentStyle={{ borderRadius: 12, fontSize: 12 }} formatter={v => [money(Number(v)), 'Gasto']} />
+                  <Bar dataKey="value" fill={ev.color} radius={[5, 5, 0, 0]} maxBarSize={26} isAnimationActive={false} />
+                </BarChart>
+              </ResponsiveContainer>
+              </div>
+            </div>
+          ) : <p className="text-xs text-slate-400 mt-4">Nenhum gasto {monthLabel ? 'neste mês' : 'ainda'}.</p>}
+        </OverviewSection>
+
         <OverviewSection icon={ChartPie} title="Por categoria" subtitle="O lançamento continua na categoria — aqui você vê o peso de cada uma no evento">
           {catTotal > 0 ? (
             <div className="flex flex-col sm:flex-row items-center gap-5 mt-4">
@@ -444,23 +477,6 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
           ) : <p className="text-xs text-slate-400 mt-4">Nenhum gasto {monthLabel ? 'neste mês' : 'ainda'}.</p>}
         </OverviewSection>
 
-        <OverviewSection icon={CalendarDays} title={byDay ? 'Dia a dia' : 'Mês a mês'} subtitle={byDay ? 'Quanto saiu em cada dia do evento' : 'Quanto saiu em cada mês do evento'}>
-          {series.length > 0 ? (
-            <div className="h-48 mt-4 -ml-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={series} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.6} />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={44}
-                    tickFormatter={v => Number(v) >= 1000 ? `${(Number(v) / 1000).toFixed(1).replace('.', ',')}k` : String(v)} />
-                  <Tooltip cursor={{ fill: 'rgba(37,99,235,0.06)' }} contentStyle={{ borderRadius: 12, fontSize: 12 }} formatter={v => [money(Number(v)), 'Gasto']} />
-                  <Bar dataKey="value" fill={ev.color} radius={[5, 5, 0, 0]} maxBarSize={30} isAnimationActive={false} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          ) : <p className="text-xs text-slate-400 mt-4">Nenhum gasto {monthLabel ? 'neste mês' : 'ainda'}.</p>}
-        </OverviewSection>
-      </div>
 
       <OverviewSection icon={ReceiptText} title="Lançamentos" subtitle="De todas as contas · para trocar a categoria, abra na conta">
         {s.txs.length === 0 ? (
