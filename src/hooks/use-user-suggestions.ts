@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { SuggestionStatus, UserSuggestion, validateSuggestionMessage } from '@/lib/suggestions'
+import { SuggestionKind, SuggestionStatus, UserSuggestion, validateSuggestionMessage } from '@/lib/suggestions'
 
 export function useUserSuggestions() {
   const [suggestions, setSuggestions] = useState<UserSuggestion[]>([])
@@ -32,7 +32,7 @@ export function useUserSuggestions() {
     load()
   }, [load])
 
-  async function submitSuggestion(rawMessage: string) {
+  async function submitSuggestion(rawMessage: string, extra: { kind?: SuggestionKind; screen?: string } = {}) {
     const validated = validateSuggestionMessage(rawMessage)
     if (!validated.ok) return { error: validated.error }
 
@@ -40,16 +40,22 @@ export function useUserSuggestions() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user?.email) return { error: 'Faça login para enviar sugestões.' }
 
-    const { data, error } = await supabase
+    const base = {
+      user_id: user.id,
+      user_email: user.email,
+      message: validated.message,
+      status: 'nova' as SuggestionStatus,
+    }
+    let { data, error } = await supabase
       .from('user_suggestions')
-      .insert({
-        user_id: user.id,
-        user_email: user.email,
-        message: validated.message,
-        status: 'nova' as SuggestionStatus,
-      })
+      .insert({ ...base, kind: extra.kind ?? 'ideia', screen: extra.screen || null })
       .select()
       .single()
+    // Banco ainda sem as colunas de tipo/tela (migração pendente): envia só a
+    // mensagem, para a sugestão nunca se perder.
+    if (error && (error.code === 'PGRST204' || /kind|screen/.test(error.message))) {
+      ;({ data, error } = await supabase.from('user_suggestions').insert(base).select().single())
+    }
 
     if (error) return { error: error.message }
     if (data) setSuggestions(prev => [data as UserSuggestion, ...prev])
@@ -98,5 +104,23 @@ export function useAdminSuggestions(enabled: boolean) {
     return { data: data as UserSuggestion }
   }
 
-  return { suggestions, loading, updateStatus, refetch: load }
+  async function updateReply(id: string, reply: string) {
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('user_suggestions')
+      .update({ admin_reply: reply.trim() || null })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) return { error: error.message }
+    if (data) {
+      setSuggestions(prev =>
+        prev.map(s => (s.id === id ? (data as UserSuggestion) : s)),
+      )
+    }
+    return { data: data as UserSuggestion }
+  }
+
+  return { suggestions, loading, updateStatus, updateReply, refetch: load }
 }
