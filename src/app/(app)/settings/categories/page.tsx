@@ -94,6 +94,13 @@ export default function CategoriesPage() {
   const events = useEvents()
   const { boards } = useTransactionBoards()
 
+  // Marca um lançamento do período no evento (só a etiqueta).
+  async function addToEvent(tx: Transaction, ev: AppEvent) {
+    const supabase = createClient()
+    await supabase.from('transactions').update({ event_id: ev.id }).eq('id', tx.id)
+    await refetchTransactions()
+  }
+
   // Tira um lançamento do evento (só limpa a etiqueta; categoria e valor ficam).
   async function removeFromEvent(tx: Transaction) {
     const supabase = createClient()
@@ -878,6 +885,7 @@ export default function CategoriesPage() {
           onDelete={ev => setEventDeleteTarget(ev)}
           onToggleClosed={ev => events.updateEvent(ev.id, { closed: !ev.closed })}
           onRemoveFromEvent={removeFromEvent}
+          onAddToEvent={addToEvent}
         />
       )}
 

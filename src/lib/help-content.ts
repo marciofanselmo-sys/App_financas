@@ -605,6 +605,7 @@ export const HELP_SECTIONS: HelpSection[] = [
           'Quando acabar, encerre o evento: ele some da lista ao lançar, mas continua nos relatórios.',
           'Cada evento mostra o gasto, o que voltou (estornos e reembolsos) e o custo final. Clique num evento para ver por categoria, dia a dia e os lançamentos de todas as contas.',
           'Em "Por mês", escolha um mês e veja quanto cada evento gastou naquele mês.',
+          'Em "Encerrados", escolha o primeiro e o último dia do evento: o detalhe passa a mostrar todos os gastos das suas contas nessas datas, marcados ou não no evento — e dá para marcar no evento o que ficou de fora. As datas ficam salvas no filtro.',
         ],
       },
       {

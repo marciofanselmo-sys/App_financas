@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
 import {
   Sparkles, MoreVertical, Pencil, Trash2, Lock, Unlock, Plus, ChevronLeft, ChevronRight, CalendarDays,
-  ChartPie, ReceiptText, BarChart2, ExternalLink, XCircle,
+  ChartPie, ReceiptText, BarChart2, ExternalLink, XCircle, CalendarRange,
 } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { OverviewSection } from '@/components/ui/overview-blocks'
 import { AppEvent, Category, Transaction, TransactionBoard } from '@/types'
 import { cn } from '@/lib/utils'
+import { isInternalMovement } from '@/lib/internal-movement'
 
 const money = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
@@ -32,6 +33,26 @@ interface EventSummary {
   first: string | null
   last: string | null
   cats: { name: string; value: number; color: string }[]
+  /** Só no filtro de período: gastos do período que não estão marcados no evento. */
+  untaggedCount: number
+  untaggedValue: number
+}
+
+// Período escolhido nos encerrados, guardado no navegador por evento
+// (conveniência do filtro — não mexe no banco).
+const PERIOD_KEY = 'nobli:event-period:'
+function readPeriod(id: string): { from: string; to: string } | null {
+  try {
+    const raw = window.localStorage.getItem(PERIOD_KEY + id)
+    const p = raw ? JSON.parse(raw) : null
+    return p && typeof p.from === 'string' && typeof p.to === 'string' ? p : null
+  } catch { return null }
+}
+function writePeriod(id: string, p: { from: string; to: string } | null) {
+  try {
+    if (p) window.localStorage.setItem(PERIOD_KEY + id, JSON.stringify(p))
+    else window.localStorage.removeItem(PERIOD_KEY + id)
+  } catch { /* sem armazenamento: o filtro só não fica salvo */ }
 }
 
 /**
@@ -41,7 +62,7 @@ interface EventSummary {
  */
 export function EventsTab({
   events, loading, transactions, categories, boards,
-  onNew, onEdit, onDelete, onToggleClosed, onRemoveFromEvent,
+  onNew, onEdit, onDelete, onToggleClosed, onRemoveFromEvent, onAddToEvent,
 }: {
   events: AppEvent[]
   loading: boolean
@@ -53,6 +74,7 @@ export function EventsTab({
   onDelete: (ev: AppEvent) => void
   onToggleClosed: (ev: AppEvent) => void
   onRemoveFromEvent: (tx: Transaction) => Promise<void>
+  onAddToEvent: (tx: Transaction, ev: AppEvent) => Promise<void>
 }) {
   const now = new Date()
   const [status, setStatus] = useState<StatusFilter>('all')
@@ -61,6 +83,7 @@ export function EventsTab({
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
+  const [adding, setAdding] = useState<string | null>(null)
 
   const monthKey = `${ym.y}-${String(ym.m + 1).padStart(2, '0')}`
   const monthLabel = `${MONTHS[ym.m]}/${ym.y}`
@@ -85,6 +108,29 @@ export function EventsTab({
     const txs = transactions
       .filter(t => t.event_id === ev.id && (!onlyMonth || t.date.slice(0, 7) === monthKey))
       .sort((a, b) => b.date.localeCompare(a.date))
+    return build(ev, txs)
+  }
+
+  // Período da viagem: TODOS os gastos das suas contas entre as datas
+  // (marcados ou não no evento) + o que voltou marcado no evento. Contas de
+  // investimento e movimentação entre contas ficam de fora.
+  const investmentIds = useMemo(() => new Set(boards.filter(b => b.is_investment).map(b => b.id)), [boards])
+  function summarizePeriod(ev: AppEvent, from: string, to: string): EventSummary {
+    const txs = transactions
+      .filter(t => t.date >= from && t.date <= to)
+      .filter(t => !isInternalMovement(t) && !(t.board_id && investmentIds.has(t.board_id)))
+      .filter(t => t.type === 'despesa' || t.event_id === ev.id)
+      .sort((a, b) => b.date.localeCompare(a.date))
+    const out = build(ev, txs)
+    const untagged = txs.filter(t => t.type === 'despesa' && t.event_id !== ev.id)
+    return {
+      ...out, first: from, last: to,
+      untaggedCount: untagged.length,
+      untaggedValue: untagged.reduce((sum, t) => sum + Number(t.amount), 0),
+    }
+  }
+
+  function build(ev: AppEvent, txs: Transaction[]): EventSummary {
     let spent = 0, back = 0
     const cats = new Map<string, { name: string; value: number; color: string }>()
     for (const t of txs) {
@@ -104,6 +150,8 @@ export function EventsTab({
       first: txs.length ? txs[txs.length - 1].date : null,
       last: txs.length ? txs[0].date : null,
       cats: [...cats.values()].sort((a, b) => b.value - a.value),
+      untaggedCount: 0,
+      untaggedValue: 0,
     }
   }
 
@@ -121,7 +169,21 @@ export function EventsTab({
   const active = byMonth ? listed.filter(x => x.month.txs.length > 0) : listed
   const idle = byMonth ? listed.filter(x => x.month.txs.length === 0) : []
   const selected = active.find(x => x.total.event.id === selectedId) ?? active[0] ?? null
-  const view = selected ? (byMonth ? selected.month : selected.total) : null
+  // Encerrados: filtro de período (primeiro e último dia), salvo por evento.
+  const [periods, setPeriods] = useState<Record<string, { from: string; to: string } | null>>({})
+  const periodMode = status === 'closed' && !byMonth && !!selected
+  const selId = selected?.total.event.id ?? ''
+  const savedPeriod = selId ? (selId in periods ? periods[selId] : (typeof window !== 'undefined' ? readPeriod(selId) : null)) : null
+  const autoPeriod = selected?.total.first && selected.total.last ? { from: selected.total.first, to: selected.total.last } : null
+  const period = savedPeriod ?? autoPeriod
+  function setPeriod(p: { from: string; to: string } | null) {
+    if (!selId) return
+    setPeriods(prev => ({ ...prev, [selId]: p }))
+    writePeriod(selId, p)
+  }
+  const view = selected
+    ? (periodMode && period ? summarizePeriod(selected.total.event, period.from, period.to) : byMonth ? selected.month : selected.total)
+    : null
   const monthTotal = active.reduce((s, x) => s + x.month.net, 0)
 
   if (loading) {
@@ -317,8 +379,40 @@ export function EventsTab({
       )}
 
       {/* Detalhe do evento escolhido */}
+      {periodMode && period && (
+        <section className="bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-blue-200 dark:border-blue-500/30 p-4 flex flex-wrap items-center gap-3">
+          <CalendarRange className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Período de {selected!.total.event.name}</p>
+            <p className="text-[11px] text-slate-400">Mostra todos os gastos das suas contas nessas datas — marcados ou não no evento.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+            <label className="flex items-center gap-1.5 text-xs text-slate-500">
+              De
+              <input type="date" value={period.from} max={period.to}
+                onChange={e => e.target.value && setPeriod({ from: e.target.value, to: period.to < e.target.value ? e.target.value : period.to })}
+                className="h-8 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] px-2 text-xs text-slate-700 dark:text-slate-200" />
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-slate-500">
+              Até
+              <input type="date" value={period.to} min={period.from}
+                onChange={e => e.target.value && setPeriod({ from: period.from > e.target.value ? e.target.value : period.from, to: e.target.value })}
+                className="h-8 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] px-2 text-xs text-slate-700 dark:text-slate-200" />
+            </label>
+            {savedPeriod && (
+              <button type="button" onClick={() => setPeriod(null)} className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">
+                Voltar ao automático
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+
       {selected && view && (
         <EventDetail
+          periodMode={periodMode}
+          adding={adding}
+          onAdd={async tx => { setAdding(tx.id); await onAddToEvent(tx, selected.total.event); setAdding(null) }}
           s={view}
           monthLabel={byMonth ? monthLabel : null}
           showAll={showAll}
@@ -354,8 +448,11 @@ export function EventsTab({
   )
 }
 
-function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, removing, onRemove }: {
+function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, removing, onRemove, periodMode, adding, onAdd }: {
   s: EventSummary
+  periodMode: boolean
+  adding: string | null
+  onAdd: (tx: Transaction) => Promise<void>
   monthLabel: string | null
   showAll: boolean
   onShowAll: () => void
@@ -420,6 +517,7 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
           <p className="text-xs text-slate-400">
             {s.first ? `${dm(s.first)} a ${dm(s.last!)}` : 'Sem lançamentos'} · {ev.closed ? 'encerrado' : 'em andamento'}
             {monthLabel && ` · mostrando ${monthLabel}`}
+            {periodMode && ' · todos os gastos do período'}
           </p>
         </div>
       </div>
@@ -438,6 +536,13 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
           </div>
         ))}
       </div>
+
+      {periodMode && s.untaggedCount > 0 && (
+        <p className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+          <strong>{s.untaggedCount} gasto{s.untaggedCount === 1 ? '' : 's'} do período ({money(s.untaggedValue)})</strong> não {s.untaggedCount === 1 ? 'está marcado' : 'estão marcados'} no evento.
+          Eles entram nos números acima; use o ⋮ do lançamento para marcar no evento, se fizer parte.
+        </p>
+      )}
 
         <OverviewSection icon={CalendarDays} title={byDay ? 'Dia a dia' : 'Mês a mês'} subtitle={byDay ? `Quanto saiu em cada um dos ${series.length} dias do período` : `Quanto saiu em cada um dos ${series.length} meses do período`}>
           {series.length > 0 ? (
@@ -498,12 +603,16 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
             <ul className="mt-2 divide-y divide-slate-100 dark:divide-white/[0.06]">
               {txs.map(t => {
                 const isIn = t.type !== 'despesa'
+                const tagged = t.event_id === ev.id
                 return (
                   <li key={t.id} className="flex items-center gap-3 py-2.5">
                     <span className="w-11 text-[11px] text-slate-400 tabular-nums shrink-0">{dm(t.date)}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-[13px] text-slate-700 dark:text-slate-200 truncate">{t.description}</p>
-                      <p className="text-[11px] text-slate-400 truncate">{boardName(t.board_id)}</p>
+                      <p className="text-[11px] text-slate-400 truncate">
+                        {boardName(t.board_id)}
+                        {!tagged && <span className="ml-1.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">· fora do evento</span>}
+                      </p>
                     </div>
                     {t.category && (
                       <span className="hidden sm:inline text-[10.5px] font-medium rounded-full px-2 py-0.5 text-white shrink-0" style={{ backgroundColor: catColor(t.category) }}>
@@ -514,7 +623,7 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
                       {isIn ? '+' : ''}{money(Number(t.amount))}
                     </span>
                     <DropdownMenu>
-                      <DropdownMenuTrigger disabled={removing === t.id} className="h-7 w-7 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-white/[0.06] shrink-0" aria-label="Ações do lançamento">
+                      <DropdownMenuTrigger disabled={removing === t.id || adding === t.id} className="h-7 w-7 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-white/[0.06] shrink-0" aria-label="Ações do lançamento">
                         <MoreVertical className="h-4 w-4" />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-48">
@@ -523,9 +632,15 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
                             <ExternalLink className="h-4 w-4 mr-2" /> Abrir na conta
                           </DropdownMenuItem>
                         )}
-                        <DropdownMenuItem onClick={() => onRemove(t)}>
-                          <XCircle className="h-4 w-4 mr-2" /> Tirar do evento
-                        </DropdownMenuItem>
+                        {tagged ? (
+                          <DropdownMenuItem onClick={() => onRemove(t)}>
+                            <XCircle className="h-4 w-4 mr-2" /> Tirar do evento
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem onClick={() => onAdd(t)}>
+                            <Sparkles className="h-4 w-4 mr-2" /> Marcar no evento
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </li>
