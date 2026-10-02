@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,6 +30,14 @@ export default function RecuperarPage() {
   const [email, setEmail] = useState('')
   const [enviado, setEnviado] = useState(false)
   const [enviando, setEnviando] = useState(false)
+
+  // Quem vem da tela de cadastro já digitou o e-mail uma vez; pedir de novo
+  // seria só mais um degrau entre o cliente e a conta que ele já pagou.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const vindo = new URLSearchParams(window.location.search).get('email')
+    if (vindo) setEmail(vindo)
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

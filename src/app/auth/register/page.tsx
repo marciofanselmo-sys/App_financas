@@ -38,11 +38,19 @@ export default function RegisterPage() {
   const [password, setPassword]             = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError]                   = useState('')
+  /**
+   * O e-mail digitado já tem conta. É o caso mais provável de quem acabou de
+   * comprar: o webhook da Cakto cria a conta segundos depois do pagamento, a
+   * pessoa chega aqui para "se cadastrar" e levava um erro seco de e-mail já
+   * usado, sem saber que a conta dela já existe e só falta a senha.
+   */
+  const [jaTemConta, setJaTemConta]         = useState(false)
   const [loading, setLoading]               = useState(false)
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    setJaTemConta(false)
 
     const parsed = registerSchema.safeParse({ name, email, password, confirmPassword })
     if (!parsed.success) {
@@ -69,7 +77,20 @@ export default function RegisterPage() {
 
     if (error) {
       recordAuthFailure(email)
-      setError(formatUserError(error, 'Erro ao criar conta. Tente novamente.'))
+      if (/already (been )?registered|already exists/i.test(error.message)) {
+        setJaTemConta(true)
+      } else {
+        setError(formatUserError(error, 'Erro ao criar conta. Tente novamente.'))
+      }
+      setLoading(false)
+      return
+    }
+
+    // O Supabase também pode responder "sucesso" com uma lista de identidades
+    // vazia quando o e-mail já existe — é a forma dele de não confirmar a
+    // existência da conta. Para quem está na tela, o significado é o mesmo.
+    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      setJaTemConta(true)
       setLoading(false)
       return
     }
@@ -119,6 +140,22 @@ export default function RegisterPage() {
         </div>
 
         <form onSubmit={handleRegister} className="space-y-4">
+          {jaTemConta && (
+            <div className="bg-[#E8F2FF] dark:bg-blue-900/20 text-[#0B2D6B] dark:text-blue-300 text-sm p-3 rounded-xl border border-[#2563EB]/20 dark:border-blue-800/60 space-y-2">
+              <p className="font-semibold">Esse e-mail já tem conta no NOBLI.</p>
+              <p>
+                Se você acabou de assinar, sua conta foi criada automaticamente com a compra —
+                falta só definir a senha.
+              </p>
+              <Link
+                href={`/auth/recuperar?email=${encodeURIComponent(email)}`}
+                className="inline-block font-semibold underline"
+              >
+                Definir minha senha
+              </Link>
+            </div>
+          )}
+
           {error && (
             <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm p-3 rounded-xl border border-red-200 dark:border-red-800/60">
               {error}
