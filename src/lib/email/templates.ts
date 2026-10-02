@@ -104,9 +104,13 @@ export function emailPlanoLiberado(params: { nome?: string; plano: string }): Em
       titulo(ola(params.nome)) +
       p(`Recebemos seu pagamento e liberamos o plano <strong>${params.plano}</strong> na sua conta.`) +
       p('É só entrar com o seu e-mail e a senha de sempre.') +
-      botao(`${SITE}/dashboard`, 'Abrir o NOBLI'),
+      botao(`${SITE}/dashboard`, 'Abrir o NOBLI') +
+      // Rede de segurança: este e-mail vai para quem já tem conta, mas nem
+      // toda conta tem senha definida. Sem esta linha, quem caísse nesse caso
+      // ficava sem saída dentro do próprio e-mail de boas-novas.
+      p(`Ainda não definiu uma senha? <a href="${SITE}/auth/recuperar" style="color:#2563eb;">Crie a sua aqui</a>.`),
     ),
-    text: `${ola(params.nome)}\n\nSeu pagamento foi confirmado e o plano ${params.plano} está liberado. Entre em ${SITE}/dashboard com o seu e-mail e senha.\n\nDúvidas: ${SUPORTE}`,
+    text: `${ola(params.nome)}\n\nSeu pagamento foi confirmado e o plano ${params.plano} está liberado. Entre em ${SITE}/dashboard com o seu e-mail e senha.\n\nAinda não definiu uma senha? Crie a sua em ${SITE}/auth/recuperar\n\nDúvidas: ${SUPORTE}`,
   }
 }
 

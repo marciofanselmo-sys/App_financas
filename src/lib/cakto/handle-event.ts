@@ -260,6 +260,40 @@ function rotuloDoPlano(order: CaktoOrderData): string {
 }
 
 /**
+ * A pessoa já entrou alguma vez no app? Só quem já entrou tem senha para
+ * usar. `last_sign_in_at` nulo significa conta criada e nunca aberta.
+ *
+ * Na dúvida (erro de leitura), responde `false`: mandar o e-mail de "plano
+ * liberado" para quem tem senha é inofensivo; o contrário não é.
+ */
+async function nuncaEntrou(admin: SupabaseClient, userId: string): Promise<boolean> {
+  try {
+    const { data, error } = await admin.auth.admin.getUserById(userId)
+    if (error || !data?.user) return false
+    return !data.user.last_sign_in_at
+  } catch {
+    return false
+  }
+}
+
+/** Link de uso único para definir senha, no mesmo caminho do convite. */
+async function linkDeAcesso(admin: SupabaseClient, email: string): Promise<string | undefined> {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://noblifinance.com.br'
+  try {
+    const { data, error } = await admin.auth.admin.generateLink({
+      type: 'recovery',
+      email,
+      options: { redirectTo: `${siteUrl}/auth/confirm?next=/primeiro-acesso` },
+    })
+    const hash = data?.properties?.hashed_token
+    if (error || !hash) return undefined
+    return `${siteUrl}/auth/confirm?token_hash=${encodeURIComponent(hash)}&type=recovery&next=/primeiro-acesso`
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Um e-mail por evento, sempre dizendo o que aconteceu e o que fazer.
  * Nenhum deles carrega senha: quem não tem conta recebe link de uso único.
  *
@@ -277,14 +311,30 @@ async function avisarPorEmail(params: {
 }) {
   const { evento, status, resolved, nome, plano, proximaCobranca, admin } = params
 
-  if (status === 'active' && resolved.created && resolved.inviteLink) {
+  // Quem nunca entrou no app não tem "senha de sempre". Isso acontece em dois
+  // casos: a conta acabou de nascer com a compra, e também quando ela já
+  // existia sem senha definida — alguém que comprou antes e nunca chegou a
+  // criar uma, ou um e-mail que o próprio Supabase já conhecia. Mandar
+  // "entre com a senha de sempre" para essas pessoas é um beco sem saída.
+  const precisaCriarSenha = status === 'active' && !resolved.created
+    ? await nuncaEntrou(admin, resolved.userId)
+    : false
+
+  // Conta sem senha e sem link pronto: gera um de recuperação, que vale para
+  // usuário existente e chega no mesmo /auth/confirm do convite.
+  let link = resolved.inviteLink
+  if (status === 'active' && precisaCriarSenha && !link) {
+    link = await linkDeAcesso(admin, resolved.email)
+  }
+
+  if (status === 'active' && (resolved.created || precisaCriarSenha) && link) {
     // Conta nasceu agora por causa da compra: marca que falta senha e manda o
     // convite. É o único caminho de entrada de quem comprou pelo anúncio.
     await admin.from('user_profiles').upsert(
       { user_id: resolved.userId, full_name: nome ?? '', needs_password: true },
       { onConflict: 'user_id' },
     )
-    await enviarEmail(resolved.email, emailBoasVindas({ nome, link: resolved.inviteLink }))
+    await enviarEmail(resolved.email, emailBoasVindas({ nome, link }))
     return
   }
 
