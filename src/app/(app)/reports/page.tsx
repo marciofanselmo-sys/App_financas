@@ -205,7 +205,7 @@ function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, s
               {months && <th className={`${H} text-right ${P} py-2.5 ${th}`}>Média/mês</th>}
               <th className={`${H} text-right ${P} py-2.5 ${th}`}>% Total</th>
               {limits && <th className={`${H} text-right ${P} py-2.5 ${th}`}>Planejado</th>}
-              {limits && iconOf && <th className={`hidden md:table-cell print:table-cell ${P} py-2.5 ${th} text-left`}>Uso do limite</th>}
+              {limits && iconOf && <th className={`hidden md:table-cell print:table-cell ${P} py-2.5 ${th} text-center`}>Status</th>}
             </tr>
           </thead>
           <tbody className={tdiv}>
@@ -244,7 +244,7 @@ function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, s
                     <td className={`${H} ${P} py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500`}>{pct(cat.amount)}</td>
                     {limits && <td className={`${H} ${P} py-2.5 text-right text-slate-400 dark:text-slate-500 print:text-slate-400`}>{limitOf(cat.name)}</td>}
                     {limits && iconOf && (
-                      <td className={`hidden md:table-cell print:table-cell ${P} py-2.5`}>
+                      <td className={`hidden md:table-cell print:table-cell ${P} py-2.5 text-center`}>
                         <LimitUsage spent={cat.amount} limit={Number(limits[cat.name] ?? 0)} />
                       </td>
                     )}
@@ -291,27 +291,22 @@ function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, s
   )
 }
 
-// Barra de uso do limite planejado + etiqueta (estourou / perto / ok).
+// Etiqueta de uso do limite planejado (estourou / perto / ok).
 function LimitUsage({ spent, limit }: { spent: number; limit: number }) {
   if (!(limit > 0)) return <span className="text-[11px] text-slate-300 dark:text-slate-600">sem limite</span>
   const use = (spent / limit) * 100
   const state = use > 100 ? 'over' : use > 90 ? 'near' : 'ok'
   return (
-    <div className="flex items-center gap-2 min-w-[150px]">
-      <div className="flex-1 h-1.5 bg-slate-100 dark:bg-white/[0.08] print:bg-slate-100 rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full ${state === 'over' ? 'bg-red-500' : state === 'near' ? 'bg-amber-500' : 'bg-emerald-500'}`}
-          style={{ width: `${Math.min(use, 100)}%` }}
-        />
-      </div>
-      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${
+    <span
+      title={`${Math.round(use)}% do planejado`}
+      className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
         state === 'over' ? 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400'
           : state === 'near' ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
           : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-      }`}>
-        {state === 'over' ? 'estourou' : state === 'near' ? 'perto' : 'ok'}
-      </span>
-    </div>
+      }`}
+    >
+      {state === 'over' ? 'estourou' : state === 'near' ? 'perto' : 'ok'}
+    </span>
   )
 }
 
@@ -618,7 +613,7 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
           <ul className="px-4 pb-4 pl-10 space-y-1.5 text-xs text-slate-500 dark:text-slate-400 list-disc">
             <li><strong className="text-slate-700 dark:text-slate-200">Receitas, Despesas e Saldo</strong> somam o mês e as contas escolhidas nos filtros, sem as movimentações entre suas contas. A setinha compara com o mês anterior.</li>
             <li><strong className="text-slate-700 dark:text-slate-200">Saúde</strong> vai de 0 a 100 e sobe quanto mais da renda sobra no mês.</li>
-            <li><strong className="text-slate-700 dark:text-slate-200">Uso do limite</strong> compara o gasto com o planejado em Planejamento: <em>ok</em> até 90%, <em>perto</em> até 100% e <em>estourou</em> acima disso.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Status</strong> compara o gasto com o planejado em Planejamento: <em>ok</em> até 90%, <em>perto</em> até 100% e <em>estourou</em> acima disso.</li>
             <li><strong className="text-slate-700 dark:text-slate-200">Fixos</strong> são os lançamentos marcados como fixo em Recorrências; <strong className="text-slate-700 dark:text-slate-200">Parcelas</strong>, as compras parceladas; o resto são os <strong className="text-slate-700 dark:text-slate-200">Variáveis</strong>.</li>
             <li>No PDF, a lista de lançamentos sai completa, mesmo que esteja recolhida aqui.</li>
           </ul>
