@@ -479,7 +479,8 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
       )}
 
       {byCategory.length > 0 && (
-        <>
+        // Tabela à esquerda; "Para onde foi" e "Maiores gastos" empilhados à direita.
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] items-start">
           <OverviewSection
             icon={BarChart2}
             title={hasPlanned ? 'Gastos por categoria × planejado' : 'Gastos por categoria'}
@@ -498,7 +499,7 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
             </div>
           </OverviewSection>
 
-          <div className="grid gap-4 md:grid-cols-2 items-start">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1 items-start">
             <OverviewSection icon={PieChart} title="Para onde foi o dinheiro" subtitle="Fixos e parcelas já vinham comprometidos; o resto foi escolha do mês">
               {expenses > 0 && (
                 <>
@@ -538,7 +539,7 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
               </ul>
             </OverviewSection>
           </div>
-        </>
+        </div>
       )}
 
       {/* Todos os lançamentos — recolhido na tela, sempre aberto no PDF */}
