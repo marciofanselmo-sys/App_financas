@@ -7,7 +7,7 @@ import { YearMonthPoint, YoYBalancePoint } from '@/lib/report-charts'
 import { formatChartCurrency } from '@/lib/dashboard-charts'
 
 // Os três gráficos do Relatório Anual, só o desenho — o título e o card vêm
-// de quem usa (OverviewSection), para ficarem lado a lado no mesmo padrão.
+// de quem usa (OverviewSection), no mesmo padrão dos outros cards.
 const HEIGHT = 260
 const axisTick = { fontSize: 10, fill: '#94a3b8' }
 const kFormat = (v: unknown) => (Math.abs(Number(v)) >= 1000 ? `${Math.round(Number(v) / 1000)}k` : String(v))
