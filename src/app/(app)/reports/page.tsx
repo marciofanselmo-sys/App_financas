@@ -1174,9 +1174,16 @@ function FixedChargesReport({ year, boardId, excludeBoardIds }: { year: number; 
   })
   const closed = months.slice(0, Math.max(lastClosed, 0)).filter(m => m.fixo > 0)
   const avgMonth = closed.length ? closed.reduce((acc, m) => acc + m.fixo, 0) / closed.length : 0
-  const firstClosed = closed[0]
-  const lastClosedM = closed[closed.length - 1]
-  const trend = firstClosed && lastClosedM && closed.length > 1 && firstClosed.fixo > 0 ? ((lastClosedM.fixo - firstClosed.fixo) / firstClosed.fixo) * 100 : null
+  // Variação: média dos 3 primeiros meses fechados × média dos 3 últimos —
+  // um mês sozinho oscila demais (conta que atrasou, mês com 2 cobranças).
+  const span = Math.min(3, Math.floor(closed.length / 2))
+  const avgOf = (list: typeof closed) => list.reduce((acc, m) => acc + m.fixo, 0) / list.length
+  const firstPart = span > 0 ? closed.slice(0, span) : []
+  const lastPart = span > 0 ? closed.slice(-span) : []
+  const firstAvg = firstPart.length ? avgOf(firstPart) : 0
+  const lastAvg = lastPart.length ? avgOf(lastPart) : 0
+  const trend = span > 0 && firstAvg > 0 ? ((lastAvg - firstAvg) / firstAvg) * 100 : null
+  const periodLabel = (list: typeof closed) => list.length === 1 ? list[0].label.toLowerCase() : `${list[0].label.toLowerCase()}–${list[list.length - 1].label.toLowerCase()}`
 
   // Cada fixo no ano: quanto pagou, em quantos meses e se mudou de valor.
   const items = useMemo(() => {
@@ -1190,14 +1197,16 @@ function FixedChargesReport({ year, boardId, excludeBoardIds }: { year: number; 
     }
     return [...map.values()].map(it => {
       const vals = [...it.byMonth.entries()].sort((x, y) => x[0] - y[0]).map(e => e[1])
+      // Mudança de preço só entre meses fechados — o mês atual pode estar pela metade.
+      const closedVals = [...it.byMonth.entries()].filter(e => e[0] <= lastClosed).sort((x, y) => x[0] - y[0]).map(e => e[1])
       const total = vals.reduce((acc, v) => acc + v, 0)
-      const last = vals[vals.length - 1]
-      const before = vals.slice(0, -1)
+      const last = closedVals[closedVals.length - 1]
+      const before = closedVals.slice(0, -1)
       const prevAvg = before.length ? before.reduce((acc, v) => acc + v, 0) / before.length : null
       const change = prevAvg && prevAvg > 0 ? ((last - prevAvg) / prevAvg) * 100 : null
       return { ...it, total, monthsPaid: vals.length, avg: total / vals.length, change }
     }).sort((x, y) => y.total - x.total)
-  }, [fixedTx, itemOf])
+  }, [fixedTx, itemOf, lastClosed])
 
   const byCategory = useMemo(() => groupByMother(fixedTx, categories), [fixedTx, categories])
   const iconOf = (name: string) => {
@@ -1207,11 +1216,11 @@ function FixedChargesReport({ year, boardId, excludeBoardIds }: { year: number; 
   const monthsForAvg = Math.max(months.filter(m => m.fixo > 0).length, 1)
 
   const highlights: Highlight[] = []
-  if (trend !== null && firstClosed && lastClosedM) {
+  if (trend !== null) {
     highlights.push({
       tone: trend > 5 ? 'warn' : 'good',
       strong: `Custo fixo ${trend > 5 ? 'subiu' : trend < -5 ? 'caiu' : 'ficou estável'}${Math.abs(trend) > 5 ? ` ${Math.abs(trend).toFixed(0)}%` : ''}`,
-      text: `— de ${fmt(firstClosed.fixo)} em ${firstClosed.label.toLowerCase()} para ${fmt(lastClosedM.fixo)} em ${lastClosedM.label.toLowerCase()}.`,
+      text: `— média de ${fmt(firstAvg)}/mês em ${periodLabel(firstPart)} e ${fmt(lastAvg)}/mês em ${periodLabel(lastPart)}.`,
     })
   }
   const riser = items.filter(i => i.change !== null && i.change > 5).sort((x, y) => (y.change ?? 0) - (x.change ?? 0))[0]
@@ -1251,7 +1260,7 @@ function FixedChargesReport({ year, boardId, excludeBoardIds }: { year: number; 
         </Kpi>
         <Kpi title="Variação no ano" value={trend !== null ? `${trend >= 0 ? '+' : '−'}${Math.abs(trend).toFixed(0)}%` : '—'}
           valueClass={trend === null ? undefined : trend > 5 ? 'text-red-500 dark:text-red-400 print:text-red-500' : trend < -5 ? 'text-emerald-600 dark:text-emerald-400 print:text-emerald-600' : undefined}>
-          <p className="text-[11px] text-slate-400 mt-0.5">{firstClosed && lastClosedM ? `${firstClosed.label.toLowerCase()} → ${lastClosedM.label.toLowerCase()}` : 'precisa de 2 meses fechados'}</p>
+          <p className="text-[11px] text-slate-400 mt-0.5">{trend !== null ? `${periodLabel(firstPart)} → ${periodLabel(lastPart)}` : 'precisa de 2 meses fechados'}</p>
         </Kpi>
       </div>
 
@@ -1308,7 +1317,10 @@ function FixedChargesReport({ year, boardId, excludeBoardIds }: { year: number; 
                   <tr key={it.name} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
                     <td className="px-4 py-2.5 max-w-[260px]">
                       <p className="font-medium text-slate-700 dark:text-slate-200 print:text-slate-700 truncate">{it.name}</p>
-                      <p className="text-[11px] text-slate-400">{it.category}<span className="sm:hidden"> · {it.monthsPaid} de {lastMonth} meses</span></p>
+                      <p className="text-[11px] text-slate-400">
+                        {it.category !== it.name && it.category}
+                        <span className="sm:hidden">{it.category !== it.name ? ' · ' : ''}{it.monthsPaid} de {lastMonth} meses</span>
+                      </p>
                     </td>
                     <td className="px-4 py-2.5 text-center text-slate-500 dark:text-slate-400 hidden sm:table-cell print:table-cell">{it.monthsPaid} de {lastMonth}</td>
                     <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 hidden sm:table-cell print:table-cell">{fmt(it.avg)}</td>
@@ -1351,8 +1363,8 @@ function FixedChargesReport({ year, boardId, excludeBoardIds }: { year: number; 
           <ul className="px-4 pb-4 pl-10 space-y-1.5 text-xs text-slate-500 dark:text-slate-400 list-disc">
             <li>Este relatório olha para <strong className="text-slate-700 dark:text-slate-200">o que você pagou de fato</strong> no ano. Para confirmar fixos, ver quando cada um cai e quanto da renda já tem destino, use <Link href="/fixos" className="text-blue-600 dark:text-blue-400 hover:underline">Recorrências</Link>.</li>
             <li>Conta como fixo o lançamento confirmado como fixo em Recorrências (ou marcado como fixo no extrato). Parcelas ficam de fora — elas têm o relatório próprio.</li>
-            <li><strong className="text-slate-700 dark:text-slate-200">Média por mês</strong> e <strong className="text-slate-700 dark:text-slate-200">Variação no ano</strong> usam só meses que já terminaram.</li>
-            <li><strong className="text-slate-700 dark:text-slate-200">Última cobrança</strong> compara o último pagamento de cada fixo com a média dos anteriores: <em>subiu</em> ou <em>caiu</em> acima de 5%, senão <em>estável</em>.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Média por mês</strong> usa só meses que já terminaram. <strong className="text-slate-700 dark:text-slate-200">Variação no ano</strong> compara a média dos 3 primeiros meses fechados com a dos 3 últimos.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Última cobrança</strong> compara o último pagamento de cada fixo (em mês já fechado) com a média dos anteriores: <em>subiu</em> ou <em>caiu</em> acima de 5%, senão <em>estável</em>.</li>
           </ul>
         )}
       </section>
