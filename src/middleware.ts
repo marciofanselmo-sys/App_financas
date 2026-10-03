@@ -73,7 +73,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (user && pathname.startsWith('/auth')) {
+  // Exceção: /auth/confirm é o botão do e-mail de acesso. Com o navegador já
+  // logado, desviar para o dashboard pulava a tela de criar senha — o link
+  // precisa sempre trocar a sessão e abrir /primeiro-acesso.
+  if (user && pathname.startsWith('/auth') && pathname !== '/auth/confirm') {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
