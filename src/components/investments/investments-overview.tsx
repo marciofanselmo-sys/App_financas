@@ -114,14 +114,14 @@ export function InvestmentsSummary({ boards, total: shownTotal, aportesOnlyCount
 
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <div className="rounded-2xl p-4 text-white" style={{ background: 'linear-gradient(135deg,#1d4ed8,#0B2D6B)' }}>
-        <p className="text-[11px] uppercase tracking-wide text-blue-100">Patrimônio investido</p>
-        <p className="font-heading text-2xl font-extrabold mt-1 tabular-nums">{formatCurrency(total)}</p>
-        <p className="text-[11px] text-blue-100 mt-1">
+      <div className="bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] p-4">
+        <p className="text-[11px] uppercase tracking-wide text-slate-400">Patrimônio investido</p>
+        <p className="text-xl font-bold mt-1 tabular-nums text-blue-600 dark:text-blue-400">{formatCurrency(total)}</p>
+        <p className="text-[11px] text-slate-400 mt-1">
           {lastAt ? <>Atualizado em {shortDate(lastAt)} · {daysAgo(lastAt)}</> : aportesOnlyCount > 0 ? 'Pela soma dos aportes' : 'Nenhum valor informado ainda'}
         </p>
         {lastAt && aportesOnlyCount > 0 && (
-          <p className="text-[11px] text-blue-100/80">
+          <p className="text-[11px] text-slate-400">
             + {aportesOnlyCount} conta{aportesOnlyCount === 1 ? '' : 's'} pela soma dos aportes
           </p>
         )}

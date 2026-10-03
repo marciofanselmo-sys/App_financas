@@ -49,11 +49,12 @@ export function RecurringSummary({ despesa, receita, despesaCount, receitaCount 
   const gaugeColor = used == null ? '' : used > 70 ? 'bg-red-500' : used > 50 ? 'bg-amber-500' : 'bg-green-500'
   return (
     <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-      <div className="rounded-2xl p-4 text-white" style={{ background: 'linear-gradient(135deg,#1d4ed8,#0B2D6B)' }}>
-        <p className="text-[11px] uppercase tracking-wide text-blue-100">Sobra livre / mês</p>
-        <p className="font-heading text-2xl font-extrabold mt-1 tabular-nums">{receita > 0 ? fmt(free) : '—'}</p>
-        <p className="text-[11px] text-blue-100 mt-0.5">{receita > 0 ? 'receita fixa − despesa fixa' : 'confirme uma receita fixa para ver'}</p>
-      </div>
+      <Kpi
+        title="Sobra livre / mês"
+        value={receita > 0 ? fmt(free) : '—'}
+        valueClass={receita > 0 ? (free >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500 dark:text-red-400') : undefined}
+        sub={receita > 0 ? 'receita fixa − despesa fixa' : 'confirme uma receita fixa para ver'}
+      />
       <Kpi title="Renda comprometida" value={used != null ? pct(used) : '—'} sub="da receita fixa já tem destino">
         <div className="h-1.5 bg-slate-100 dark:bg-white/[0.08] rounded-full mt-2 mb-1 overflow-hidden">
           {used != null && <div className={cn('h-full rounded-full', gaugeColor)} style={{ width: `${Math.min(100, used)}%` }} />}

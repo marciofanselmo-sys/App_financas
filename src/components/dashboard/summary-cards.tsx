@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { TrendingUp, TrendingDown, Wallet, Activity, MinusCircle, ChevronRight, CheckCircle, AlertTriangle, Info } from 'lucide-react'
+import { ChevronRight, CheckCircle, AlertTriangle, Info } from 'lucide-react'
 import { DashboardSummary } from '@/types'
+import { Kpi } from '@/components/ui/overview-blocks'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 function formatCurrency(value: number) {
@@ -160,98 +161,36 @@ export function SummaryCards({ summary }: { summary: DashboardSummary }) {
 
   return (
     <>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Receitas — valor navy premium, movimento sinalizado em verde */}
-        <div className="nobli-card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <span className="nobli-kpi-label">Receitas</span>
-            <div className="nobli-chip h-8 w-8 rounded-lg">
-              <TrendingUp className="h-4 w-4" />
-            </div>
-          </div>
-          <p className="nobli-kpi-value">
-            {formatCurrency(totalIncome)}
-          </p>
-          <p className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 mt-2.5">
-            <TrendingUp className="h-3 w-3" /> Entradas do período
-          </p>
-        </div>
-
-        {/* Despesas */}
-        <div className="nobli-card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <span className="nobli-kpi-label">Despesas</span>
-            <div className="nobli-chip h-8 w-8 rounded-lg">
-              <TrendingDown className="h-4 w-4" />
-            </div>
-          </div>
-          <p className="nobli-kpi-value">
-            {formatCurrency(totalExpenses)}
-          </p>
-          <p className="flex items-center gap-1 text-xs font-medium text-red-500 dark:text-red-400 mt-2.5">
-            <TrendingDown className="h-3 w-3" /> Saídas do período
-          </p>
-        </div>
-
-        {/* Saldo — card hero em gradiente institucional (REF mobile) */}
-        <div className={`rounded-2xl p-5 shadow-[var(--nobli-shadow-m)] ${
-          positive
-            ? 'nobli-gradient'
-            : 'bg-gradient-to-br from-red-500 to-red-700'
-        }`}>
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-[13px] font-medium text-white/80">Saldo</span>
-            <div className="h-8 w-8 rounded-lg bg-white/15 border border-white/20 flex items-center justify-center">
-              <Wallet className="h-4 w-4 text-white" />
-            </div>
-          </div>
-          <p className="font-heading text-[1.55rem] font-bold text-white leading-none tabular-nums tracking-tight">
-            {formatCurrency(balance)}
-          </p>
-          <p className="text-xs text-white/60 mt-2.5">Receitas − Despesas</p>
-        </div>
-
-        {/* Saúde Financeira — clicável */}
+      {/* Mesmo padrão dos números dos Relatórios: card branco, valor na cor do que significa. */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Kpi title="Receitas" value={formatCurrency(totalIncome)} valueClass="text-emerald-600 dark:text-emerald-400" sub="entradas do período" />
+        <Kpi title="Despesas" value={formatCurrency(totalExpenses)} valueClass="text-red-500 dark:text-red-400" sub="saídas do período" />
+        <Kpi
+          title="Saldo"
+          value={formatCurrency(balance)}
+          valueClass={positive ? 'text-blue-600 dark:text-blue-400' : 'text-red-500 dark:text-red-400'}
+          sub="receitas − despesas"
+        />
+        {/* Saúde — clicável, abre a análise */}
         <button
+          type="button"
           onClick={() => hasData && setHealthOpen(true)}
-          className={`nobli-card p-5 text-left w-full ${hasData ? 'hover:shadow-[var(--nobli-shadow-m)] hover:border-[#2563EB]/25 transition-all cursor-pointer' : 'cursor-default'}`}
+          className={`text-left w-full rounded-2xl ${hasData ? 'cursor-pointer [&>div]:transition-shadow hover:[&>div]:shadow-md' : 'cursor-default'}`}
         >
-          <div className="flex items-center justify-between mb-4">
-            <span className="nobli-kpi-label">Saúde</span>
-            <div className={hasData ? 'nobli-chip h-8 w-8 rounded-lg' : 'h-8 w-8 rounded-lg bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center'}>
-              {hasData
-                ? <Activity className="h-4 w-4" />
-                : <MinusCircle className="h-4 w-4 text-slate-400" />
-              }
-            </div>
-          </div>
-
-          {hasData && cfg ? (
-            <>
-              <div className="flex items-baseline gap-1.5">
-                <p className="nobli-kpi-value">{score}</p>
-                <span className="text-sm text-[#93A5C1] dark:text-slate-500 font-normal">/100</span>
-              </div>
-              <div className="mt-3 h-1.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
-                <div className={`h-full rounded-full transition-all duration-700 ${cfg.barColor}`} style={{ width: `${score!}%` }} />
-              </div>
-              <div className="flex items-center justify-between mt-1.5">
-                <p className={`text-xs font-semibold ${cfg.color}`}>{cfg.label}</p>
-                <span className="flex items-center gap-0.5 text-[10px] text-slate-400 dark:text-slate-500">
-                  Detalhes <ChevronRight className="h-3 w-3" />
-                </span>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="text-sm font-semibold text-slate-400 dark:text-slate-500 leading-snug mt-1">
-                Indisponível
+          <Kpi
+            title="Saúde"
+            value={hasData ? `${score}/100` : '—'}
+            valueClass="text-purple-600 dark:text-purple-400"
+          >
+            {hasData && cfg ? (
+              <p className="flex items-center justify-between text-[11px] text-slate-400 mt-0.5">
+                <span className={`font-semibold ${cfg.color}`}>{cfg.label}</span>
+                <span className="flex items-center gap-0.5">Detalhes <ChevronRight className="h-3 w-3" /></span>
               </p>
-              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5 leading-snug">
-                Adicione movimentações para calcular sua pontuação.
-              </p>
-            </>
-          )}
+            ) : (
+              <p className="text-[11px] text-slate-400 mt-0.5">adicione movimentações para calcular</p>
+            )}
+          </Kpi>
         </button>
       </div>
 

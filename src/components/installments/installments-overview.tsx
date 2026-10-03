@@ -91,11 +91,12 @@ type Overview = ReturnType<typeof useInstallmentsOverview>
 export function InstallmentsSummary({ o }: { o: Overview }) {
   return (
     <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-      <div className="rounded-2xl p-4 text-white" style={{ background: 'linear-gradient(135deg,#6d28d9,#3b0764)' }}>
-        <p className="text-[11px] uppercase tracking-wide text-violet-200">Parcelas / mês</p>
-        <p className="font-heading text-2xl font-extrabold mt-1 tabular-nums">{fmt(o.monthly)}</p>
-        <p className="text-[11px] text-violet-200 mt-0.5">{o.activeCount} parcelamento{o.activeCount === 1 ? '' : 's'} ativo{o.activeCount === 1 ? '' : 's'}</p>
-      </div>
+      <Kpi
+        title="Parcelas / mês"
+        value={fmt(o.monthly)}
+        valueClass="text-violet-600 dark:text-violet-400"
+        sub={`${o.activeCount} parcelamento${o.activeCount === 1 ? '' : 's'} ativo${o.activeCount === 1 ? '' : 's'}`}
+      />
       <Kpi title="Falta pagar" value={fmt(o.left)} sub="soma das parcelas futuras" />
       <Kpi
         title={`Alivia em ${o.reliefLabel}`}

@@ -49,11 +49,11 @@ export function GoalsSummary({ items }: { items: GoalView[] }) {
 
   return (
     <div className="grid gap-3 sm:grid-cols-3">
-      <div className="rounded-2xl p-4 text-white" style={{ background: 'linear-gradient(135deg,#1d4ed8,#0B2D6B)' }}>
-        <p className="text-[11px] uppercase tracking-wide text-blue-100">Já guardado</p>
-        <p className="font-heading text-2xl font-extrabold mt-1 tabular-nums">{fmt(saved)}</p>
-        <div className="h-1.5 rounded-full bg-white/20 mt-2 overflow-hidden"><div className="h-full rounded-full bg-white" style={{ width: `${savedPct}%` }} /></div>
-        <p className="text-[11px] text-blue-100 mt-1.5">{savedPct}% de {fmt(target)} somando todas as metas</p>
+      <div className="bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] p-4">
+        <p className="text-[11px] uppercase tracking-wide text-slate-400">Já guardado</p>
+        <p className="text-xl font-bold mt-1 tabular-nums text-blue-600 dark:text-blue-400">{fmt(saved)}</p>
+        <div className="h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.08] mt-2 overflow-hidden"><div className="h-full rounded-full bg-blue-600" style={{ width: `${savedPct}%` }} /></div>
+        <p className="text-[11px] text-slate-400 mt-1.5">{savedPct}% de {fmt(target)} somando todas as metas</p>
       </div>
       <div className="bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] p-4">
         <p className="text-[11px] uppercase tracking-wide text-slate-400">Guardar por mês</p>
