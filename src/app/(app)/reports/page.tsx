@@ -501,7 +501,7 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
             </div>
           </OverviewSection>
 
-          <div className="grid gap-4 md:grid-cols-2 min-[1360px]:grid-cols-1 items-start">
+          <div className="grid gap-4 grid-cols-1 md:max-[1359px]:grid-cols-2 items-start">
             <OverviewSection icon={PieChart} title="Para onde foi o dinheiro" subtitle="Fixos e parcelas já vinham comprometidos; o resto foi escolha do mês">
               {expenses > 0 && (
                 <>
