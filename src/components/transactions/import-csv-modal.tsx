@@ -1129,6 +1129,11 @@ function shiftDays(date: string, days: number): string {
         }
       }
 
+      // Inserção em lote: se UMA linha manda is_internal, o PostgREST põe a
+      // coluna em todas — e quem não mandou vira null, que o banco recusa
+      // (not null), derrubando o lote inteiro. Então: ou todas mandam o valor
+      // (true/false), ou nenhuma manda.
+      const anyInternal = tracking.some(t => t.internal)
       const payload = tracking.map(({ id, row, counterpart, internal }) => ({
         id,
         user_id: user.id,
@@ -1139,7 +1144,7 @@ function shiftDays(date: string, days: number): string {
         counterpart_board_id: counterpart?.id ?? null,
         // Só manda a coluna quando precisa: banco sem migration_rules_internal.sql
         // continua importando normalmente enquanto ninguém criou regra nova.
-        ...(internal ? { is_internal: true } : {}),
+        ...(anyInternal ? { is_internal: !!internal } : {}),
         category: row.category,
         board_id: row.board_id ?? boardId ?? null,
         tags: [],
