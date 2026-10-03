@@ -35,7 +35,7 @@ import {
 } from '@/lib/report-charts'
 import { AnnualFlowChart, YoYBalanceChart, YoYIncomeChart, hasYearData } from '@/components/reports/annual-charts'
 import { NewVsPaidChart, IncomeWeightChart } from '@/components/reports/installment-charts'
-import { MonthAmountChart, MonthPercentChart } from '@/components/reports/month-charts'
+import { MonthAmountChart } from '@/components/reports/month-charts'
 import { buildPurchases, monthIdx } from '@/lib/installment-history'
 import { extractInstallment } from '@/hooks/use-recurring'
 import { realMovements, internalTotals } from '@/lib/internal-movement'
@@ -1281,14 +1281,10 @@ function FixedChargesReport({ year, boardId, excludeBoardIds }: { year: number; 
       )}
 
       {paid > 0 && (
-        <div className="space-y-4 print:hidden">
-          <OverviewSection icon={BarChart2} iconClass="text-red-500" title="Custo fixo mês a mês" subtitle="Quanto você pagou de gastos fixos em cada mês">
-            <div className="mt-3"><MonthAmountChart data={months} dataKey="fixo" name="Gastos fixos" color="#ef4444" /></div>
-          </OverviewSection>
-          <OverviewSection icon={TrendingUp} title="Peso dos fixos na renda" subtitle="Quanto das receitas de cada mês foi para gastos fixos">
-            <div className="mt-3"><MonthPercentChart data={months} dataKey="peso" name="Peso na renda" color="#a78bfa" /></div>
-          </OverviewSection>
-        </div>
+        // Um gráfico só: o valor pago em barras e, em cima, quanto da renda foi.
+        <OverviewSection className="print:hidden" icon={BarChart2} iconClass="text-red-500" title="Custo fixo mês a mês" subtitle="Quanto você pagou de gastos fixos em cada mês · em cima de cada barra, quanto isso foi da renda do mês">
+          <div className="mt-3"><MonthAmountChart data={months} dataKey="fixo" name="Gastos fixos" color="#ef4444" percentKey="peso" /></div>
+        </OverviewSection>
       )}
 
       {byCategory.length > 0 && (
