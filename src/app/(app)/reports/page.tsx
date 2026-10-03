@@ -35,6 +35,7 @@ import {
 } from '@/lib/report-charts'
 import { AnnualFlowChart, YoYBalanceChart, YoYIncomeChart, hasYearData } from '@/components/reports/annual-charts'
 import { NewVsPaidChart, IncomeWeightChart } from '@/components/reports/installment-charts'
+import { MonthAmountChart, MonthPercentChart } from '@/components/reports/month-charts'
 import { buildPurchases, monthIdx } from '@/lib/installment-history'
 import { extractInstallment } from '@/hooks/use-recurring'
 import { realMovements, internalTotals } from '@/lib/internal-movement'
@@ -66,6 +67,7 @@ const REPORT_TYPES: { id: ReportType; label: string; icon: React.ElementType }[]
 const REPORT_QUESTIONS: Partial<Record<ReportType, [string, string]>> = {
   mensal: ['Como foi o meu mês?', 'Quanto entrou, quanto saiu, onde passou do planejado e o que mudou em relação ao mês anterior.'],
   parcelas: ['Como é o meu hábito de parcelar?', 'Quanto você comprou parcelado no ano, quanto já pagou, quanto isso pesa na renda e o que costuma parcelar. Para o que ainda falta pagar, veja Cartões & Parcelas.'],
+  fixos: ['Quanto o meu custo fixo pesou no ano?', 'O que você pagou de fato em gastos fixos, como isso evoluiu mês a mês e quais fixos subiram de preço. Para confirmar fixos e ver quando caem, use Recorrências.'],
   anual: ['Como está o meu ano?', 'O ano até aqui: quanto sobrou, os melhores e piores meses, como está em relação ao ano passado e onde o dinheiro vai.'],
 }
 
@@ -1122,104 +1124,238 @@ function InstallmentsReport({ year, boardId, excludeBoardIds }: { year: number; 
 }
 
 // ── Relatório de Gastos Fixos ─────────────────────────────────────────────────
-function FixedChargesReport({ boardId, excludeBoardIds }: { boardId: string; excludeBoardIds: string[] }) {
-  const { recurring, loading } = useRecurring(
-    boardId === 'all' ? excludeBoardIds : undefined,
-    boardId !== 'all' ? boardId : undefined,
-  )
+function FixedChargesReport({ year, boardId, excludeBoardIds }: { year: number; boardId: string; excludeBoardIds: string[] }) {
+  const filters = {
+    board_id: boardId !== 'all' ? boardId : undefined,
+    exclude_board_ids: boardId === 'all' ? excludeBoardIds : undefined,
+  }
+  const { transactions: allTransactions, loading } = useTransactions({ year, ...filters })
+  const { recurring, loading: recLoading } = useRecurring(boardId === 'all' ? excludeBoardIds : undefined, boardId !== 'all' ? boardId : undefined)
   const { decisions, loading: decisionsLoading } = useRecurringDecisions()
   const { categories } = useCategories()
   const subcategoryNames = useSubcategoryNames()
+  const [showHelp, setShowHelp] = useState(false)
 
-  function categoryColor(name: string): string {
-    return categories.find(c => c.name === name)?.color ?? '#94a3b8'
+  const today = new Date()
+  const todayISO = today.toLocaleDateString('en-CA')
+  const isCurrentYear = year === today.getFullYear()
+  const lastMonth = year > today.getFullYear() ? 0 : isCurrentYear ? today.getMonth() + 1 : 12
+  const lastClosed = isCurrentYear ? lastMonth - 1 : lastMonth
+
+  // Fixo = confirmado em Recorrências (mesmo agrupamento de /fixos) ou marcado
+  // no lançamento. Cada descrição aponta para o fixo dela, para somar por item.
+  const itemOf = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const item of buildDisplayItems(recurring.filter(r => r.type === 'despesa'), new Map(), subcategoryNames)) {
+      if (decisions.get(item.key) !== 'confirmed') continue
+      for (const d of item.descriptions) map.set(d.toLowerCase().trim(), item.name)
+    }
+    return map
+  }, [recurring, decisions, subcategoryNames])
+
+  const happened = useMemo(() => realMovements(allTransactions).filter(t => t.date <= todayISO), [allTransactions, todayISO])
+  const fixedTx = useMemo(
+    () => happened.filter(t => t.type === 'despesa' && !installmentLabel(t) && (itemOf.has(t.description.toLowerCase().trim()) || t.is_recurring)),
+    [happened, itemOf],
+  )
+  const paid = fixedTx.reduce((acc, t) => acc + Number(t.amount), 0)
+  const income = happened.filter(t => t.type === 'receita').reduce((acc, t) => acc + Number(t.amount), 0)
+  const weight = income > 0 ? (paid / income) * 100 : null
+
+  const months = Array.from({ length: lastMonth }, (_, i) => {
+    const inMonth = (t: Transaction) => Number(t.date.slice(5, 7)) === i + 1
+    const fixo = fixedTx.filter(inMonth).reduce((acc, t) => acc + Number(t.amount), 0)
+    const renda = happened.filter(t => t.type === 'receita' && inMonth(t)).reduce((acc, t) => acc + Number(t.amount), 0)
+    return {
+      label: MONTH_SHORT[i].charAt(0).toUpperCase() + MONTH_SHORT[i].slice(1),
+      fixo,
+      peso: renda > 0 ? Math.round((fixo / renda) * 1000) / 10 : 0,
+    }
+  })
+  const closed = months.slice(0, Math.max(lastClosed, 0)).filter(m => m.fixo > 0)
+  const avgMonth = closed.length ? closed.reduce((acc, m) => acc + m.fixo, 0) / closed.length : 0
+  const firstClosed = closed[0]
+  const lastClosedM = closed[closed.length - 1]
+  const trend = firstClosed && lastClosedM && closed.length > 1 && firstClosed.fixo > 0 ? ((lastClosedM.fixo - firstClosed.fixo) / firstClosed.fixo) * 100 : null
+
+  // Cada fixo no ano: quanto pagou, em quantos meses e se mudou de valor.
+  const items = useMemo(() => {
+    const map = new Map<string, { name: string; category: string; byMonth: Map<number, number> }>()
+    for (const t of fixedTx) {
+      const name = itemOf.get(t.description.toLowerCase().trim()) ?? t.description
+      const it = map.get(name) ?? { name, category: t.category, byMonth: new Map<number, number>() }
+      const m = Number(t.date.slice(5, 7))
+      it.byMonth.set(m, (it.byMonth.get(m) ?? 0) + Number(t.amount))
+      map.set(name, it)
+    }
+    return [...map.values()].map(it => {
+      const vals = [...it.byMonth.entries()].sort((x, y) => x[0] - y[0]).map(e => e[1])
+      const total = vals.reduce((acc, v) => acc + v, 0)
+      const last = vals[vals.length - 1]
+      const before = vals.slice(0, -1)
+      const prevAvg = before.length ? before.reduce((acc, v) => acc + v, 0) / before.length : null
+      const change = prevAvg && prevAvg > 0 ? ((last - prevAvg) / prevAvg) * 100 : null
+      return { ...it, total, monthsPaid: vals.length, avg: total / vals.length, change }
+    }).sort((x, y) => y.total - x.total)
+  }, [fixedTx, itemOf])
+
+  const byCategory = useMemo(() => groupByMother(fixedTx, categories), [fixedTx, categories])
+  const iconOf = (name: string) => {
+    const cat = categories.find(c => !c.parent_id && c.name === name && c.type !== 'receita') ?? categories.find(c => c.name === name)
+    return cat ? categoryIconKey(cat, categories) : guessIconKey(name)
+  }
+  const monthsForAvg = Math.max(months.filter(m => m.fixo > 0).length, 1)
+
+  const highlights: Highlight[] = []
+  if (trend !== null && firstClosed && lastClosedM) {
+    highlights.push({
+      tone: trend > 5 ? 'warn' : 'good',
+      strong: `Custo fixo ${trend > 5 ? 'subiu' : trend < -5 ? 'caiu' : 'ficou estável'}${Math.abs(trend) > 5 ? ` ${Math.abs(trend).toFixed(0)}%` : ''}`,
+      text: `— de ${fmt(firstClosed.fixo)} em ${firstClosed.label.toLowerCase()} para ${fmt(lastClosedM.fixo)} em ${lastClosedM.label.toLowerCase()}.`,
+    })
+  }
+  const riser = items.filter(i => i.change !== null && i.change > 5).sort((x, y) => (y.change ?? 0) - (x.change ?? 0))[0]
+  if (riser) {
+    highlights.push({ tone: 'bad', strong: `${riser.name} subiu ${riser.change!.toFixed(0)}%`, text: `— a última cobrança veio acima da média dos meses anteriores.` })
+  }
+  if (byCategory[0] && paid > 0) {
+    highlights.push({ tone: 'info', strong: `${byCategory[0].name} é ${Math.round((byCategory[0].amount / paid) * 100)}% do seu custo fixo`, text: `— ${fmt(byCategory[0].amount)} no ano.` })
   }
 
-  // "Gastos Fixos" é só despesa — recorrência também detecta receita e
-  // transferência (usadas em /fixos), mas esse relatório é especificamente de gasto.
-  // Mesmo motor de agrupamento/média de /fixos (buildDisplayItems) — antes esse
-  // relatório tinha uma cópia própria e desatualizada dessa lógica, com a
-  // mesma diluição de média de grupo já corrigida em /fixos em 2026-07-09.
-  const despesaRecurring = useMemo(() => recurring.filter(r => r.type === 'despesa'), [recurring])
-  const allItems   = useMemo(() => buildDisplayItems(despesaRecurring, new Map(), subcategoryNames), [despesaRecurring, subcategoryNames])
-  const confirmed  = allItems.filter(i => decisions.get(i.key) === 'confirmed')
-  const pending    = allItems.filter(i => !decisions.has(i.key))
-  const fmtDate      = (d: string) => { const [y, m, day] = d.split('-'); return `${day}/${m}/${y}` }
-  const totalMonthly = confirmed.reduce((s, i) => s + i.avgAmount, 0)
+  if (loading || recLoading || decisionsLoading) return <div className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</div>
 
-  // Mesma tabela do Mensal/Anual: cada gasto fixo fica dentro da
-  // categoria-mãe dele (Internet, Aluguel e Luz dentro de Moradia).
-  const byCategory: CategoryRow[] = (() => {
-    const mothers = motherNameByCategory(categories)
-    const map: Record<string, CategoryRow> = {}
-    for (const item of confirmed) {
-      const catName = (item.isGroup ? (item.subcategory ?? item.category) : item.category) || 'Outros'
-      const mother = motherOf(catName, mothers, 'despesa')
-      const row = map[mother] ?? (map[mother] = { name: mother, amount: 0, color: categoryColor(mother), subs: [] })
-      row.amount += item.avgAmount
-      row.subs.push({ name: item.name, amount: item.avgAmount, note: `${item.monthsCount}x · última ${fmtDate(item.lastDate)}` })
-    }
-    return Object.values(map)
-      .map(r => ({ ...r, subs: [...r.subs].sort((a, b) => b.amount - a.amount) }))
-      .sort((a, b) => b.amount - a.amount)
-  })()
-
-  if (loading || decisionsLoading) return <div className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</div>
+  const changeTag = (c: number | null) => {
+    if (c === null) return <span className="text-[10px] text-slate-300 dark:text-slate-600">—</span>
+    const cls = c > 5 ? 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+      : c < -5 ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+      : 'bg-slate-100 text-slate-500 dark:bg-white/[0.06] dark:text-slate-400'
+    return <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${cls}`}>{c > 5 ? `subiu ${c.toFixed(0)}%` : c < -5 ? `caiu ${Math.abs(c).toFixed(0)}%` : 'estável'}</span>
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <ReportHeader
-        title="Relatório de Gastos Fixos"
-        subtitle={`${confirmed.length} ${confirmed.length === 1 ? 'gasto confirmado' : 'gastos confirmados'} como fixo`}
+        title={`Relatório de Gastos Fixos — ${year}`}
+        subtitle={`${items.length} gasto${items.length === 1 ? '' : 's'} fixo${items.length === 1 ? '' : 's'} pago${items.length === 1 ? '' : 's'} no ano${isCurrentYear ? ' · até hoje' : ''}`}
       />
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className={card}>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Total fixo / mês</p>
-          <p className="text-base sm:text-lg print:text-lg font-bold text-emerald-600 dark:text-emerald-400 print:text-emerald-600 mt-1">{fmt(totalMonthly)}</p>
-        </div>
-        <div className={card}>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Estimativa anual</p>
-          <p className="text-base sm:text-lg print:text-lg font-bold text-slate-800 dark:text-slate-100 print:text-slate-800 mt-1">{fmt(totalMonthly * 12)}</p>
-        </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Kpi title="Pago em fixos" value={fmt(paid)} valueClass="text-red-500 dark:text-red-400 print:text-red-500">
+          <p className="text-[11px] text-slate-400 mt-0.5">no ano{isCurrentYear ? ', até hoje' : ''}</p>
+        </Kpi>
+        <Kpi title="Média por mês" value={fmt(avgMonth)}>
+          <p className="text-[11px] text-slate-400 mt-0.5">nos {closed.length} {closed.length === 1 ? 'mês fechado' : 'meses fechados'}</p>
+        </Kpi>
+        <Kpi title="Peso na renda" value={weight !== null ? `${weight.toFixed(0)}%` : '—'}>
+          <p className="text-[11px] text-slate-400 mt-0.5">das receitas do ano foi para fixos</p>
+        </Kpi>
+        <Kpi title="Variação no ano" value={trend !== null ? `${trend >= 0 ? '+' : '−'}${Math.abs(trend).toFixed(0)}%` : '—'}
+          valueClass={trend === null ? undefined : trend > 5 ? 'text-red-500 dark:text-red-400 print:text-red-500' : trend < -5 ? 'text-emerald-600 dark:text-emerald-400 print:text-emerald-600' : undefined}>
+          <p className="text-[11px] text-slate-400 mt-0.5">{firstClosed && lastClosedM ? `${firstClosed.label.toLowerCase()} → ${lastClosedM.label.toLowerCase()}` : 'precisa de 2 meses fechados'}</p>
+        </Kpi>
       </div>
 
-      {confirmed.length > 0 && (
-        <CategoryTable
-          title="Confirmados como Fixo"
-          rows={byCategory}
-          total={totalMonthly}
-          valueLabel="Média/mês"
-          subLabel="gastos"
-          hint="Toque numa categoria para ver os gastos fixos dela. Valores são a média mensal de cada gasto."
+      {highlights.length > 0 && (
+        <div className="grid gap-3 md:grid-cols-3">
+          {highlights.slice(0, 3).map((h, i) => {
+            const { icon: Icon, cls } = HIGHLIGHT_STYLE[h.tone]
+            return (
+              <div key={i} className="flex gap-3 rounded-2xl border border-slate-100 dark:border-white/[0.06] print:border-slate-200 bg-white dark:bg-[#111c2d] print:bg-white p-3.5">
+                <span className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 ${cls}`}><Icon className="h-3.5 w-3.5" /></span>
+                <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400 print:text-slate-600">
+                  <strong className="text-slate-800 dark:text-slate-100 print:text-slate-800">{h.strong}</strong>{h.text ? ' ' : ''}{h.text}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {paid > 0 && (
+        <div className="space-y-4 print:hidden">
+          <OverviewSection icon={BarChart2} iconClass="text-red-500" title="Custo fixo mês a mês" subtitle="Quanto você pagou de gastos fixos em cada mês">
+            <div className="mt-3"><MonthAmountChart data={months} dataKey="fixo" name="Gastos fixos" color="#ef4444" /></div>
+          </OverviewSection>
+          <OverviewSection icon={TrendingUp} title="Peso dos fixos na renda" subtitle="Quanto das receitas de cada mês foi para gastos fixos">
+            <div className="mt-3"><MonthPercentChart data={months} dataKey="peso" name="Peso na renda" color="#a78bfa" /></div>
+          </OverviewSection>
+        </div>
+      )}
+
+      {byCategory.length > 0 && (
+        <OverviewSection icon={BarChart2} title="Gastos fixos por categoria no ano" subtitle={`Toque numa categoria para ver as subcategorias. Média sobre ${monthsForAvg} ${monthsForAvg === 1 ? 'mês' : 'meses'} com pagamento.`}>
+          <div className="mt-3">
+            <CategoryTable title="" hint="" rows={byCategory} total={paid} valueLabel="Pago no ano" months={monthsForAvg} iconOf={iconOf} />
+          </div>
+        </OverviewSection>
+      )}
+
+      {items.length > 0 && (
+        <OverviewSection icon={RefreshCw} title="Cada gasto fixo no ano" subtitle="Quanto pagou, em quantos meses e se a última cobrança mudou em relação às anteriores">
+          <div className={`${table} mt-3`}>
+            <table className="w-full text-sm">
+              <thead className={thead}>
+                <tr>
+                  <th className={`text-left px-4 py-2.5 ${th}`}>Gasto fixo</th>
+                  <th className={`text-center px-4 py-2.5 ${th} hidden sm:table-cell print:table-cell`}>Meses pagos</th>
+                  <th className={`text-right px-4 py-2.5 ${th} hidden sm:table-cell print:table-cell`}>Média</th>
+                  <th className={`text-right px-4 py-2.5 ${th}`}>Pago no ano</th>
+                  <th className={`text-center px-4 py-2.5 ${th}`}>Última cobrança</th>
+                </tr>
+              </thead>
+              <tbody className={tdiv}>
+                {items.map(it => (
+                  <tr key={it.name} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+                    <td className="px-4 py-2.5 max-w-[260px]">
+                      <p className="font-medium text-slate-700 dark:text-slate-200 print:text-slate-700 truncate">{it.name}</p>
+                      <p className="text-[11px] text-slate-400">{it.category}<span className="sm:hidden"> · {it.monthsPaid} de {lastMonth} meses</span></p>
+                    </td>
+                    <td className="px-4 py-2.5 text-center text-slate-500 dark:text-slate-400 hidden sm:table-cell print:table-cell">{it.monthsPaid} de {lastMonth}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 hidden sm:table-cell print:table-cell">{fmt(it.avg)}</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(it.total)}</td>
+                    <td className="px-4 py-2.5 text-center">{changeTag(it.change)}</td>
+                  </tr>
+                ))}
+                <tr className={tfoot}>
+                  <td className="px-4 py-2.5 text-slate-700 dark:text-slate-200 print:text-slate-700">Total</td>
+                  <td className="hidden sm:table-cell print:table-cell" />
+                  <td className="hidden sm:table-cell print:table-cell" />
+                  <td className="px-4 py-2.5 text-right text-red-500">{fmt(paid)}</td>
+                  <td />
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </OverviewSection>
+      )}
+
+      {items.length === 0 && (
+        <EmptyState
+          icon={RefreshCw}
+          iconColor="text-violet-500"
+          iconBg="bg-violet-50 dark:bg-violet-500/15"
+          title="Nenhum gasto fixo pago neste ano"
+          description="Confirme seus gastos fixos em Recorrências para acompanhar o histórico deles aqui."
+          primaryLabel="Ir para Recorrências"
+          primaryHref="/fixos"
         />
       )}
 
-      {/* Sugestões ainda não revisadas ficam só em /fixos — o relatório mostra
-          apenas o que o usuário confirmou como fixo. */}
-      {confirmed.length === 0 && (
-        pending.length > 0 ? (
-          <EmptyState
-            icon={RefreshCw}
-            iconColor="text-sky-500"
-            iconBg="bg-sky-50 dark:bg-sky-500/15"
-            title="Nenhum gasto fixo confirmado"
-            description={`Há ${pending.length} ${pending.length === 1 ? 'sugestão' : 'sugestões'} de gasto fixo para revisar. Confirme as que são fixas para elas aparecerem aqui.`}
-            primaryLabel="Revisar gastos fixos"
-            primaryHref="/fixos"
-          />
-        ) : (
-          <EmptyState
-            icon={RefreshCw}
-            iconColor="text-sky-500"
-            iconBg="bg-sky-50 dark:bg-sky-500/15"
-            title="Nenhuma cobrança fixa detectada"
-            description="O app detecta automaticamente despesas que aparecem em 2+ meses. Importe seus extratos para começar."
-            primaryLabel="Importar extrato"
-            primaryHref="/transactions"
-          />
-        )
-      )}
+      <section className="print:hidden rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50/70 dark:bg-white/[0.03]">
+        <button type="button" onClick={() => setShowHelp(v => !v)} aria-expanded={showHelp} className="w-full flex items-center gap-2 p-4 text-left">
+          <ChevronRight className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${showHelp ? 'rotate-90' : ''}`} />
+          <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Como ler este relatório</span>
+        </button>
+        {showHelp && (
+          <ul className="px-4 pb-4 pl-10 space-y-1.5 text-xs text-slate-500 dark:text-slate-400 list-disc">
+            <li>Este relatório olha para <strong className="text-slate-700 dark:text-slate-200">o que você pagou de fato</strong> no ano. Para confirmar fixos, ver quando cada um cai e quanto da renda já tem destino, use <Link href="/fixos" className="text-blue-600 dark:text-blue-400 hover:underline">Recorrências</Link>.</li>
+            <li>Conta como fixo o lançamento confirmado como fixo em Recorrências (ou marcado como fixo no extrato). Parcelas ficam de fora — elas têm o relatório próprio.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Média por mês</strong> e <strong className="text-slate-700 dark:text-slate-200">Variação no ano</strong> usam só meses que já terminaram.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Última cobrança</strong> compara o último pagamento de cada fixo com a média dos anteriores: <em>subiu</em> ou <em>caiu</em> acima de 5%, senão <em>estável</em>.</li>
+          </ul>
+        )}
+      </section>
     </div>
   )
 }
@@ -1443,7 +1579,7 @@ function ReportsPage() {
               <PeriodFilter month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
             </div>
           )}
-          {(type === 'anual' || type === 'parcelas') && (
+          {(type === 'anual' || type === 'parcelas' || type === 'fixos') && (
             <div className="shrink-0 flex items-center gap-1 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl shadow-sm">
               <button
                 onClick={() => setYear(y => y - 1)}
@@ -1483,7 +1619,7 @@ function ReportsPage() {
           >
             {type === 'anual'    && <AnnualReport year={year} boardId={boardId} excludeBoardIds={excludeBoardIds} />}
             {type === 'parcelas' && <InstallmentsReport year={year} boardId={boardId} excludeBoardIds={excludeBoardIds} />}
-            {type === 'fixos'    && <FixedChargesReport boardId={boardId} excludeBoardIds={excludeBoardIds} />}
+            {type === 'fixos'    && <FixedChargesReport year={year} boardId={boardId} excludeBoardIds={excludeBoardIds} />}
             {type === 'investimentos' && <InvestmentsReport boardId={boardId} />}
           </PlanGate>
         )}
