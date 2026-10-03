@@ -349,6 +349,18 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
   const { transactions: prevAll } = useTransactions({ month: prevMonth, year: prevYear, ...filters })
   const { plan } = useBudgetPlan(month, year)
   const { categories } = useCategories()
+  // Fixo = confirmado em Recorrências (mesmo agrupamento de /fixos) ou marcado no lançamento.
+  const { recurring } = useRecurring(boardId === 'all' ? excludeBoardIds : undefined, boardId !== 'all' ? boardId : undefined)
+  const { decisions } = useRecurringDecisions()
+  const subcategoryNames = useSubcategoryNames()
+  const fixedDescriptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const item of buildDisplayItems(recurring.filter(r => r.type === 'despesa'), new Map(), subcategoryNames)) {
+      if (decisions.get(item.key) !== 'confirmed') continue
+      for (const d of item.descriptions) set.add(d.toLowerCase().trim())
+    }
+    return set
+  }, [recurring, decisions, subcategoryNames])
   const [showAll, setShowAll] = useState(false)
   const [showInternal, setShowInternal] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
@@ -387,7 +399,9 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
   // Para onde foi o dinheiro: parcela, fixo (marcado em Recorrências) ou escolha do mês.
   const despesas = transactions.filter(t => t.type === 'despesa')
   const parcelas = despesas.filter(t => installmentLabel(t)).reduce((s, t) => s + Number(t.amount), 0)
-  const fixos = despesas.filter(t => !installmentLabel(t) && t.is_recurring).reduce((s, t) => s + Number(t.amount), 0)
+  const fixos = despesas
+    .filter(t => !installmentLabel(t) && (t.is_recurring || fixedDescriptions.has(t.description.toLowerCase().trim())))
+    .reduce((s, t) => s + Number(t.amount), 0)
   const variaveis = Math.max(0, expenses - parcelas - fixos)
   const biggest = [...despesas].sort((a, b) => Number(b.amount) - Number(a.amount)).slice(0, 5)
 
@@ -436,10 +450,10 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
         <Kpi title="Receitas" value={fmt(income)} valueClass="text-emerald-600 dark:text-emerald-400 print:text-emerald-600">
           <Delta now={income} prev={prevIncome} upIsGood label={prevName} />
         </Kpi>
-        <Kpi title="Despesas" value={fmt(expenses)} valueClass="text-red-500">
+        <Kpi title="Despesas" value={fmt(expenses)} valueClass="text-red-500 dark:text-red-400 print:text-red-500">
           <Delta now={expenses} prev={prevExpenses} upIsGood={false} label={prevName} />
         </Kpi>
-        <Kpi title="Saldo" value={fmt(balance)} valueClass={balance >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500'}>
+        <Kpi title="Saldo" value={fmt(balance)} valueClass={balance >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500 dark:text-red-400 print:text-red-500'}>
           <p className="text-[11px] text-slate-400 mt-0.5">
             {savedPct !== null ? `sobrou ${savedPct}% da renda` : 'sem receitas no mês'}
             {prevSavedPct !== null && ` · ${prevName}: ${prevSavedPct}%`}
@@ -470,7 +484,7 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
       )}
 
       {byCategory.length > 0 && (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] items-start">
+        <>
           <OverviewSection
             icon={BarChart2}
             title={hasPlanned ? 'Gastos por categoria × planejado' : 'Gastos por categoria'}
@@ -489,7 +503,7 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
             </div>
           </OverviewSection>
 
-          <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 items-start">
             <OverviewSection icon={PieChart} title="Para onde foi o dinheiro" subtitle="Fixos e parcelas já vinham comprometidos; o resto foi escolha do mês">
               {expenses > 0 && (
                 <>
@@ -529,7 +543,7 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
               </ul>
             </OverviewSection>
           </div>
-        </div>
+        </>
       )}
 
       {/* Todos os lançamentos — recolhido na tela, sempre aberto no PDF */}
