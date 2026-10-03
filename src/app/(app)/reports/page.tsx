@@ -34,7 +34,7 @@ import {
   buildYoYIncomeComparison,
 } from '@/lib/report-charts'
 import { AnnualFlowChart, YoYBalanceChart, YoYIncomeChart, hasYearData } from '@/components/reports/annual-charts'
-import { NewVsPaidChart, IncomeWeightChart } from '@/components/reports/installment-charts'
+import { NewVsPaidChart } from '@/components/reports/installment-charts'
 import { MonthAmountChart } from '@/components/reports/month-charts'
 import { buildPurchases, monthIdx } from '@/lib/installment-history'
 import { extractInstallment } from '@/hooks/use-recurring'
@@ -1025,14 +1025,10 @@ function InstallmentsReport({ year, boardId, excludeBoardIds }: { year: number; 
       )}
 
       {lastMonth > 0 && (paid > 0 || bought > 0) && (
-        <div className="space-y-4 print:hidden">
-          <OverviewSection icon={BarChart2} iconClass="text-violet-600 dark:text-violet-400" title="Quanto você parcelou × quanto pagou" subtitle="Roxo: compras novas no mês (valor cheio) · vermelho: parcelas pagas no mês">
-            <div className="mt-3"><NewVsPaidChart data={months} /></div>
-          </OverviewSection>
-          <OverviewSection icon={TrendingUp} iconClass="text-violet-600 dark:text-violet-400" title="Peso das parcelas na renda" subtitle="Quanto das receitas de cada mês foi para parcelas">
-            <div className="mt-3"><IncomeWeightChart data={months} /></div>
-          </OverviewSection>
-        </div>
+        // Um gráfico só: comprado × pago e, em cima das parcelas pagas, o % da renda.
+        <OverviewSection className="print:hidden" icon={BarChart2} iconClass="text-violet-600 dark:text-violet-400" title="Quanto você parcelou × quanto pagou" subtitle="Roxo: compras novas no mês (valor cheio) · vermelho: parcelas pagas, com o % da renda do mês em cima">
+          <div className="mt-3"><NewVsPaidChart data={months} /></div>
+        </OverviewSection>
       )}
 
       {byCategory.length > 0 && (
