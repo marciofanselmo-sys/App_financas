@@ -784,9 +784,9 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
         </div>
       )}
 
-      {/* Os três gráficos de sempre, menores e lado a lado */}
+      {/* Os três gráficos de sempre, um embaixo do outro, em largura total */}
       {hasYearData(chartMonths) && (
-        <div className="grid gap-4 lg:grid-cols-3 print:hidden">
+        <div className="space-y-4 print:hidden">
           <OverviewSection icon={BarChart2} title={`Receitas × Despesas — ${year}`} subtitle={isCurrentYear ? 'Meses à frente: só o que já está comprometido' : 'Cada mês do ano'}>
             <div className="mt-3"><AnnualFlowChart data={chartMonths} /></div>
           </OverviewSection>
