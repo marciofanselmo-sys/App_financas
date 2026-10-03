@@ -310,7 +310,7 @@ function InvestmentsPage() {
           )}
 
           {gainBoards.length > 0 && totalInvested > 0 && (
-            <div className="rounded-2xl border border-slate-100 dark:border-white/[0.06] bg-white dark:bg-[#111c2d] shadow-sm p-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-slate-100 dark:border-white/[0.06] bg-white dark:bg-[#111c2d] shadow-sm p-4 grid gap-3 sm:grid-cols-3 sm:divide-x divide-slate-100 dark:divide-white/[0.06] text-center">
               <div>
                 <p className="text-[11px] uppercase tracking-wide text-slate-400">Total aportado</p>
                 <p className="text-xl font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(totalInvested)}</p>
