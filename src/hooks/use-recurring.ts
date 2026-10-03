@@ -33,7 +33,7 @@ export interface InstallmentItem {
   board_id?: string | null
 }
 
-function extractInstallment(t: Transaction): { base: string; current: number; total: number } | null {
+export function extractInstallment(t: Transaction): { base: string; current: number; total: number } | null {
   // New format: DB columns
   if (t.installment_total && t.installment_total > 1) {
     return { base: t.description, current: t.installment_current ?? 1, total: t.installment_total }

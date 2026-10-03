@@ -34,7 +34,9 @@ import {
   buildYoYIncomeComparison,
 } from '@/lib/report-charts'
 import { AnnualFlowChart, YoYBalanceChart, YoYIncomeChart, hasYearData } from '@/components/reports/annual-charts'
-import { useInstallmentsOverview, InstallmentsSummary, ReliefChart, ByCard, InstallmentsList } from '@/components/installments/installments-overview'
+import { NewVsPaidChart, IncomeWeightChart } from '@/components/reports/installment-charts'
+import { buildPurchases, monthIdx } from '@/lib/installment-history'
+import { extractInstallment } from '@/hooks/use-recurring'
 import { realMovements, internalTotals } from '@/lib/internal-movement'
 import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 import { CategoryIcon, categoryIconKey, guessIconKey } from '@/lib/category-icons'
@@ -63,7 +65,7 @@ const REPORT_TYPES: { id: ReportType; label: string; icon: React.ElementType }[]
 // A pergunta que cada relatório responde (os demais ganham a sua ao serem refeitos).
 const REPORT_QUESTIONS: Partial<Record<ReportType, [string, string]>> = {
   mensal: ['Como foi o meu mês?', 'Quanto entrou, quanto saiu, onde passou do planejado e o que mudou em relação ao mês anterior.'],
-  parcelas: ['Quanto ainda devo e quando fico livre?', 'Tudo o que está parcelado: quanto falta, quanto pesa por mês e quando cada compra termina.'],
+  parcelas: ['Como é o meu hábito de parcelar?', 'Quanto você comprou parcelado no ano, quanto já pagou, quanto isso pesa na renda e o que costuma parcelar. Para o que ainda falta pagar, veja Cartões & Parcelas.'],
   anual: ['Como está o meu ano?', 'O ano até aqui: quanto sobrou, os melhores e piores meses, como está em relação ao ano passado e onde o dinheiro vai.'],
 }
 
@@ -905,73 +907,198 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
 }
 
 // ── Relatório de Parcelas ─────────────────────────────────────────────────────
-function InstallmentsReport({ boardId, excludeBoardIds }: { boardId: string; excludeBoardIds: string[] }) {
-  const { installments, loading } = useRecurring(
-    boardId === 'all' ? excludeBoardIds : undefined,
-    boardId !== 'all' ? boardId : undefined,
-  )
-  const { boards } = useTransactionBoards()
+function InstallmentsReport({ year, boardId, excludeBoardIds }: { year: number; boardId: string; excludeBoardIds: string[] }) {
+  const { transactions: allTransactions, loading } = useTransactions({
+    year,
+    board_id: boardId !== 'all' ? boardId : undefined,
+    exclude_board_ids: boardId === 'all' ? excludeBoardIds : undefined,
+  })
+  const { categories } = useCategories()
   const [showHelp, setShowHelp] = useState(false)
-  // Mesmas peças da tela Cartões & Parcelas, para as duas mostrarem o mesmo.
-  const overview = useInstallmentsOverview(installments, boards)
-  const active = installments.filter(i => i.remaining > 0)
-  const endLabel = (ym: string) => { const [y, m] = ym.split('-'); return `${MONTH_SHORT[parseInt(m) - 1]}/${y.slice(2)}` }
+
+  const today = new Date()
+  const todayISO = today.toLocaleDateString('en-CA')
+  const isCurrentYear = year === today.getFullYear()
+  const lastMonth = year > today.getFullYear() ? 0 : isCurrentYear ? today.getMonth() + 1 : 12
+  const yearStart = year * 12
+
+  // Só o que já aconteceu: parcela de mês futuro é compromisso, não pagamento.
+  const happened = useMemo(
+    () => realMovements(allTransactions).filter(t => t.date <= todayISO),
+    [allTransactions, todayISO],
+  )
+  const purchases = useMemo(() => buildPurchases(realMovements(allTransactions), todayISO), [allTransactions, todayISO])
+  // Compras que começaram neste ano (até hoje).
+  const started = purchases.filter(p => p.startIdx >= yearStart && p.startIdx < yearStart + lastMonth)
+  const paidTx = happened.filter(t => t.type === 'despesa' && extractInstallment(t))
+
+  const bought = started.reduce((acc, p) => acc + p.full, 0)
+  const paid = paidTx.reduce((acc, t) => acc + Number(t.amount), 0)
+  const income = happened.filter(t => t.type === 'receita').reduce((acc, t) => acc + Number(t.amount), 0)
+  const weight = income > 0 ? (paid / income) * 100 : null
+  const avgTerm = started.length ? Math.round(started.reduce((acc, p) => acc + p.total, 0) / started.length) : 0
+  const ticket = started.length ? bought / started.length : 0
+  const stillActive = started.filter(p => p.paidNow < p.total).length
+
+  const months = useMemo(() => Array.from({ length: lastMonth }, (_, i) => {
+    const idx = yearStart + i
+    const inMonth = (t: Transaction) => monthIdx(t.date) === idx
+    const pagoM = paidTx.filter(inMonth).reduce((acc, t) => acc + Number(t.amount), 0)
+    const rendaM = happened.filter(t => t.type === 'receita' && inMonth(t)).reduce((acc, t) => acc + Number(t.amount), 0)
+    return {
+      label: MONTH_SHORT[i].charAt(0).toUpperCase() + MONTH_SHORT[i].slice(1),
+      novas: started.filter(p => p.startIdx === idx).reduce((acc, p) => acc + p.full, 0),
+      pago: pagoM,
+      peso: rendaM > 0 ? Math.round((pagoM / rendaM) * 1000) / 10 : 0,
+    }
+  }), [lastMonth, yearStart, paidTx, happened, started])
+
+  // O que você costuma parcelar: valor cheio das compras por categoria (subcategorias dentro da mãe).
+  const byCategory = useMemo(
+    () => groupByMother(started.map(p => ({ type: 'despesa', category: p.category, amount: p.full }) as Transaction), categories),
+    [started, categories],
+  )
+  const iconOf = (name: string) => {
+    const cat = categories.find(c => !c.parent_id && c.name === name && c.type !== 'receita') ?? categories.find(c => c.name === name)
+    return cat ? categoryIconKey(cat, categories) : guessIconKey(name)
+  }
+  const idxLabel = (idx: number) => `${MONTH_SHORT[idx % 12]}/${String(Math.floor(idx / 12)).slice(2)}`
 
   const highlights: Highlight[] = []
-  if (active.length > 0 && overview.left > 0) {
-    const biggest = [...active].sort((x, y) => y.monthlyAmount * y.remaining - x.monthlyAmount * x.remaining)[0]
-    const share = Math.round(((biggest.monthlyAmount * biggest.remaining) / overview.left) * 100)
-    highlights.push({ tone: 'warn', strong: `${biggest.description} é ${share}% do que falta pagar`, text: `— ${fmt(biggest.monthlyAmount * biggest.remaining)} até ${endLabel(biggest.endYearMonth)}.` })
-    if (overview.halfLabel) {
-      highlights.push({ tone: 'good', strong: `Em ${overview.halfLabel} as parcelas caem para menos da metade`, text: `do que você paga hoje (${fmt(overview.monthly)}/mês).` })
-    }
-    const last = [...active].sort((x, y) => y.endYearMonth.localeCompare(x.endYearMonth))[0]
-    highlights.push({ tone: 'info', strong: `A última parcela é de ${last.description}`, text: `em ${endLabel(last.endYearMonth)} — se não houver compras parceladas novas, você fica livre aí.` })
+  const peak = [...months].sort((x, y) => y.novas - x.novas)[0]
+  if (peak && peak.novas > 0) {
+    const n = started.filter(p => MONTH_SHORT[p.startIdx % 12] === peak.label.toLowerCase()).length
+    highlights.push({ tone: 'warn', strong: `${MONTH_NAMES[MONTH_SHORT.indexOf(peak.label.toLowerCase())]} foi o mês que mais parcelou:`, text: `${fmt(peak.novas)} em ${n} compra${n === 1 ? '' : 's'}.` })
+  }
+  if (byCategory[0] && bought > 0) {
+    highlights.push({ tone: 'info', strong: `${byCategory[0].name} é o que você mais parcela`, text: `— ${Math.round((byCategory[0].amount / bought) * 100)}% do valor comprado parcelado no ano.` })
+  }
+  const finished = purchases.filter(p => p.paidNow >= p.total && p.startIdx + p.total - 1 >= yearStart)
+  if (finished.length > 0) {
+    highlights.push({ tone: 'good', strong: `${finished.length} compra${finished.length === 1 ? '' : 's'} quitada${finished.length === 1 ? '' : 's'} no ano`, text: `— ${fmt(finished.reduce((acc, p) => acc + p.monthly, 0))} que deixaram de sair por mês.` })
+  } else if (weight !== null) {
+    highlights.push({ tone: weight > 20 ? 'bad' : 'good', strong: `Parcelas levaram ${weight.toFixed(0)}% das receitas do ano.`, text: weight > 20 ? 'Acima de 20% costuma apertar o mês.' : '' })
   }
 
   if (loading) return <div className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</div>
 
+  const list = [...started].sort((x, y) => y.startIdx - x.startIdx || y.full - x.full)
+
   return (
     <div className="space-y-5">
-      <ReportHeader title="Relatório de Parcelas" subtitle={`${active.length} parcelamento${active.length === 1 ? '' : 's'} ativo${active.length === 1 ? '' : 's'}`} />
+      <ReportHeader
+        title={`Relatório de Parcelas — ${year}`}
+        subtitle={`${started.length} compra${started.length === 1 ? '' : 's'} parcelada${started.length === 1 ? '' : 's'} no ano · ${stillActive} ainda em andamento`}
+      />
 
-      {active.length === 0 ? (
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Kpi title="Comprado parcelado" value={fmt(bought)} valueClass="text-violet-600 dark:text-violet-400 print:text-violet-600">
+          <p className="text-[11px] text-slate-400 mt-0.5">{started.length} compra{started.length === 1 ? '' : 's'} · valor cheio</p>
+        </Kpi>
+        <Kpi title="Já pago em parcelas" value={fmt(paid)} valueClass="text-red-500 dark:text-red-400 print:text-red-500">
+          <p className="text-[11px] text-slate-400 mt-0.5">no ano · média de {fmt(lastMonth > 0 ? paid / lastMonth : 0)}/mês</p>
+        </Kpi>
+        <Kpi title="Peso na renda" value={weight !== null ? `${weight.toFixed(0)}%` : '—'}>
+          <p className="text-[11px] text-slate-400 mt-0.5">das receitas do ano foi para parcelas</p>
+        </Kpi>
+        <Kpi title="Prazo médio" value={avgTerm ? `${avgTerm}x` : '—'}>
+          <p className="text-[11px] text-slate-400 mt-0.5">{started.length ? `ticket médio de ${fmt(ticket)} por compra` : 'nenhuma compra parcelada no ano'}</p>
+        </Kpi>
+      </div>
+
+      {highlights.length > 0 && (
+        <div className="grid gap-3 md:grid-cols-3">
+          {highlights.slice(0, 3).map((h, i) => {
+            const { icon: Icon, cls } = HIGHLIGHT_STYLE[h.tone]
+            return (
+              <div key={i} className="flex gap-3 rounded-2xl border border-slate-100 dark:border-white/[0.06] print:border-slate-200 bg-white dark:bg-[#111c2d] print:bg-white p-3.5">
+                <span className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 ${cls}`}><Icon className="h-3.5 w-3.5" /></span>
+                <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400 print:text-slate-600">
+                  <strong className="text-slate-800 dark:text-slate-100 print:text-slate-800">{h.strong}</strong>{h.text ? ' ' : ''}{h.text}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {lastMonth > 0 && (paid > 0 || bought > 0) && (
+        <div className="space-y-4 print:hidden">
+          <OverviewSection icon={BarChart2} iconClass="text-violet-600 dark:text-violet-400" title="Quanto você parcelou × quanto pagou" subtitle="Roxo: compras novas no mês (valor cheio) · vermelho: parcelas pagas no mês">
+            <div className="mt-3"><NewVsPaidChart data={months} /></div>
+          </OverviewSection>
+          <OverviewSection icon={TrendingUp} iconClass="text-violet-600 dark:text-violet-400" title="Peso das parcelas na renda" subtitle="Quanto das receitas de cada mês foi para parcelas">
+            <div className="mt-3"><IncomeWeightChart data={months} /></div>
+          </OverviewSection>
+        </div>
+      )}
+
+      {byCategory.length > 0 && (
+        <OverviewSection icon={BarChart2} title="O que você costuma parcelar" subtitle="Valor cheio das compras parceladas no ano, por categoria. Toque numa categoria para ver as subcategorias.">
+          <div className="mt-3">
+            <CategoryTable title="" hint="" rows={byCategory} total={bought} valueLabel="Valor" iconOf={iconOf} />
+          </div>
+        </OverviewSection>
+      )}
+
+      {list.length > 0 && (
+        <OverviewSection icon={CreditCard} iconClass="text-violet-600 dark:text-violet-400" title="Compras parceladas no ano" subtitle="Cada compra com o valor cheio, em quantas vezes e a situação hoje">
+          <div className={`${table} mt-3`}>
+            <table className="w-full text-sm">
+              <thead className={thead}>
+                <tr>
+                  <th className={`text-left px-4 py-2.5 ${th}`}>Compra</th>
+                  <th className={`text-left px-4 py-2.5 ${th} hidden sm:table-cell print:table-cell`}>Início</th>
+                  <th className={`text-right px-4 py-2.5 ${th}`}>Valor cheio</th>
+                  <th className={`text-center px-4 py-2.5 ${th} hidden sm:table-cell print:table-cell`}>Vezes</th>
+                  <th className={`text-center px-4 py-2.5 ${th}`}>Situação</th>
+                </tr>
+              </thead>
+              <tbody className={tdiv}>
+                {list.map(p => {
+                  const done = p.paidNow >= p.total
+                  return (
+                    <tr key={p.key} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+                      <td className="px-4 py-2.5 max-w-[260px]">
+                        <p className="font-medium text-slate-700 dark:text-slate-200 print:text-slate-700 truncate">{p.description}</p>
+                        <p className="text-[11px] text-slate-400">{p.category}<span className="sm:hidden"> · {idxLabel(p.startIdx)} · {p.total}x</span></p>
+                      </td>
+                      <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400 text-xs hidden sm:table-cell print:table-cell">{idxLabel(p.startIdx)}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(p.full)}</td>
+                      <td className="px-4 py-2.5 text-center text-slate-500 dark:text-slate-400 hidden sm:table-cell print:table-cell">{p.total}x de {fmt(p.monthly)}</td>
+                      <td className="px-4 py-2.5 text-center">
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${done
+                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                          : 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>
+                          {done ? 'quitada' : `${p.paidNow} de ${p.total}`}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+                <tr className={tfoot}>
+                  <td className="px-4 py-2.5 text-slate-700 dark:text-slate-200 print:text-slate-700">Total</td>
+                  <td className="hidden sm:table-cell print:table-cell" />
+                  <td className="px-4 py-2.5 text-right text-violet-600 dark:text-violet-400 print:text-violet-600">{fmt(bought)}</td>
+                  <td className="hidden sm:table-cell print:table-cell" />
+                  <td />
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </OverviewSection>
+      )}
+
+      {started.length === 0 && paid === 0 && (
         <EmptyState
           icon={CreditCard}
           iconColor="text-violet-500"
           iconBg="bg-violet-50 dark:bg-violet-500/15"
-          title="Nenhum parcelamento ativo"
-          description="Importe um extrato para que o app detecte parcelamentos automaticamente."
-          primaryLabel="Importar extrato"
-          primaryHref="/transactions"
+          title="Nenhuma compra parcelada neste ano"
+          description="Quando um extrato trouxer compras parceladas, o histórico delas aparece aqui."
+          primaryLabel="Ver Cartões & Parcelas"
+          primaryHref="/recurring"
         />
-      ) : (
-        <>
-          <InstallmentsSummary o={overview} />
-
-          {highlights.length > 0 && (
-            <div className="grid gap-3 md:grid-cols-3">
-              {highlights.slice(0, 3).map((h, i) => {
-                const { icon: Icon, cls } = HIGHLIGHT_STYLE[h.tone]
-                return (
-                  <div key={i} className="flex gap-3 rounded-2xl border border-slate-100 dark:border-white/[0.06] print:border-slate-200 bg-white dark:bg-[#111c2d] print:bg-white p-3.5">
-                    <span className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 ${cls}`}><Icon className="h-3.5 w-3.5" /></span>
-                    <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400 print:text-slate-600">
-                      <strong className="text-slate-800 dark:text-slate-100 print:text-slate-800">{h.strong}</strong>{h.text ? ' ' : ''}{h.text}
-                    </p>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
-            <ReliefChart o={overview} />
-            <ByCard o={overview} />
-          </div>
-
-          <InstallmentsList o={overview} />
-        </>
       )}
 
       <section className="print:hidden rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50/70 dark:bg-white/[0.03]">
@@ -982,10 +1109,11 @@ function InstallmentsReport({ boardId, excludeBoardIds }: { boardId: string; exc
         </button>
         {showHelp && (
           <ul className="px-4 pb-4 pl-10 space-y-1.5 text-xs text-slate-500 dark:text-slate-400 list-disc">
-            <li><strong className="text-slate-700 dark:text-slate-200">Parcelas / mês</strong> soma uma parcela de cada compra que ainda tem parcela por vir.</li>
-            <li><strong className="text-slate-700 dark:text-slate-200">Falta pagar</strong> soma todas as parcelas futuras; <strong className="text-slate-700 dark:text-slate-200">Fica livre em</strong> é o mês da última delas.</li>
-            <li>O gráfico mostra quanto sai em parcelas em cada um dos próximos 12 meses, por cartão — considerando só o que já foi comprado.</li>
-            <li>Os mesmos números aparecem em Cartões & Parcelas, onde dá para adicionar ou remover parcelamentos.</li>
+            <li>Este relatório olha para <strong className="text-slate-700 dark:text-slate-200">o que já aconteceu</strong> no ano. Para o que ainda falta pagar e quando você fica livre, veja <Link href="/recurring" className="text-blue-600 dark:text-blue-400 hover:underline">Cartões & Parcelas</Link>.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Comprado parcelado</strong> é o valor cheio (parcela × vezes) das compras que começaram no ano.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Já pago em parcelas</strong> soma as parcelas que venceram no ano até hoje — inclusive de compras de anos anteriores.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Peso na renda</strong> é quanto das receitas foi para parcelas.</li>
+            <li>A situação mostra quantas parcelas já venceram até hoje; <em>quitada</em> quando todas venceram.</li>
           </ul>
         )}
       </section>
@@ -1315,7 +1443,7 @@ function ReportsPage() {
               <PeriodFilter month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
             </div>
           )}
-          {type === 'anual' && (
+          {(type === 'anual' || type === 'parcelas') && (
             <div className="shrink-0 flex items-center gap-1 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl shadow-sm">
               <button
                 onClick={() => setYear(y => y - 1)}
@@ -1354,7 +1482,7 @@ function ReportsPage() {
             pitch="Veja o ano inteiro, as parcelas que ainda vão cair, seus gastos fixos e a carteira de investimentos."
           >
             {type === 'anual'    && <AnnualReport year={year} boardId={boardId} excludeBoardIds={excludeBoardIds} />}
-            {type === 'parcelas' && <InstallmentsReport boardId={boardId} excludeBoardIds={excludeBoardIds} />}
+            {type === 'parcelas' && <InstallmentsReport year={year} boardId={boardId} excludeBoardIds={excludeBoardIds} />}
             {type === 'fixos'    && <FixedChargesReport boardId={boardId} excludeBoardIds={excludeBoardIds} />}
             {type === 'investimentos' && <InvestmentsReport boardId={boardId} />}
           </PlanGate>
