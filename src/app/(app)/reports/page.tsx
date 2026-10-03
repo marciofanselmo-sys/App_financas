@@ -34,6 +34,7 @@ import {
   buildYoYIncomeComparison,
 } from '@/lib/report-charts'
 import { AnnualFlowChart, YoYBalanceChart, YoYIncomeChart, hasYearData } from '@/components/reports/annual-charts'
+import { useInstallmentsOverview, InstallmentsSummary, ReliefChart, ByCard, InstallmentsList } from '@/components/installments/installments-overview'
 import { realMovements, internalTotals } from '@/lib/internal-movement'
 import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 import { CategoryIcon, categoryIconKey, guessIconKey } from '@/lib/category-icons'
@@ -62,6 +63,7 @@ const REPORT_TYPES: { id: ReportType; label: string; icon: React.ElementType }[]
 // A pergunta que cada relatório responde (os demais ganham a sua ao serem refeitos).
 const REPORT_QUESTIONS: Partial<Record<ReportType, [string, string]>> = {
   mensal: ['Como foi o meu mês?', 'Quanto entrou, quanto saiu, onde passou do planejado e o que mudou em relação ao mês anterior.'],
+  parcelas: ['Quanto ainda devo e quando fico livre?', 'Tudo o que está parcelado: quanto falta, quanto pesa por mês e quando cada compra termina.'],
   anual: ['Como está o meu ano?', 'O ano até aqui: quanto sobrou, os melhores e piores meses, como está em relação ao ano passado e onde o dinheiro vai.'],
 }
 
@@ -908,27 +910,30 @@ function InstallmentsReport({ boardId, excludeBoardIds }: { boardId: string; exc
     boardId === 'all' ? excludeBoardIds : undefined,
     boardId !== 'all' ? boardId : undefined,
   )
-  const active   = installments.filter(i => i.remaining > 0)
-  const total    = active.reduce((s, i) => s + i.monthlyAmount * i.remaining, 0)
-  const monthly  = active.reduce((s, i) => s + i.monthlyAmount, 0)
-  const endLabel = (ym: string) => { const [y, m] = ym.split('-'); return `${MONTH_SHORT[parseInt(m) - 1]}/${y}` }
+  const { boards } = useTransactionBoards()
+  const [showHelp, setShowHelp] = useState(false)
+  // Mesmas peças da tela Cartões & Parcelas, para as duas mostrarem o mesmo.
+  const overview = useInstallmentsOverview(installments, boards)
+  const active = installments.filter(i => i.remaining > 0)
+  const endLabel = (ym: string) => { const [y, m] = ym.split('-'); return `${MONTH_SHORT[parseInt(m) - 1]}/${y.slice(2)}` }
+
+  const highlights: Highlight[] = []
+  if (active.length > 0 && overview.left > 0) {
+    const biggest = [...active].sort((x, y) => y.monthlyAmount * y.remaining - x.monthlyAmount * x.remaining)[0]
+    const share = Math.round(((biggest.monthlyAmount * biggest.remaining) / overview.left) * 100)
+    highlights.push({ tone: 'warn', strong: `${biggest.description} é ${share}% do que falta pagar`, text: `— ${fmt(biggest.monthlyAmount * biggest.remaining)} até ${endLabel(biggest.endYearMonth)}.` })
+    if (overview.halfLabel) {
+      highlights.push({ tone: 'good', strong: `Em ${overview.halfLabel} as parcelas caem para menos da metade`, text: `do que você paga hoje (${fmt(overview.monthly)}/mês).` })
+    }
+    const last = [...active].sort((x, y) => y.endYearMonth.localeCompare(x.endYearMonth))[0]
+    highlights.push({ tone: 'info', strong: `A última parcela é de ${last.description}`, text: `em ${endLabel(last.endYearMonth)} — se não houver compras parceladas novas, você fica livre aí.` })
+  }
 
   if (loading) return <div className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</div>
 
   return (
-    <div className="space-y-6">
-      <ReportHeader title="Relatório de Parcelas Futuras" subtitle={`${active.length} parcelamentos ativos`} />
-
-      <div className="grid grid-cols-2 gap-3">
-        <div className={card}>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Compromisso / mês</p>
-          <p className="text-base sm:text-lg print:text-lg font-bold text-violet-600 dark:text-violet-400 print:text-violet-600 mt-1">{fmt(monthly)}</p>
-        </div>
-        <div className={card}>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Total comprometido</p>
-          <p className="text-base sm:text-lg print:text-lg font-bold text-slate-800 dark:text-slate-100 print:text-slate-800 mt-1">{fmt(total)}</p>
-        </div>
-      </div>
+    <div className="space-y-5">
+      <ReportHeader title="Relatório de Parcelas" subtitle={`${active.length} parcelamento${active.length === 1 ? '' : 's'} ativo${active.length === 1 ? '' : 's'}`} />
 
       {active.length === 0 ? (
         <EmptyState
@@ -941,43 +946,49 @@ function InstallmentsReport({ boardId, excludeBoardIds }: { boardId: string; exc
           primaryHref="/transactions"
         />
       ) : (
-        <div className={table}>
-          <table className="w-full text-sm">
-            <thead className={thead}>
-              <tr>
-                <th className={`text-left px-4 py-2.5 ${th}`}>Descrição</th>
-                <th className={`text-center px-4 py-2.5 ${th}`}>Parcelas</th>
-                <th className={`text-right px-4 py-2.5 ${th}`}>Valor/mês</th>
-                <th className={`text-right px-4 py-2.5 ${th}`}>Restantes</th>
-                <th className={`text-right px-4 py-2.5 ${th}`}>Total futuro</th>
-                <th className={`text-right px-4 py-2.5 ${th}`}>Término</th>
-              </tr>
-            </thead>
-            <tbody className={tdiv}>
-              {active.map((item, i) => (
-                <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-                  <td className="px-4 py-2.5 max-w-[180px]">
-                    <div className="font-medium text-slate-700 dark:text-slate-200 print:text-slate-700 truncate">{item.description}</div>
-                    <div className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">{item.category}</div>
-                  </td>
-                  <td className="px-4 py-2.5 text-center text-slate-500 dark:text-slate-400 print:text-slate-500">{item.currentInstallment}/{item.totalInstallments}</td>
-                  <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(item.monthlyAmount)}</td>
-                  <td className="px-4 py-2.5 text-right text-slate-600 dark:text-slate-400 print:text-slate-600">{item.remaining}</td>
-                  <td className="px-4 py-2.5 text-right font-semibold text-violet-600 dark:text-violet-400 print:text-violet-600">{fmt(item.monthlyAmount * item.remaining)}</td>
-                  <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500">{endLabel(item.endYearMonth)}</td>
-                </tr>
-              ))}
-              <tr className={tfoot}>
-                <td className="px-4 py-2.5 text-slate-700 dark:text-slate-200 print:text-slate-700" colSpan={2}>Total</td>
-                <td className="px-4 py-2.5 text-right text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(monthly)}</td>
-                <td />
-                <td className="px-4 py-2.5 text-right text-violet-600 dark:text-violet-400 print:text-violet-600">{fmt(total)}</td>
-                <td />
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <>
+          <InstallmentsSummary o={overview} />
+
+          {highlights.length > 0 && (
+            <div className="grid gap-3 md:grid-cols-3">
+              {highlights.slice(0, 3).map((h, i) => {
+                const { icon: Icon, cls } = HIGHLIGHT_STYLE[h.tone]
+                return (
+                  <div key={i} className="flex gap-3 rounded-2xl border border-slate-100 dark:border-white/[0.06] print:border-slate-200 bg-white dark:bg-[#111c2d] print:bg-white p-3.5">
+                    <span className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 ${cls}`}><Icon className="h-3.5 w-3.5" /></span>
+                    <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400 print:text-slate-600">
+                      <strong className="text-slate-800 dark:text-slate-100 print:text-slate-800">{h.strong}</strong>{h.text ? ' ' : ''}{h.text}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
+            <ReliefChart o={overview} />
+            <ByCard o={overview} />
+          </div>
+
+          <InstallmentsList o={overview} />
+        </>
       )}
+
+      <section className="print:hidden rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50/70 dark:bg-white/[0.03]">
+        <button type="button" onClick={() => setShowHelp(v => !v)} aria-expanded={showHelp} className="w-full flex items-center gap-2 p-4 text-left">
+          <ChevronRight className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${showHelp ? 'rotate-90' : ''}`} />
+          <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Como ler este relatório</span>
+        </button>
+        {showHelp && (
+          <ul className="px-4 pb-4 pl-10 space-y-1.5 text-xs text-slate-500 dark:text-slate-400 list-disc">
+            <li><strong className="text-slate-700 dark:text-slate-200">Parcelas / mês</strong> soma uma parcela de cada compra que ainda tem parcela por vir.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Falta pagar</strong> soma todas as parcelas futuras; <strong className="text-slate-700 dark:text-slate-200">Fica livre em</strong> é o mês da última delas.</li>
+            <li>O gráfico mostra quanto sai em parcelas em cada um dos próximos 12 meses, por cartão — considerando só o que já foi comprado.</li>
+            <li>Os mesmos números aparecem em Cartões & Parcelas, onde dá para adicionar ou remover parcelamentos.</li>
+          </ul>
+        )}
+      </section>
     </div>
   )
 }

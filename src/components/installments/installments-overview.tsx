@@ -192,14 +192,15 @@ function Badge({ remaining }: { remaining: number }) {
   return null
 }
 
-export function InstallmentsList({ o, onRemove }: { o: Overview; onRemove: (item: InstallmentItem) => void }) {
+/** Sem `onRemove` a lista fica só de leitura (usada no Relatório de Parcelas). */
+export function InstallmentsList({ o, onRemove }: { o: Overview; onRemove?: (item: InstallmentItem) => void }) {
   const [filter, setFilter] = useState<string>('all')
   const [sort, setSort] = useState<SortKey>('end')
   const groups = o.groups.filter(g => filter === 'all' || g.id === filter)
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
         <div className="flex flex-wrap gap-1.5">
           {[{ id: 'all', name: 'Todos os cartões' }, ...o.groups].map(g => (
             <button
@@ -235,7 +236,7 @@ export function InstallmentsList({ o, onRemove }: { o: Overview; onRemove: (item
               <th className="text-right font-semibold px-3 py-2.5">Por mês</th>
               <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">Falta pagar</th>
               <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">Termina</th>
-              <th className="w-10" />
+              {onRemove && <th className="w-10" />}
             </tr>
           </thead>
           <tbody>
@@ -249,12 +250,12 @@ export function InstallmentsList({ o, onRemove }: { o: Overview; onRemove: (item
   )
 }
 
-function GroupRows({ group: g, cmp, onRemove }: { group: CardGroup; cmp: (a: InstallmentItem, b: InstallmentItem) => number; onRemove: (item: InstallmentItem) => void }) {
+function GroupRows({ group: g, cmp, onRemove }: { group: CardGroup; cmp: (a: InstallmentItem, b: InstallmentItem) => number; onRemove?: (item: InstallmentItem) => void }) {
   const items = [...g.items].sort(cmp)
   return (
     <>
       <tr className="bg-slate-50 dark:bg-white/[0.03] border-b border-slate-100 dark:border-white/[0.06]">
-        <td colSpan={6} className="px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+        <td colSpan={onRemove ? 6 : 5} className="px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
           <span className="inline-flex items-center gap-2">
             <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: g.color }} />
             {g.name} · {g.items.length}
@@ -290,7 +291,7 @@ function GroupRows({ group: g, cmp, onRemove }: { group: CardGroup; cmp: (a: Ins
               <p className="text-[11px] text-slate-400">{item.remaining} parcela{item.remaining === 1 ? '' : 's'}</p>
             </td>
             <td className="px-3 py-2.5 text-right hidden md:table-cell text-slate-600 dark:text-slate-300 whitespace-nowrap">{MONTHS[Number(m) - 1]}/{y.slice(2)}</td>
-            <td className="pr-3 py-2.5 text-right">
+            {onRemove && <td className="pr-3 py-2.5 text-right">
               <button
                 type="button"
                 onClick={() => onRemove(item)}
@@ -299,7 +300,7 @@ function GroupRows({ group: g, cmp, onRemove }: { group: CardGroup; cmp: (a: Ins
               >
                 <Trash2 className="h-4 w-4" />
               </button>
-            </td>
+            </td>}
           </tr>
         )
       })}
