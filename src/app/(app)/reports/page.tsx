@@ -193,7 +193,8 @@ function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, s
           </button>
         )}
       </div>
-      <p className={`text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 mb-3 ${hint === '' && !months ? 'hidden' : ''}`}>
+      {/* hint === '' : quem usa já explica no título do card (Mensal/Anual novos). */}
+      <p className={`text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 mb-3 ${hint === '' ? 'hidden' : ''}`}>
         {hint ?? 'Toque numa categoria para ver as subcategorias — elas já estão somadas no total dela.'}
         {months ? ` Média calculada sobre ${months} ${months === 1 ? 'mês' : 'meses'} com movimento.` : ''}
       </p>
