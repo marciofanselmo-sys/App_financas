@@ -22,7 +22,6 @@ import {
   ChevronLeft, ChevronRight, ChevronsUpDown, TrendingUp, Tag,
   AlertTriangle, ArrowUp, CheckCircle2, Star, PieChart, Receipt, List as ListIcon, ArrowLeftRight, Info,
 } from 'lucide-react'
-import { CategorySummary, PositionsBreakdown, ProventosBreakdown } from '@/components/investments/rico-position-summary'
 import { BoardIcon } from '@/components/transactions/board-icon'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/components/ui/button'
@@ -35,7 +34,11 @@ import {
 } from '@/lib/report-charts'
 import { AnnualFlowChart, YoYBalanceChart, YoYIncomeChart, hasYearData } from '@/components/reports/annual-charts'
 import { NewVsPaidChart } from '@/components/reports/installment-charts'
-import { MonthAmountChart } from '@/components/reports/month-charts'
+import { MonthAmountChart, ContributionsVsTargetChart } from '@/components/reports/month-charts'
+import { useInvestmentContributions } from '@/hooks/use-investment-contributions'
+import { useBudgetPlansRange } from '@/hooks/use-budget-plans-range'
+import { investmentValueOf, investmentValueLabel } from '@/lib/investment-contributions'
+import { buildConsolidatedPatrimonyHistory } from '@/lib/position-history'
 import { buildPurchases, monthIdx } from '@/lib/installment-history'
 import { extractInstallment } from '@/hooks/use-recurring'
 import { realMovements, internalTotals } from '@/lib/internal-movement'
@@ -68,13 +71,13 @@ const REPORT_QUESTIONS: Partial<Record<ReportType, [string, string]>> = {
   mensal: ['Como foi o meu mês?', 'Quanto entrou, quanto saiu, onde passou do planejado e o que mudou em relação ao mês anterior.'],
   parcelas: ['Como é o meu hábito de parcelar?', 'Quanto você comprou parcelado no ano, quanto já pagou, quanto isso pesa na renda e o que costuma parcelar. Para o que ainda falta pagar, veja Cartões & Parcelas.'],
   fixos: ['Quanto o meu custo fixo pesou no ano?', 'O que você pagou de fato em gastos fixos, como isso evoluiu mês a mês e quais fixos subiram de preço. Para confirmar fixos e ver quando caem, use Recorrências.'],
+  investimentos: ['Como foi o meu ano de investimentos?', 'Quanto você aportou mês a mês contra a meta, quanto cada conta vale hoje e quanto rendeu. Para a carteira de hoje, veja Investimentos.'],
   anual: ['Como está o meu ano?', 'O ano até aqui: quanto sobrou, os melhores e piores meses, como está em relação ao ano passado e onde o dinheiro vai.'],
 }
 
 const now = new Date()
 
 // ── Tokens de estilo reutilizados ─────────────────────────────────────────────
-const card  = 'bg-white dark:bg-[#111c2d] print:bg-white border border-slate-100 dark:border-white/[0.06] print:border-slate-200 rounded-xl p-3 sm:p-4 print:p-4'
 const table = 'border border-slate-100 dark:border-white/[0.06] print:border-slate-200 rounded-xl overflow-x-auto print:overflow-visible [&_td.text-right]:whitespace-nowrap [&_th]:whitespace-nowrap'
 const thead = 'bg-slate-50 dark:bg-slate-700/40 print:bg-slate-50'
 const th    = 'text-xs font-semibold text-slate-500 dark:text-slate-400 print:text-slate-500 uppercase tracking-wide'
@@ -1365,11 +1368,14 @@ function FixedChargesReport({ year, boardId, excludeBoardIds }: { year: number; 
 }
 
 // ── Relatório de Investimentos ────────────────────────────────────────────────
-// Resumo da aba Investimentos: patrimônio, posições e rendimentos previstos da
-// última posição importada. Entram as contas fixadas (alfinete em /investments);
-// selecionar uma conta específica no filtro mostra ela mesmo sem estar fixada.
-function InvestmentsReport({ boardId }: { boardId: string }) {
+// Relatório de Investimentos: o ano de aportes contra a meta e o resultado de
+// cada conta — complementa a tela Investimentos, que mostra a posição de hoje.
+// Entram as contas fixadas (alfinete em /investments); escolher uma conta no
+// filtro mostra só ela, mesmo sem estar fixada.
+function InvestmentsReport({ year, boardId }: { year: number; boardId: string }) {
   const { boards, loading } = useTransactionBoards()
+  const [showList, setShowList] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
 
   const investmentBoards = useMemo(() => {
     const all = boards.filter(b => b.is_investment)
@@ -1379,21 +1385,81 @@ function InvestmentsReport({ boardId }: { boardId: string }) {
     }
     return all.filter(b => b.show_on_dashboard)
   }, [boards, boardId])
+  const ids = investmentBoards.map(b => b.id)
+  const { linked, loading: linkedLoading } = useInvestmentContributions(ids)
+  // Meta de investir de cada mês do ano (Planejamento).
+  const { targetsByKey, loading: targetsLoading } = useBudgetPlansRange(12, year, 12)
 
-  const totals = useMemo(() => {
-    let patrimonio = 0, investido = 0, saldo = 0, proventos = 0
-    investmentBoards.forEach(b => {
-      const p = b.last_position_import
-      if (!p) return
-      patrimonio += p.patrimonio
-      investido += p.totalInvestido
-      saldo += p.saldoDisponivel
-      proventos += (p.proventos ?? []).reduce((s, pr) => s + pr.netValue, 0)
-    })
-    return { patrimonio, investido, saldo, proventos }
-  }, [investmentBoards])
+  const today = new Date()
+  const todayISO = today.toLocaleDateString('en-CA')
+  const isCurrentYear = year === today.getFullYear()
+  const lastMonth = year > today.getFullYear() ? 0 : isCurrentYear ? today.getMonth() + 1 : 12
 
-  if (loading) return <div className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</div>
+  // Aporte = saída das suas contas ligada a uma destas contas (mesma regra da tela Investimentos).
+  const aportes = useMemo(
+    () => linked
+      .filter(t => t.type === 'despesa' && t.counterpart_board_id && ids.includes(t.counterpart_board_id) && t.date.startsWith(`${year}-`) && t.date <= todayISO)
+      .sort((x, y) => y.date.localeCompare(x.date)),
+    [linked, ids, year, todayISO],
+  )
+  const aportado = aportes.reduce((acc, t) => acc + Number(t.amount), 0)
+
+  // Meta mês a mês: mês sem plano herda o anterior, como no Planejamento.
+  const months = useMemo(() => {
+    const out: { label: string; aportes: number; meta: number | null }[] = []
+    for (let i = 0; i < lastMonth; i++) {
+      const key = `${year}-${String(i + 1).padStart(2, '0')}`
+      const own = targetsByKey[key] ?? 0
+      const prev = out.length ? out[out.length - 1].meta : null
+      out.push({
+        label: MONTH_SHORT[i].charAt(0).toUpperCase() + MONTH_SHORT[i].slice(1),
+        aportes: aportes.filter(t => t.date.slice(5, 7) === key.slice(5)).reduce((acc, t) => acc + Number(t.amount), 0),
+        meta: own > 0 ? own : prev,
+      })
+    }
+    return out
+  }, [lastMonth, year, targetsByKey, aportes])
+  const metaTotal = months.reduce((acc, m) => acc + (m.meta ?? 0), 0)
+  const metaPct = metaTotal > 0 ? Math.round((aportado / metaTotal) * 100) : null
+  const monthsWith = months.filter(m => m.aportes > 0).length
+
+  // Valor e resultado de cada conta, pela regra única (investmentValueOf).
+  const perBoard = investmentBoards.map(b => {
+    const v = investmentValueOf(b, linked)
+    const noAno = aportes.filter(t => t.counterpart_board_id === b.id).reduce((acc, t) => acc + Number(t.amount), 0)
+    return { board: b, v, noAno }
+  })
+  const valorAtual = perBoard.reduce((acc, x) => acc + x.v.value, 0)
+  const gains = perBoard.filter(x => x.v.gain !== null)
+  const rendimento = gains.length ? gains.reduce((acc, x) => acc + (x.v.gain ?? 0), 0) : null
+
+  // Evolução no ano: o primeiro valor registrado no ano (ou o último antes dele) × o mais recente.
+  const history = buildConsolidatedPatrimonyHistory(investmentBoards)
+  const before = history.filter(h => h.date < `${year}-01-01`).pop()
+  const inYear = history.filter(h => h.date.startsWith(`${year}-`))
+  const startPoint = before ?? inYear[0]
+  const endPoint = inYear[inYear.length - 1]
+  const evolution = startPoint && endPoint && startPoint !== endPoint && startPoint.patrimonio > 0
+    ? { delta: endPoint.patrimonio - startPoint.patrimonio, pct: ((endPoint.patrimonio - startPoint.patrimonio) / startPoint.patrimonio) * 100, from: startPoint.label, to: endPoint.label }
+    : null
+
+  const highlights: Highlight[] = []
+  const missing = months.filter(m => m.aportes === 0 && (m.meta ?? 0) > 0)
+  if (missing.length > 0) {
+    const names = missing.slice(-3).map(m => m.label.toLowerCase()).join(', ')
+    highlights.push({ tone: 'bad', strong: `${missing.length} ${missing.length === 1 ? 'mês' : 'meses'} sem aporte com meta definida`, text: `— ${names}${missing.length > 3 ? '…' : ''}.` })
+  }
+  const best = [...months].sort((x, y) => y.aportes - x.aportes)[0]
+  if (best && best.aportes > 0) {
+    highlights.push({ tone: 'good', strong: `Maior aporte em ${MONTH_NAMES[MONTH_SHORT.indexOf(best.label.toLowerCase())].toLowerCase()}:`, text: `${fmt(best.aportes)}${best.meta ? ` (meta de ${fmt(best.meta)})` : ''}.` })
+  }
+  if (rendimento !== null) {
+    highlights.push({ tone: rendimento >= 0 ? 'info' : 'warn', strong: `Rendimento de ${rendimento >= 0 ? '' : '−'}${fmt(Math.abs(rendimento))}`, text: '— valor atual menos o total aportado nas contas com aporte configurado.' })
+  } else if (evolution) {
+    highlights.push({ tone: evolution.delta >= 0 ? 'info' : 'warn', strong: `Patrimônio ${evolution.delta >= 0 ? 'cresceu' : 'caiu'} ${Math.abs(evolution.pct).toFixed(1).replace('.', ',')}%`, text: `de ${evolution.from} a ${evolution.to}.` })
+  }
+
+  if (loading || linkedLoading || targetsLoading) return <div className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</div>
 
   if (investmentBoards.length === 0) {
     return (
@@ -1407,77 +1473,149 @@ function InvestmentsReport({ boardId }: { boardId: string }) {
     )
   }
 
+  const boardName = (id?: string | null) => boards.find(b => b.id === id)?.name ?? '—'
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <ReportHeader
-        title="Relatório de Investimentos"
-        subtitle={`${investmentBoards.length} conta${investmentBoards.length > 1 ? 's' : ''} • posição da última importação`}
+        title={`Relatório de Investimentos — ${year}`}
+        subtitle={`${investmentBoards.length} conta${investmentBoards.length === 1 ? '' : 's'} · ${aportes.length} aporte${aportes.length === 1 ? '' : 's'} no ano${isCurrentYear ? ' até hoje' : ''}`}
       />
 
-      {/* Cards de resumo */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className={card}>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Patrimônio total</p>
-          <p className="text-base sm:text-lg print:text-lg font-bold text-blue-600 dark:text-blue-400 print:text-blue-600 mt-1">{fmt(totals.patrimonio)}</p>
-        </div>
-        <div className={card}>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Total investido</p>
-          <p className="text-base sm:text-lg print:text-lg font-bold text-slate-700 dark:text-slate-200 print:text-slate-700 mt-1">{fmt(totals.investido)}</p>
-        </div>
-        <div className={card}>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Saldo disponível</p>
-          <p className="text-base sm:text-lg print:text-lg font-bold text-slate-700 dark:text-slate-200 print:text-slate-700 mt-1">{fmt(totals.saldo)}</p>
-        </div>
-        <div className={card}>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Rendimentos previstos</p>
-          <p className="text-base sm:text-lg print:text-lg font-bold text-emerald-600 dark:text-emerald-400 print:text-emerald-600 mt-1">{fmt(totals.proventos)}</p>
-        </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Kpi title="Aportado no ano" value={fmt(aportado)} valueClass="text-blue-600 dark:text-blue-400 print:text-blue-600">
+          <p className="text-[11px] text-slate-400 mt-0.5">em {monthsWith} de {lastMonth} {lastMonth === 1 ? 'mês' : 'meses'}</p>
+        </Kpi>
+        <Kpi title="Meta cumprida" value={metaPct !== null ? `${metaPct}%` : '—'}
+          valueClass={metaPct === null ? undefined : metaPct >= 100 ? 'text-emerald-600 dark:text-emerald-400 print:text-emerald-600' : metaPct >= 70 ? 'text-amber-600 dark:text-amber-400 print:text-amber-600' : 'text-red-500 dark:text-red-400 print:text-red-500'}>
+          <p className="text-[11px] text-slate-400 mt-0.5">{metaTotal > 0 ? `meta de ${fmt(metaTotal)} no ano` : 'sem meta de investir no Planejamento'}</p>
+        </Kpi>
+        <Kpi title="Valor atual" value={fmt(valorAtual)}>
+          <p className="text-[11px] text-slate-400 mt-0.5">{perBoard.length === 1 ? investmentValueLabel(perBoard[0].v) : 'soma do valor de cada conta'}</p>
+        </Kpi>
+        <Kpi title="Evolução no ano" value={evolution ? `${evolution.delta >= 0 ? '+' : '−'}${fmt(Math.abs(evolution.delta))}` : '—'}
+          valueClass={evolution ? (evolution.delta >= 0 ? 'text-emerald-600 dark:text-emerald-400 print:text-emerald-600' : 'text-red-500 dark:text-red-400 print:text-red-500') : undefined}>
+          <p className="text-[11px] text-slate-400 mt-0.5">{evolution ? `${evolution.pct >= 0 ? '+' : ''}${evolution.pct.toFixed(1).replace('.', ',')}% · ${evolution.from} → ${evolution.to}` : 'precisa de duas atualizações de valor'}</p>
+        </Kpi>
       </div>
 
-      {/* Detalhe por conta */}
-      {investmentBoards.map(b => (
-        <div key={b.id}>
-          <p className={secTitle}>{b.name}</p>
-          <div className={card}>
-            {b.last_position_import ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: b.color + '20' }}>
-                      <BoardIcon icon={b.icon} className="h-4 w-4" style={{ color: b.color }} />
-                    </div>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">
-                      Posição importada em {new Date(b.last_position_import.importedAt).toLocaleDateString('pt-BR')}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">Patrimônio</p>
-                    <p className="text-base font-bold text-slate-800 dark:text-slate-100 print:text-slate-800">{fmt(b.last_position_import.patrimonio)}</p>
-                  </div>
-                </div>
-                {b.last_position_import.positions.length > 0 && (
-                  <>
-                    <CategorySummary positions={b.last_position_import.positions} />
-                    <div className="pt-3 border-t border-slate-100 dark:border-slate-700 print:border-slate-200">
-                      <PositionsBreakdown positions={b.last_position_import.positions} />
-                    </div>
-                  </>
-                )}
-                {b.last_position_import.proventos && b.last_position_import.proventos.length > 0 && (
-                  <div className="pt-3 border-t border-slate-100 dark:border-slate-700 print:border-slate-200">
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 print:text-slate-500 mb-2">Próximos Rendimentos</p>
-                    <ProventosBreakdown proventos={b.last_position_import.proventos} />
-                  </div>
-                )}
+      {highlights.length > 0 && (
+        <div className="grid gap-3 md:grid-cols-3">
+          {highlights.slice(0, 3).map((h, i) => {
+            const { icon: Icon, cls } = HIGHLIGHT_STYLE[h.tone]
+            return (
+              <div key={i} className="flex gap-3 rounded-2xl border border-slate-100 dark:border-white/[0.06] print:border-slate-200 bg-white dark:bg-[#111c2d] print:bg-white p-3.5">
+                <span className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 ${cls}`}><Icon className="h-3.5 w-3.5" /></span>
+                <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400 print:text-slate-600">
+                  <strong className="text-slate-800 dark:text-slate-100 print:text-slate-800">{h.strong}</strong>{h.text ? ' ' : ''}{h.text}
+                </p>
               </div>
-            ) : (
-              <p className="text-sm text-slate-400 dark:text-slate-500 print:text-slate-400 py-2">
-                Nenhuma posição importada ainda — importe na aba Investimentos para ver o resumo aqui.
-              </p>
-            )}
-          </div>
+            )
+          })}
         </div>
-      ))}
+      )}
+
+      {lastMonth > 0 && (aportado > 0 || metaTotal > 0) && (
+        <OverviewSection className="print:hidden" icon={BarChart2} title="Aportes × meta de investir" subtitle="Quanto você mandou para investimentos em cada mês, contra a meta do Planejamento">
+          <div className="mt-3"><ContributionsVsTargetChart data={months} /></div>
+        </OverviewSection>
+      )}
+
+      <OverviewSection icon={TrendingUp} title="Resultado por conta" subtitle="Aportes do ano, valor atual e rendimento de cada conta de investimento">
+        <div className={`${table} mt-3`}>
+          <table className="w-full text-sm">
+            <thead className={thead}>
+              <tr>
+                <th className={`text-left px-4 py-2.5 ${th}`}>Conta</th>
+                <th className={`text-right px-4 py-2.5 ${th}`}>Aportado no ano</th>
+                <th className={`text-right px-4 py-2.5 ${th}`}>Valor atual</th>
+                <th className={`text-right px-4 py-2.5 ${th} hidden sm:table-cell print:table-cell`}>Rendimento</th>
+              </tr>
+            </thead>
+            <tbody className={tdiv}>
+              {perBoard.map(({ board, v, noAno }) => (
+                <tr key={board.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="h-6 w-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${board.color}1f`, color: board.color }}>
+                        <BoardIcon icon={board.icon} className="h-3.5 w-3.5" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="font-medium text-slate-700 dark:text-slate-200 print:text-slate-700 truncate">{board.name}</p>
+                        <p className="text-[11px] text-slate-400">{investmentValueLabel(v)}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5 text-right text-blue-600 dark:text-blue-400 print:text-blue-600 font-semibold">{noAno > 0 ? fmt(noAno) : '—'}</td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-slate-700 dark:text-slate-200 print:text-slate-700">{v.source === 'none' ? '—' : fmt(v.value)}</td>
+                  <td className={`px-4 py-2.5 text-right hidden sm:table-cell print:table-cell ${v.gain === null ? 'text-slate-300 dark:text-slate-600' : v.gain >= 0 ? 'text-emerald-600 dark:text-emerald-400 print:text-emerald-600' : 'text-red-500'}`}>
+                    {v.gain === null ? '—' : `${v.gain >= 0 ? '+' : '−'}${fmt(Math.abs(v.gain))}`}
+                  </td>
+                </tr>
+              ))}
+              <tr className={tfoot}>
+                <td className="px-4 py-2.5 text-slate-700 dark:text-slate-200 print:text-slate-700">Total</td>
+                <td className="px-4 py-2.5 text-right text-blue-600 dark:text-blue-400 print:text-blue-600">{fmt(aportado)}</td>
+                <td className="px-4 py-2.5 text-right text-slate-700 dark:text-slate-200 print:text-slate-700">{fmt(valorAtual)}</td>
+                <td className="px-4 py-2.5 text-right hidden sm:table-cell print:table-cell">{rendimento === null ? '—' : `${rendimento >= 0 ? '+' : '−'}${fmt(Math.abs(rendimento))}`}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </OverviewSection>
+
+      {/* Todos os aportes do ano — recolhido na tela, aberto no PDF */}
+      {aportes.length > 0 && (
+        <section className="rounded-xl border border-slate-200 dark:border-white/[0.08] print:border-0 bg-slate-50/70 dark:bg-white/[0.03] print:bg-white">
+          <button type="button" onClick={() => setShowList(v => !v)} aria-expanded={showList} className="w-full flex items-center gap-2 p-4 text-left print:hidden">
+            <ChevronRight className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${showList ? 'rotate-90' : ''}`} />
+            <ListIcon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Todos os aportes do ano ({aportes.length})</span>
+          </button>
+          <div className={`${showList ? 'block' : 'hidden'} print:block px-4 pb-4 print:p-0`}>
+            <h3 className={`${secTitle} hidden print:block`}>Aportes do ano ({aportes.length})</h3>
+            <div className={table}>
+              <table className="w-full text-sm bg-white dark:bg-transparent">
+                <thead className={thead}>
+                  <tr>
+                    <th className={`text-left px-4 py-2.5 ${th}`}>Data</th>
+                    <th className={`text-left px-4 py-2.5 ${th}`}>Descrição</th>
+                    <th className={`text-left px-4 py-2.5 ${th} hidden sm:table-cell print:table-cell`}>De → para</th>
+                    <th className={`text-right px-4 py-2.5 ${th}`}>Valor</th>
+                  </tr>
+                </thead>
+                <tbody className={tdiv}>
+                  {aportes.map(t => (
+                    <tr key={t.id}>
+                      <td className="px-4 py-2 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">{new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</td>
+                      <td className="px-4 py-2 text-slate-700 dark:text-slate-300 print:text-slate-700 max-w-[260px] truncate">{t.description}</td>
+                      <td className="px-4 py-2 text-xs text-slate-500 dark:text-slate-400 hidden sm:table-cell print:table-cell">{boardName(t.board_id)} → {boardName(t.counterpart_board_id)}</td>
+                      <td className="px-4 py-2 text-right font-semibold text-blue-600 dark:text-blue-400 print:text-blue-600 whitespace-nowrap">{fmt(Number(t.amount))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      )}
+
+      <section className="print:hidden rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50/70 dark:bg-white/[0.03]">
+        <button type="button" onClick={() => setShowHelp(v => !v)} aria-expanded={showHelp} className="w-full flex items-center gap-2 p-4 text-left">
+          <ChevronRight className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${showHelp ? 'rotate-90' : ''}`} />
+          <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Como ler este relatório</span>
+        </button>
+        {showHelp && (
+          <ul className="px-4 pb-4 pl-10 space-y-1.5 text-xs text-slate-500 dark:text-slate-400 list-disc">
+            <li>Este relatório olha para <strong className="text-slate-700 dark:text-slate-200">o ano de aportes</strong>. A carteira de hoje — onde está o dinheiro, posições e rendimentos a receber — fica em <Link href="/investments" className="text-blue-600 dark:text-blue-400 hover:underline">Investimentos</Link>.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Aporte</strong> é uma saída das suas contas ligada a uma conta de investimento (no extrato, ⋮ → &ldquo;Aporte em…&rdquo;, ou pela configuração de Aportes).</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Meta cumprida</strong> compara os aportes com a soma das metas de investir do Planejamento; mês sem meta própria usa a do mês anterior.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Valor atual</strong> e <strong className="text-slate-700 dark:text-slate-200">Rendimento</strong> seguem a mesma regra da tela Investimentos: vale o extrato da conta; sem extrato, a soma dos aportes.</li>
+            <li>Entram as contas fixadas com o alfinete em Investimentos, ou a conta escolhida no filtro.</li>
+          </ul>
+        )}
+      </section>
     </div>
   )
 }
@@ -1583,7 +1721,7 @@ function ReportsPage() {
               <PeriodFilter month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
             </div>
           )}
-          {(type === 'anual' || type === 'parcelas' || type === 'fixos') && (
+          {type !== 'mensal' && (
             <div className="shrink-0 flex items-center gap-1 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl shadow-sm">
               <button
                 onClick={() => setYear(y => y - 1)}
@@ -1624,7 +1762,7 @@ function ReportsPage() {
             {type === 'anual'    && <AnnualReport year={year} boardId={boardId} excludeBoardIds={excludeBoardIds} />}
             {type === 'parcelas' && <InstallmentsReport year={year} boardId={boardId} excludeBoardIds={excludeBoardIds} />}
             {type === 'fixos'    && <FixedChargesReport year={year} boardId={boardId} excludeBoardIds={excludeBoardIds} />}
-            {type === 'investimentos' && <InvestmentsReport boardId={boardId} />}
+            {type === 'investimentos' && <InvestmentsReport year={year} boardId={boardId} />}
           </PlanGate>
         )}
       </div>
