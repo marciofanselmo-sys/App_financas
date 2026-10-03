@@ -20,6 +20,7 @@ import { calcHealthScore, scoreConfig } from '@/components/dashboard/summary-car
 import {
   Printer, CalendarDays, BarChart2, CreditCard, RefreshCw, Lock,
   ChevronLeft, ChevronRight, ChevronsUpDown, TrendingUp, Tag,
+  AlertTriangle, ArrowUp, CheckCircle2, Star, PieChart, Receipt, List as ListIcon, ArrowLeftRight, Info,
 } from 'lucide-react'
 import { CategorySummary, PositionsBreakdown, ProventosBreakdown } from '@/components/investments/rico-position-summary'
 import { BoardIcon } from '@/components/transactions/board-icon'
@@ -35,6 +36,8 @@ import {
 import { AnnualFlowChart, YoYComparisonChart } from '@/components/reports/annual-charts'
 import { realMovements, internalTotals } from '@/lib/internal-movement'
 import { motherNameByCategory, motherOf } from '@/lib/category-tree'
+import { CategoryIcon, categoryIconKey, guessIconKey } from '@/lib/category-icons'
+import { Kpi, OverviewSection } from '@/components/ui/overview-blocks'
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -55,6 +58,11 @@ const REPORT_TYPES: { id: ReportType; label: string; icon: React.ElementType }[]
   { id: 'fixos',         label: 'Gastos Fixos', icon: RefreshCw    },
   { id: 'investimentos', label: 'Investimentos',icon: TrendingUp   },
 ]
+
+// A pergunta que cada relatório responde (os demais ganham a sua ao serem refeitos).
+const REPORT_QUESTIONS: Partial<Record<ReportType, [string, string]>> = {
+  mensal: ['Como foi o meu mês?', 'Quanto entrou, quanto saiu, onde passou do planejado e o que mudou em relação ao mês anterior.'],
+}
 
 const now = new Date()
 
@@ -126,7 +134,9 @@ function groupByMother(transactions: Transaction[], categories: Category[]): Cat
  * coluna Planejado (Mensal). No celular só cabem Categoria e Valor — o resto
  * vai numa linha pequena embaixo do valor.
  */
-function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, subLabel = 'subcategorias' }: {
+function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, subLabel = 'subcategorias', iconOf }: {
+  /** Liga o ícone da categoria (no padrão da Análise) e a coluna de uso do limite. */
+  iconOf?: (name: string) => string
   title: string
   hint?: string
   subLabel?: string
@@ -169,8 +179,8 @@ function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, s
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <h3 className={secTitle.replace("mb-3", "mb-0")}>{title}</h3>
+      <div className={`flex items-center gap-2 mb-3 ${title ? 'justify-between' : 'justify-end'}`}>
+        {title && <h3 className={secTitle.replace("mb-3", "mb-0")}>{title}</h3>}
         {withSubs.length > 0 && (
           <button
             type="button"
@@ -182,7 +192,7 @@ function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, s
           </button>
         )}
       </div>
-      <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 mb-3">
+      <p className={`text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 mb-3 ${hint === '' && !months ? 'hidden' : ''}`}>
         {hint ?? 'Toque numa categoria para ver as subcategorias — elas já estão somadas no total dela.'}
         {months ? ` Média calculada sobre ${months} ${months === 1 ? 'mês' : 'meses'} com movimento.` : ''}
       </p>
@@ -195,6 +205,7 @@ function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, s
               {months && <th className={`${H} text-right ${P} py-2.5 ${th}`}>Média/mês</th>}
               <th className={`${H} text-right ${P} py-2.5 ${th}`}>% Total</th>
               {limits && <th className={`${H} text-right ${P} py-2.5 ${th}`}>Planejado</th>}
+              {limits && iconOf && <th className={`hidden md:table-cell print:table-cell ${P} py-2.5 ${th} text-left`}>Uso do limite</th>}
             </tr>
           </thead>
           <tbody className={tdiv}>
@@ -212,6 +223,11 @@ function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, s
                         {hasSubs
                           ? <ChevronRight className={`h-3.5 w-3.5 text-slate-400 shrink-0 transition-transform print:hidden ${isOpen ? 'rotate-90' : ''}`} />
                           : <span className="w-3.5 shrink-0 print:hidden" />}
+                        {iconOf && (
+                          <span className="h-6 w-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${cat.color}1f`, color: cat.color }}>
+                            <CategoryIcon iconKey={iconOf(cat.name)} className="h-3.5 w-3.5" />
+                          </span>
+                        )}
                         <span>
                           {cat.name}
                           {hasSubs && !isOpen && (
@@ -227,6 +243,11 @@ function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, s
                     {months && <td className={`${H} ${P} py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500`}>{fmt(cat.amount / months)}</td>}
                     <td className={`${H} ${P} py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500`}>{pct(cat.amount)}</td>
                     {limits && <td className={`${H} ${P} py-2.5 text-right text-slate-400 dark:text-slate-500 print:text-slate-400`}>{limitOf(cat.name)}</td>}
+                    {limits && iconOf && (
+                      <td className={`hidden md:table-cell print:table-cell ${P} py-2.5`}>
+                        <LimitUsage spent={cat.amount} limit={Number(limits[cat.name] ?? 0)} />
+                      </td>
+                    )}
                   </tr>
                   {isOpen && cat.subs.map((sub, i) => (
                     <tr key={`${cat.name}|${sub.name}|${i}`} className="bg-slate-50/50 dark:bg-slate-800/30 print:bg-white">
@@ -246,6 +267,7 @@ function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, s
                       {months && <td className={`${H} ${P} py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400`}>{fmt(sub.amount / months)}</td>}
                       <td className={`${H} ${P} py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400`}>{pct(sub.amount)}</td>
                       {limits && <td className={`${H} ${P} py-2 text-right text-xs text-slate-400 dark:text-slate-500 print:text-slate-400`}>{limitOf(subKey(sub.name))}</td>}
+                      {limits && iconOf && <td className="hidden md:table-cell print:table-cell" />}
                     </tr>
                   ))}
                 </Fragment>
@@ -259,7 +281,8 @@ function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, s
               </td>
               {months && <td className={`${H} ${P} py-2.5 text-right text-red-500`}>{fmt(total / months)}</td>}
               <td className={`${H} ${P} py-2.5 text-right text-slate-500 dark:text-slate-400 print:text-slate-500`}>{pct(total)}</td>
-              {limits && <td className={H} />}
+              {limits && <td className={`${H} ${P} py-2.5 text-right text-slate-400 dark:text-slate-500 print:text-slate-400`}>{fmt(Object.entries(limits).filter(([k]) => rows.some(r => r.name === k)).reduce((s2, [, v]) => s2 + Number(v), 0))}</td>}
+              {limits && iconOf && <td className="hidden md:table-cell print:table-cell" />}
             </tr>
           </tbody>
         </table>
@@ -268,144 +291,325 @@ function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, s
   )
 }
 
+// Barra de uso do limite planejado + etiqueta (estourou / perto / ok).
+function LimitUsage({ spent, limit }: { spent: number; limit: number }) {
+  if (!(limit > 0)) return <span className="text-[11px] text-slate-300 dark:text-slate-600">sem limite</span>
+  const use = (spent / limit) * 100
+  const state = use > 100 ? 'over' : use > 90 ? 'near' : 'ok'
+  return (
+    <div className="flex items-center gap-2 min-w-[150px]">
+      <div className="flex-1 h-1.5 bg-slate-100 dark:bg-white/[0.08] print:bg-slate-100 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full ${state === 'over' ? 'bg-red-500' : state === 'near' ? 'bg-amber-500' : 'bg-emerald-500'}`}
+          style={{ width: `${Math.min(use, 100)}%` }}
+        />
+      </div>
+      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${
+        state === 'over' ? 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+          : state === 'near' ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+          : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+      }`}>
+        {state === 'over' ? 'estourou' : state === 'near' ? 'perto' : 'ok'}
+      </span>
+    </div>
+  )
+}
+
+// Variação contra o mês anterior, colorida pelo que é bom para cada número.
+function Delta({ now: cur, prev, upIsGood, label }: { now: number; prev: number; upIsGood: boolean; label: string }) {
+  if (!(Math.abs(prev) > 0.005)) return <p className="text-[11px] text-slate-400 mt-0.5">Sem {label} para comparar</p>
+  const pct = ((cur - prev) / Math.abs(prev)) * 100
+  const up = pct >= 0
+  const good = up === upIsGood
+  return (
+    <p className="text-[11px] text-slate-400 mt-0.5">
+      <span className={good ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}>{up ? '▲' : '▼'} {Math.abs(pct).toFixed(0)}%</span>
+      {' '}vs {label} ({fmt(prev)})
+    </p>
+  )
+}
+
+type Highlight = { tone: 'bad' | 'warn' | 'good' | 'info'; strong: string; text: string }
+const HIGHLIGHT_STYLE: Record<Highlight['tone'], { icon: React.ElementType; cls: string }> = {
+  bad:  { icon: AlertTriangle, cls: 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
+  warn: { icon: ArrowUp,       cls: 'bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' },
+  good: { icon: CheckCircle2,  cls: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  info: { icon: Star,          cls: 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' },
+}
+
 function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: number; year: number; boardId: string; excludeBoardIds: string[] }) {
-  const { transactions: allTransactions, loading } = useTransactions({
-    month,
-    year,
+  const filters = {
     board_id: boardId !== 'all' ? boardId : undefined,
     exclude_board_ids: boardId === 'all' ? excludeBoardIds : undefined,
-  })
+  }
+  const { transactions: allTransactions, loading } = useTransactions({ month, year, ...filters })
+  // Mês anterior, só para as comparações dos números e dos destaques.
+  const prevMonth = month === 1 ? 12 : month - 1
+  const prevYear = month === 1 ? year - 1 : year
+  const { transactions: prevAll } = useTransactions({ month: prevMonth, year: prevYear, ...filters })
   const { plan } = useBudgetPlan(month, year)
   const { categories } = useCategories()
+  const [showAll, setShowAll] = useState(false)
+  const [showInternal, setShowInternal] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
 
   // Movimentação entre contas do próprio usuário fica fora dos totais; o
-  // rodapé mostra quanto foi, para nada sumir sem explicação.
+  // bloco recolhido mostra quanto foi, para nada sumir sem explicação.
   const transactions = useMemo(() => realMovements(allTransactions), [allTransactions])
   const internal = useMemo(() => internalTotals(allTransactions), [allTransactions])
+  const prev = useMemo(() => realMovements(prevAll), [prevAll])
 
-  const income   = transactions.filter(t => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0)
-  const expenses = transactions.filter(t => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0)
-  const balance  = income - expenses
-  const score    = calcHealthScore(income, expenses)
+  const sum = (list: Transaction[], type: string) => list.filter(t => t.type === type).reduce((s, t) => s + Number(t.amount), 0)
+  const income = sum(transactions, 'receita')
+  const expenses = sum(transactions, 'despesa')
+  const balance = income - expenses
+  const prevIncome = sum(prev, 'receita')
+  const prevExpenses = sum(prev, 'despesa')
+  const score = calcHealthScore(income, expenses)
+  const prevScore = calcHealthScore(prevIncome, prevExpenses)
   const { label: scoreLabel } = scoreConfig(score ?? 0)
+  const savedPct = income > 0 ? Math.round((balance / income) * 100) : null
+  const prevSavedPct = prevIncome > 0 ? Math.round(((prevIncome - prevExpenses) / prevIncome) * 100) : null
+  const prevName = MONTH_NAMES[prevMonth - 1].toLowerCase()
 
   const byCategory = useMemo(
     () => groupByMother(transactions, categories).map(c => ({ ...c, pct: expenses > 0 ? c.amount / expenses : 0 })),
     [transactions, expenses, categories],
   )
+  const iconOf = (name: string) => {
+    const cat = categories.find(c => !c.parent_id && c.name === name && c.type !== 'receita') ?? categories.find(c => c.name === name)
+    return cat ? categoryIconKey(cat, categories) : guessIconKey(name)
+  }
 
   const categoryLimits = plan?.category_limits ?? {}
   const hasPlanned = Object.keys(categoryLimits).some(k => (categoryLimits[k] ?? 0) > 0)
 
+  // Para onde foi o dinheiro: parcela, fixo (marcado em Recorrências) ou escolha do mês.
+  const despesas = transactions.filter(t => t.type === 'despesa')
+  const parcelas = despesas.filter(t => installmentLabel(t)).reduce((s, t) => s + Number(t.amount), 0)
+  const fixos = despesas.filter(t => !installmentLabel(t) && t.is_recurring).reduce((s, t) => s + Number(t.amount), 0)
+  const variaveis = Math.max(0, expenses - parcelas - fixos)
+  const biggest = [...despesas].sort((a, b) => Number(b.amount) - Number(a.amount)).slice(0, 5)
+
+  // Destaques automáticos: o saldo, o que passou do planejado e o que foi bem.
+  const highlights: Highlight[] = []
+  if (income > 0 || expenses > 0) {
+    highlights.push(balance < 0
+      ? { tone: 'bad', strong: `Saiu ${fmt(-balance)} a mais do que entrou.`, text: 'As despesas passaram das receitas neste mês.' }
+      : { tone: 'good', strong: `Sobraram ${fmt(balance)}.`, text: savedPct !== null ? `${savedPct}% do que entrou ficou com você.` : '' })
+  }
+  if (hasPlanned) {
+    const over = byCategory
+      .map(c => ({ c, limit: Number(categoryLimits[c.name] ?? 0) }))
+      .filter(x => x.limit > 0 && x.c.amount > x.limit)
+      .sort((a, b) => (b.c.amount - b.limit) - (a.c.amount - a.limit))
+    if (over.length > 0) {
+      const first = over[0]
+      const extra = over[1] ? ` ${over[1].c.name} também: ${fmt(over[1].c.amount)} de ${fmt(over[1].limit)}.` : ''
+      highlights.push({ tone: 'warn', strong: `${first.c.name} estourou o planejado`, text: `em ${fmt(first.c.amount - first.limit)} (${Math.round((first.c.amount / first.limit) * 100)}%).${extra}` })
+    }
+    const under = byCategory
+      .map(c => ({ c, limit: Number(categoryLimits[c.name] ?? 0) }))
+      .filter(x => x.limit > 0 && x.c.amount < x.limit * 0.6)
+      .sort((a, b) => (b.limit - b.c.amount) - (a.limit - a.c.amount))
+      .slice(0, 2)
+    if (under.length > 0) {
+      const left = under.reduce((s, x) => s + (x.limit - x.c.amount), 0)
+      highlights.push({ tone: 'good', strong: `${under.map(x => x.c.name).join(' e ')} ${under.length > 1 ? 'ficaram' : 'ficou'} bem abaixo do planejado`, text: `— sobraram ${fmt(left)}.` })
+    }
+  }
+  if (highlights.length < 3 && byCategory[0]) {
+    highlights.push({ tone: 'info', strong: `${byCategory[0].name} foi a maior despesa:`, text: `${fmt(byCategory[0].amount)}, ${Math.round(byCategory[0].pct * 100)}% de tudo que saiu.` })
+  }
+
   if (loading) return <div className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</div>
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <ReportHeader
         title={`Relatório Mensal — ${MONTH_NAMES[month - 1]} ${year}`}
         subtitle={`${transactions.length} transações no período`}
       />
 
-      {/* Cards de resumo */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-        <div className={card}>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Receitas</p>
-          <p className="text-base sm:text-lg print:text-lg font-bold text-emerald-600 dark:text-emerald-400 print:text-emerald-600 mt-1">{fmt(income)}</p>
-        </div>
-        <div className={card}>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Despesas</p>
-          <p className="text-base sm:text-lg print:text-lg font-bold text-red-500 mt-1">{fmt(expenses)}</p>
-        </div>
-        <div className={card}>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Saldo</p>
-          <p className={`text-base sm:text-lg print:text-lg font-bold mt-1 ${balance >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500'}`}>{fmt(balance)}</p>
-        </div>
-        <div className={card}>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Saúde</p>
-          <p className="text-base sm:text-lg print:text-lg font-bold text-purple-500 mt-1">{score}/100</p>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400">{scoreLabel}</p>
-        </div>
+      {/* Os 4 números, com as cores de sempre e a comparação com o mês anterior */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Kpi title="Receitas" value={fmt(income)} valueClass="text-emerald-600 dark:text-emerald-400 print:text-emerald-600">
+          <Delta now={income} prev={prevIncome} upIsGood label={prevName} />
+        </Kpi>
+        <Kpi title="Despesas" value={fmt(expenses)} valueClass="text-red-500">
+          <Delta now={expenses} prev={prevExpenses} upIsGood={false} label={prevName} />
+        </Kpi>
+        <Kpi title="Saldo" value={fmt(balance)} valueClass={balance >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500'}>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            {savedPct !== null ? `sobrou ${savedPct}% da renda` : 'sem receitas no mês'}
+            {prevSavedPct !== null && ` · ${prevName}: ${prevSavedPct}%`}
+          </p>
+        </Kpi>
+        <Kpi title="Saúde" value={score !== null ? `${score}/100` : '—'} valueClass="text-purple-600 dark:text-purple-400 print:text-purple-600">
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            {score !== null ? scoreLabel : 'sem movimento'}
+            {prevScore !== null && ` · ${prevName}: ${prevScore}/100`}
+          </p>
+        </Kpi>
       </div>
 
-      {internal.count > 0 && (
-        <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-500">
-          Fora destes totais: {internal.count} lançamento{internal.count === 1 ? '' : 's'} de movimentação
-          entre suas contas{internal.out > 0.005 ? ` (${fmt(internal.out)} de saída` : ''}
-          {internal.in > 0.005 ? `${internal.out > 0.005 ? ' e ' : ' ('}${fmt(internal.in)} de entrada` : ''}
-          {(internal.out > 0.005 || internal.in > 0.005) ? ')' : ''} — pagamento de fatura, transferência
-          entre contas suas. Continuam no extrato e no saldo das contas.
-        </p>
-      )}
-
-      {byCategory.length > 0 && (
-        <CategoryTable
-          title="Gastos por Categoria"
-          rows={byCategory}
-          total={expenses}
-          valueLabel="Valor"
-          limits={hasPlanned ? categoryLimits : undefined}
-        />
-      )}
-
-      {/* Barras visuais */}
-      {byCategory.length > 0 && (
-        <div>
-          <h3 className={secTitle}>Distribuição Visual</h3>
-          <div className="space-y-2.5">
-            {byCategory.slice(0, 8).map(cat => (
-              <div key={cat.name} className="flex items-center gap-3">
-                <span className="w-28 text-xs text-slate-600 dark:text-slate-400 print:text-slate-600 truncate shrink-0">{cat.name}</span>
-                <div className="flex-1 h-5 bg-slate-100 dark:bg-slate-700 print:bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width: `${Math.max(cat.pct * 100, 1)}%`, backgroundColor: cat.color }} />
-                </div>
-                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 print:text-slate-700 w-24 text-right shrink-0">{fmt(cat.amount)}</span>
+      {highlights.length > 0 && (
+        <div className="grid gap-3 md:grid-cols-3">
+          {highlights.slice(0, 3).map((h, i) => {
+            const { icon: Icon, cls } = HIGHLIGHT_STYLE[h.tone]
+            return (
+              <div key={i} className="flex gap-3 rounded-2xl border border-slate-100 dark:border-white/[0.06] print:border-slate-200 bg-white dark:bg-[#111c2d] print:bg-white p-3.5">
+                <span className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 ${cls}`}><Icon className="h-3.5 w-3.5" /></span>
+                <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400 print:text-slate-600">
+                  <strong className="text-slate-800 dark:text-slate-100 print:text-slate-800">{h.strong}</strong>{h.text ? ' ' : ''}{h.text}
+                </p>
               </div>
-            ))}
+            )
+          })}
+        </div>
+      )}
+
+      {byCategory.length > 0 && (
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] items-start">
+          <OverviewSection
+            icon={BarChart2}
+            title={hasPlanned ? 'Gastos por categoria × planejado' : 'Gastos por categoria'}
+            subtitle="Toque numa categoria para ver as subcategorias — elas já estão somadas no total dela."
+          >
+            <div className="mt-3">
+              <CategoryTable
+                title=""
+                hint=""
+                rows={byCategory}
+                total={expenses}
+                valueLabel="Gasto"
+                limits={hasPlanned ? categoryLimits : undefined}
+                iconOf={iconOf}
+              />
+            </div>
+          </OverviewSection>
+
+          <div className="space-y-4">
+            <OverviewSection icon={PieChart} title="Para onde foi o dinheiro" subtitle="Fixos e parcelas já vinham comprometidos; o resto foi escolha do mês">
+              {expenses > 0 && (
+                <>
+                  <div className="flex h-3.5 rounded-full overflow-hidden mt-4 bg-slate-100 dark:bg-white/[0.08]">
+                    <div style={{ width: `${(fixos / expenses) * 100}%` }} className="bg-violet-700" />
+                    <div style={{ width: `${(parcelas / expenses) * 100}%` }} className="bg-violet-400" />
+                    <div style={{ width: `${(variaveis / expenses) * 100}%` }} className="bg-orange-500" />
+                  </div>
+                  <ul className="mt-3 space-y-1.5 text-xs">
+                    {([['Fixos', fixos, 'bg-violet-700'], ['Parcelas', parcelas, 'bg-violet-400'], ['Variáveis', variaveis, 'bg-orange-500']] as const).map(([l, v, c]) => (
+                      <li key={l} className="flex items-center gap-2">
+                        <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${c}`} />
+                        <span className="flex-1 text-slate-600 dark:text-slate-300 print:text-slate-600">{l}</span>
+                        <span className="tabular-nums font-semibold text-slate-800 dark:text-slate-100 print:text-slate-800">{fmt(v)}</span>
+                        <span className="tabular-nums text-slate-400 w-9 text-right">{Math.round((v / expenses) * 100)}%</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </OverviewSection>
+
+            <OverviewSection icon={Receipt} title="Maiores gastos do mês" subtitle="Os 5 lançamentos mais altos">
+              <ul className="mt-3 divide-y divide-slate-100 dark:divide-white/[0.06]">
+                {biggest.map(t => (
+                  <li key={t.id} className="flex items-center gap-3 py-2 text-sm">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-slate-700 dark:text-slate-200 print:text-slate-700">{t.description}</p>
+                      <p className="text-[11px] text-slate-400 truncate">
+                        {new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} · {t.category}
+                        {installmentLabel(t) && ` · ${installmentLabel(t)}`}
+                      </p>
+                    </div>
+                    <span className="tabular-nums font-semibold text-red-500 shrink-0">{fmt(Number(t.amount))}</span>
+                  </li>
+                ))}
+              </ul>
+            </OverviewSection>
           </div>
         </div>
       )}
 
-      {/* Transações */}
+      {/* Todos os lançamentos — recolhido na tela, sempre aberto no PDF */}
       {transactions.length > 0 && (
-        <div>
-          <h3 className={secTitle}>Transações ({transactions.length})</h3>
-          <div className={table}>
-            <table className="w-full text-sm">
-              <thead className={thead}>
-                <tr>
-                  <th className={`text-left px-4 py-2.5 ${th}`}>Data</th>
-                  <th className={`text-left px-4 py-2.5 ${th}`}>Parcelas</th>
-                  <th className={`text-left px-4 py-2.5 ${th}`}>Descrição</th>
-                  <th className={`text-left px-4 py-2.5 ${th}`}>Categoria</th>
-                  <th className={`text-right px-4 py-2.5 ${th}`}>Valor</th>
-                </tr>
-              </thead>
-              <tbody className={tdiv}>
-                {transactions.slice(0, 50).map(t => (
-                  <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-                    <td className="px-4 py-2 text-slate-500 dark:text-slate-400 print:text-slate-500 whitespace-nowrap text-xs">
-                      {new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
-                    </td>
-                    <td className="px-4 py-2 text-slate-500 dark:text-slate-400 print:text-slate-500 whitespace-nowrap text-xs">
-                      {installmentLabel(t)}
-                    </td>
-                    <td className="px-4 py-2 text-slate-700 dark:text-slate-300 print:text-slate-700 max-w-[200px] truncate">{t.description}</td>
-                    <td className="px-4 py-2 text-slate-500 dark:text-slate-400 print:text-slate-500 text-xs">{t.category}</td>
-                    <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap ${t.type === 'receita' ? 'text-emerald-600 dark:text-emerald-400 print:text-emerald-600' : 'text-red-500'}`}>
-                      {t.type === 'receita' ? '+' : '-'}{fmt(Number(t.amount))}
-                    </td>
+        <section className="rounded-xl border border-slate-200 dark:border-white/[0.08] print:border-0 bg-slate-50/70 dark:bg-white/[0.03] print:bg-white">
+          <button type="button" onClick={() => setShowAll(v => !v)} aria-expanded={showAll} className="w-full flex items-center gap-2 p-4 text-left print:hidden">
+            <ChevronRight className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${showAll ? 'rotate-90' : ''}`} />
+            <ListIcon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Todos os lançamentos ({transactions.length})</span>
+          </button>
+          <div className={`${showAll ? 'block' : 'hidden'} print:block px-4 pb-4 print:p-0`}>
+            <h3 className={`${secTitle} hidden print:block`}>Transações ({transactions.length})</h3>
+            <div className={table}>
+              <table className="w-full text-sm">
+                <thead className={thead}>
+                  <tr>
+                    <th className={`text-left px-4 py-2.5 ${th}`}>Data</th>
+                    <th className={`text-left px-4 py-2.5 ${th}`}>Parcelas</th>
+                    <th className={`text-left px-4 py-2.5 ${th}`}>Descrição</th>
+                    <th className={`text-left px-4 py-2.5 ${th}`}>Categoria</th>
+                    <th className={`text-right px-4 py-2.5 ${th}`}>Valor</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {transactions.length > 50 && (
-              <p className="text-xs text-center text-slate-400 dark:text-slate-500 py-2 border-t border-slate-100 dark:border-slate-700 print:border-slate-100">
-                Exibindo 50 de {transactions.length} transações
-              </p>
-            )}
+                </thead>
+                <tbody className={tdiv}>
+                  {transactions.map(t => (
+                    <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors bg-white dark:bg-transparent">
+                      <td className="px-4 py-2 text-slate-500 dark:text-slate-400 print:text-slate-500 whitespace-nowrap text-xs">
+                        {new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                      </td>
+                      <td className="px-4 py-2 text-slate-500 dark:text-slate-400 print:text-slate-500 whitespace-nowrap text-xs">{installmentLabel(t)}</td>
+                      <td className="px-4 py-2 text-slate-700 dark:text-slate-300 print:text-slate-700 max-w-[260px] truncate">{t.description}</td>
+                      <td className="px-4 py-2 text-slate-500 dark:text-slate-400 print:text-slate-500 text-xs">{t.category}</td>
+                      <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap ${t.type === 'receita' ? 'text-emerald-600 dark:text-emerald-400 print:text-emerald-600' : 'text-red-500'}`}>
+                        {t.type === 'receita' ? '+' : '-'}{fmt(Number(t.amount))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        </section>
       )}
+
+      {internal.count > 0 && (
+        <section className="rounded-xl border border-slate-200 dark:border-white/[0.08] print:border-0 bg-slate-50/70 dark:bg-white/[0.03] print:bg-white">
+          <button type="button" onClick={() => setShowInternal(v => !v)} aria-expanded={showInternal} className="w-full flex items-center gap-2 p-4 text-left print:hidden">
+            <ChevronRight className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${showInternal ? 'rotate-90' : ''}`} />
+            <ArrowLeftRight className="h-4 w-4 text-slate-400" />
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              Fora dos totais: {internal.count} movimentaç{internal.count === 1 ? 'ão' : 'ões'} entre suas contas
+            </span>
+          </button>
+          <p className={`${showInternal ? 'block' : 'hidden'} print:block px-4 pb-4 print:p-0 text-xs text-slate-500 dark:text-slate-400 print:text-slate-500`}>
+            {internal.out > 0.005 && <>{fmt(internal.out)} de saída</>}
+            {internal.out > 0.005 && internal.in > 0.005 && ' e '}
+            {internal.in > 0.005 && <>{fmt(internal.in)} de entrada</>}
+            {' '}— pagamento de fatura e transferência entre contas suas. Continuam no extrato e no saldo das contas, mas não
+            são gasto nem ganho, por isso ficam fora dos números acima.
+          </p>
+        </section>
+      )}
+
+      {/* Como ler este relatório — recolhido, fora do PDF */}
+      <section className="print:hidden rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50/70 dark:bg-white/[0.03]">
+        <button type="button" onClick={() => setShowHelp(v => !v)} aria-expanded={showHelp} className="w-full flex items-center gap-2 p-4 text-left">
+          <ChevronRight className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${showHelp ? 'rotate-90' : ''}`} />
+          <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Como ler este relatório</span>
+        </button>
+        {showHelp && (
+          <ul className="px-4 pb-4 pl-10 space-y-1.5 text-xs text-slate-500 dark:text-slate-400 list-disc">
+            <li><strong className="text-slate-700 dark:text-slate-200">Receitas, Despesas e Saldo</strong> somam o mês e as contas escolhidas nos filtros, sem as movimentações entre suas contas. A setinha compara com o mês anterior.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Saúde</strong> vai de 0 a 100 e sobe quanto mais da renda sobra no mês.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Uso do limite</strong> compara o gasto com o planejado em Planejamento: <em>ok</em> até 90%, <em>perto</em> até 100% e <em>estourou</em> acima disso.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Fixos</strong> são os lançamentos marcados como fixo em Recorrências; <strong className="text-slate-700 dark:text-slate-200">Parcelas</strong>, as compras parceladas; o resto são os <strong className="text-slate-700 dark:text-slate-200">Variáveis</strong>.</li>
+            <li>No PDF, a lista de lançamentos sai completa, mesmo que esteja recolhida aqui.</li>
+          </ul>
+        )}
+      </section>
     </div>
   )
 }
@@ -965,6 +1169,13 @@ function ReportsPage() {
             </button>
           ))}
         </div>
+
+        {REPORT_QUESTIONS[type] && (
+          <div className="rounded-2xl border border-blue-100 dark:border-blue-800/50 bg-blue-50/70 dark:bg-blue-900/20 px-4 py-3">
+            <p className="text-sm font-semibold text-[#0B2D6B] dark:text-blue-200">{REPORT_QUESTIONS[type]![0]}</p>
+            <p className="text-xs text-blue-800/80 dark:text-blue-300/80 mt-0.5">{REPORT_QUESTIONS[type]![1]}</p>
+          </div>
+        )}
 
         {/* Período e conta na mesma linha, também no celular */}
         <div className="flex items-center gap-2">
