@@ -6,112 +6,64 @@ import {
 import { YearMonthPoint, YoYBalancePoint } from '@/lib/report-charts'
 import { formatChartCurrency } from '@/lib/dashboard-charts'
 
-interface AnnualFlowChartProps {
-  data: YearMonthPoint[]
-  year: number
+// Os três gráficos do Relatório Anual, só o desenho — o título e o card vêm
+// de quem usa (OverviewSection), para ficarem lado a lado no mesmo padrão.
+const HEIGHT = 220
+const axisTick = { fontSize: 10, fill: '#94a3b8' }
+const kFormat = (v: unknown) => (Math.abs(Number(v)) >= 1000 ? `${Math.round(Number(v) / 1000)}k` : String(v))
+const tooltip = { formatter: (v: unknown) => formatChartCurrency(Number(v)), contentStyle: { borderRadius: 12, fontSize: 12 } }
+
+export function hasYearData(data: YearMonthPoint[]) {
+  return data.some(m => m.receita > 0 || m.despesa > 0)
 }
 
-export function AnnualFlowChart({ data, year }: AnnualFlowChartProps) {
-  const hasData = data.some(m => m.receita > 0 || m.despesa > 0)
-  if (!hasData) return null
-
+/** Receitas × Despesas de cada mês do ano. */
+export function AnnualFlowChart({ data }: { data: YearMonthPoint[] }) {
   return (
-    <div className="print:hidden mb-6">
-      <h3 className="text-sm font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide mb-3">
-        Receitas × Despesas — {year}
-      </h3>
-      <div className="bg-slate-50 dark:bg-white/[0.03] rounded-xl border border-slate-100 dark:border-white/[0.06] p-3">
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-white/10" vertical={false} />
-            <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-            <YAxis
-              tick={{ fontSize: 10, fill: '#94a3b8' }}
-              axisLine={false}
-              tickLine={false}
-              tickFormatter={v => (Math.abs(Number(v)) >= 1000 ? `${Math.round(Number(v) / 1000)}k` : String(v))}
-              width={44}
-            />
-            <Tooltip formatter={(v) => formatChartCurrency(Number(v))} contentStyle={{ borderRadius: 12, fontSize: 12 }} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="receita" name="Receita" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={24} />
-            <Bar dataKey="despesa" name="Despesa" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={24} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
+    <ResponsiveContainer width="100%" height={HEIGHT}>
+      <BarChart data={data} margin={{ top: 8, right: 4, left: -8, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-white/10" vertical={false} />
+        <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} interval={0} />
+        <YAxis tick={axisTick} axisLine={false} tickLine={false} tickFormatter={kFormat} width={40} />
+        <Tooltip {...tooltip} />
+        <Legend wrapperStyle={{ fontSize: 11 }} />
+        <Bar dataKey="receita" name="Receita" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={14} />
+        <Bar dataKey="despesa" name="Despesa" fill="#ef4444" radius={[3, 3, 0, 0]} maxBarSize={14} />
+      </BarChart>
+    </ResponsiveContainer>
   )
 }
 
-interface YoYComparisonChartProps {
-  balanceData: YoYBalancePoint[]
-  incomeData: YoYBalancePoint[]
-  currentYear: number
-  previousYear: number
+/** Saldo de cada mês, ano atual contra o anterior. */
+export function YoYBalanceChart({ data, currentYear, previousYear }: { data: YoYBalancePoint[]; currentYear: number; previousYear: number }) {
+  return (
+    <ResponsiveContainer width="100%" height={HEIGHT}>
+      <LineChart data={data} margin={{ top: 8, right: 4, left: -8, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-white/10" vertical={false} />
+        <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} interval={0} />
+        <YAxis tick={axisTick} axisLine={false} tickLine={false} tickFormatter={kFormat} width={40} />
+        <Tooltip {...tooltip} />
+        <Legend wrapperStyle={{ fontSize: 11 }} />
+        <Line type="monotone" dataKey="atual" name={String(currentYear)} stroke="#3b82f6" strokeWidth={2} dot={{ r: 2.5 }} />
+        <Line type="monotone" dataKey="anterior" name={String(previousYear)} stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 2.5 }} />
+      </LineChart>
+    </ResponsiveContainer>
+  )
 }
 
-export function YoYComparisonChart({ balanceData, incomeData, currentYear, previousYear }: YoYComparisonChartProps) {
-  const hasData = balanceData.some(m => m.atual !== 0 || m.anterior !== 0)
-    || incomeData.some(m => m.atual !== 0 || m.anterior !== 0)
-  if (!hasData) return null
-
+/** Receitas de cada mês, ano atual contra o anterior. */
+export function YoYIncomeChart({ data, currentYear, previousYear }: { data: YoYBalancePoint[]; currentYear: number; previousYear: number }) {
   return (
-    <div className="print:hidden space-y-6 mb-6">
-      <div>
-        <h3 className="text-sm font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide mb-1">
-          Comparativo ano a ano — Saldo mensal
-        </h3>
-        <p className="text-xs text-slate-400 dark:text-slate-500 mb-3">
-          {currentYear} vs {previousYear}
-        </p>
-        <div className="bg-slate-50 dark:bg-white/[0.03] rounded-xl border border-slate-100 dark:border-white/[0.06] p-3">
-          <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={balanceData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-white/10" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <YAxis
-                tick={{ fontSize: 10, fill: '#94a3b8' }}
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={v => (Math.abs(Number(v)) >= 1000 ? `${Math.round(Number(v) / 1000)}k` : String(v))}
-                width={44}
-              />
-              <Tooltip formatter={(v) => formatChartCurrency(Number(v))} contentStyle={{ borderRadius: 12, fontSize: 12 }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="atual" name={String(currentYear)} stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="anterior" name={String(previousYear)} stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div>
-        <h3 className="text-sm font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide mb-1">
-          Comparativo ano a ano — Receitas
-        </h3>
-        <p className="text-xs text-slate-400 dark:text-slate-500 mb-3">
-          {currentYear} vs {previousYear}
-        </p>
-        <div className="bg-slate-50 dark:bg-white/[0.03] rounded-xl border border-slate-100 dark:border-white/[0.06] p-3">
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={incomeData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-white/10" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <YAxis
-                tick={{ fontSize: 10, fill: '#94a3b8' }}
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={v => (Math.abs(Number(v)) >= 1000 ? `${Math.round(Number(v) / 1000)}k` : String(v))}
-                width={44}
-              />
-              <Tooltip formatter={(v) => formatChartCurrency(Number(v))} contentStyle={{ borderRadius: 12, fontSize: 12 }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="atual" name={String(currentYear)} fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={20} />
-              <Bar dataKey="anterior" name={String(previousYear)} fill="#86efac" radius={[4, 4, 0, 0]} maxBarSize={20} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-    </div>
+    <ResponsiveContainer width="100%" height={HEIGHT}>
+      <BarChart data={data} margin={{ top: 8, right: 4, left: -8, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-white/10" vertical={false} />
+        <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} interval={0} />
+        <YAxis tick={axisTick} axisLine={false} tickLine={false} tickFormatter={kFormat} width={40} />
+        <Tooltip {...tooltip} />
+        <Legend wrapperStyle={{ fontSize: 11 }} />
+        <Bar dataKey="atual" name={String(currentYear)} fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={12} />
+        <Bar dataKey="anterior" name={String(previousYear)} fill="#86efac" radius={[3, 3, 0, 0]} maxBarSize={12} />
+      </BarChart>
+    </ResponsiveContainer>
   )
 }

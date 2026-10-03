@@ -33,7 +33,7 @@ import {
   buildYoYBalanceComparison,
   buildYoYIncomeComparison,
 } from '@/lib/report-charts'
-import { AnnualFlowChart, YoYComparisonChart } from '@/components/reports/annual-charts'
+import { AnnualFlowChart, YoYBalanceChart, YoYIncomeChart, hasYearData } from '@/components/reports/annual-charts'
 import { realMovements, internalTotals } from '@/lib/internal-movement'
 import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 import { CategoryIcon, categoryIconKey, guessIconKey } from '@/lib/category-icons'
@@ -62,6 +62,7 @@ const REPORT_TYPES: { id: ReportType; label: string; icon: React.ElementType }[]
 // A pergunta que cada relatório responde (os demais ganham a sua ao serem refeitos).
 const REPORT_QUESTIONS: Partial<Record<ReportType, [string, string]>> = {
   mensal: ['Como foi o meu mês?', 'Quanto entrou, quanto saiu, onde passou do planejado e o que mudou em relação ao mês anterior.'],
+  anual: ['Como está o meu ano?', 'O ano até aqui: quanto sobrou, os melhores e piores meses, como está em relação ao ano passado e onde o dinheiro vai.'],
 }
 
 const now = new Date()
@@ -650,144 +651,252 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
     year: year - 1,
     ...txFilters,
   })
+  const [showMonthly, setShowMonthly] = useState(false)
+  const [showInternal, setShowInternal] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
 
   const transactions = useMemo(() => realMovements(allTransactions), [allTransactions])
+  const prevReal = useMemo(() => realMovements(prevTransactions), [prevTransactions])
   const internal = useMemo(() => internalTotals(allTransactions), [allTransactions])
 
+  // Até hoje: no ano corrente, parcela com data futura ainda não aconteceu —
+  // fica só nos gráficos e na tabela mês a mês, marcada como prevista.
+  const today = new Date()
+  const todayISO = today.toLocaleDateString('en-CA')
+  const isCurrentYear = year === today.getFullYear()
+  const isFutureYear = year > today.getFullYear()
+  const happened = useMemo(
+    () => (isFutureYear ? [] : isCurrentYear ? transactions.filter(t => t.date <= todayISO) : transactions),
+    [transactions, isCurrentYear, isFutureYear, todayISO],
+  )
+  // Mesmo período do ano anterior (até o mesmo dia), para a comparação ser justa.
+  const prevSamePeriod = useMemo(() => {
+    if (!isCurrentYear) return prevReal
+    const cut = `${year - 1}${todayISO.slice(4)}`
+    return prevReal.filter(t => t.date <= cut)
+  }, [prevReal, isCurrentYear, year, todayISO])
+
   const chartMonths = useMemo(() => aggregateYearMonths(transactions), [transactions])
-  const prevChartMonths = useMemo(() => aggregateYearMonths(realMovements(prevTransactions)), [prevTransactions])
-  const yoyBalance = useMemo(
-    () => buildYoYBalanceComparison(chartMonths, prevChartMonths),
-    [chartMonths, prevChartMonths],
-  )
-  const yoyIncome = useMemo(
-    () => buildYoYIncomeComparison(chartMonths, prevChartMonths),
-    [chartMonths, prevChartMonths],
-  )
+  const prevChartMonths = useMemo(() => aggregateYearMonths(prevReal), [prevReal])
+  const yoyBalance = useMemo(() => buildYoYBalanceComparison(chartMonths, prevChartMonths), [chartMonths, prevChartMonths])
+  const yoyIncome = useMemo(() => buildYoYIncomeComparison(chartMonths, prevChartMonths), [chartMonths, prevChartMonths])
 
-  const monthly = useMemo(() => {
-    return chartMonths.map(m => ({
-      month: m.month,
-      income: m.receita,
-      expenses: m.despesa,
-      balance: m.saldo,
-    }))
-  }, [chartMonths])
+  const sum = (list: Transaction[], type: string) => list.filter(t => t.type === type).reduce((acc, t) => acc + Number(t.amount), 0)
+  const totalIncome = sum(happened, 'receita')
+  const totalExpenses = sum(happened, 'despesa')
+  const totalBalance = totalIncome - totalExpenses
+  const prevIncome = sum(prevSamePeriod, 'receita')
+  const prevExpenses = sum(prevSamePeriod, 'despesa')
+  const score = calcHealthScore(totalIncome, totalExpenses)
+  const prevScore = calcHealthScore(prevIncome, prevExpenses)
+  const { label: scoreLabel } = scoreConfig(score ?? 0)
+  const savedPct = totalIncome > 0 ? Math.round((totalBalance / totalIncome) * 100) : null
+  const prevSavedPct = prevIncome > 0 ? Math.round(((prevIncome - prevExpenses) / prevIncome) * 100) : null
 
-  const byCategory = useMemo(() => groupByMother(transactions, categories), [transactions, categories])
+  // Mês fechado = já terminou. No ano corrente, o mês atual está em andamento.
+  const lastClosed = isFutureYear ? 0 : isCurrentYear ? today.getMonth() : 12
+  const monthStatus = (m: number) => (m <= lastClosed ? 'closed' : isCurrentYear && m === lastClosed + 1 ? 'current' : 'future')
+  const closedMonths = chartMonths.filter(m => m.month <= lastClosed && (m.receita > 0 || m.despesa > 0))
+  // Média pelos meses que já tiveram movimento (incluindo o atual, em andamento).
+  const monthsForAvg = Math.max(chartMonths.filter(m => monthStatus(m.month) !== 'future' && (m.receita > 0 || m.despesa > 0)).length, 1)
+  const bestMonth = closedMonths.length ? [...closedMonths].sort((x, y) => y.saldo - x.saldo)[0] : null
+  const worstMonth = closedMonths.length ? [...closedMonths].sort((x, y) => x.saldo - y.saldo)[0] : null
+  const committed = isCurrentYear ? transactions.filter(t => t.date > todayISO && t.type === 'despesa').reduce((acc, t) => acc + Number(t.amount), 0) : 0
 
-  const totalIncome   = monthly.reduce((s, m) => s + m.income, 0)
-  const totalExpenses = monthly.reduce((s, m) => s + m.expenses, 0)
-  const totalBalance  = totalIncome - totalExpenses
-  const activeMonths  = monthly.filter(m => m.income > 0 || m.expenses > 0)
-  // Média só pelos meses com movimento — dividir por 12 subestima o ano
-  // corrente (ainda em andamento) e anos em que o uso começou no meio.
-  const monthsForAvg  = Math.max(activeMonths.length, 1)
-  const bestMonth     = activeMonths.length ? [...activeMonths].sort((a, b) => b.balance - a.balance)[0] : null
-  const worstMonth    = activeMonths.length ? [...activeMonths].sort((a, b) => a.balance - b.balance)[0] : null
+  const byCategory = useMemo(() => groupByMother(happened, categories), [happened, categories])
+  const iconOf = (name: string) => {
+    const cat = categories.find(c => !c.parent_id && c.name === name && c.type !== 'receita') ?? categories.find(c => c.name === name)
+    return cat ? categoryIconKey(cat, categories) : guessIconKey(name)
+  }
+  const prevLabel = String(year - 1)
+
+  const highlights: Highlight[] = []
+  if (bestMonth && worstMonth) {
+    highlights.push({
+      tone: 'info',
+      strong: `Melhor mês: ${MONTH_NAMES[bestMonth.month - 1].toLowerCase()}`,
+      text: `(${bestMonth.saldo >= 0 ? 'sobraram' : 'saldo de'} ${fmt(bestMonth.saldo)}). Mais apertado: ${MONTH_NAMES[worstMonth.month - 1].toLowerCase()} (${fmt(worstMonth.saldo)}).`,
+    })
+  }
+  if (byCategory[0] && totalExpenses > 0) {
+    highlights.push({
+      tone: 'warn',
+      strong: `${byCategory[0].name} é ${Math.round((byCategory[0].amount / totalExpenses) * 100)}% de tudo que você gastou`,
+      text: `no ano — ${fmt(byCategory[0].amount / monthsForAvg)} por mês, em média.`,
+    })
+  }
+  if (committed > 0.005) {
+    highlights.push({ tone: 'bad', strong: `Até dezembro já há ${fmt(committed)} comprometidos`, text: 'em parcelas, antes de qualquer gasto novo.' })
+  } else if (totalIncome > 0) {
+    highlights.push(totalBalance >= 0
+      ? { tone: 'good', strong: `Sobraram ${fmt(totalBalance)} no ano.`, text: savedPct !== null ? `${savedPct}% do que entrou ficou com você.` : '' }
+      : { tone: 'bad', strong: `Saiu ${fmt(-totalBalance)} a mais do que entrou no ano.`, text: '' })
+  }
 
   if (loading || prevLoading) return <div className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</div>
 
+  const periodNote = isCurrentYear
+    ? `${lastClosed > 0 ? `Janeiro a ${MONTH_NAMES[lastClosed - 1].toLowerCase()} fechados · ` : ''}${MONTH_NAMES[lastClosed].toLowerCase()} em andamento · comparativo com ${prevLabel}`
+    : `${happened.length} transações no ano · comparativo com ${prevLabel}`
+
   return (
-    <div className="space-y-6">
-      <ReportHeader title={`Relatório Anual — ${year}`} subtitle={`${transactions.length} transações no ano · comparativo com ${year - 1}`} />
+    <div className="space-y-5">
+      <ReportHeader title={`Relatório Anual — ${year}`} subtitle={periodNote} />
 
-      {internal.count > 0 && (
-        <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-500">
-          Fora destes totais: {internal.count} lançamento{internal.count === 1 ? '' : 's'} de movimentação
-          entre suas contas{internal.out > 0.005 ? ` (${fmt(internal.out)} de saída` : ''}
-          {internal.in > 0.005 ? `${internal.out > 0.005 ? ' e ' : ' ('}${fmt(internal.in)} de entrada` : ''}
-          {(internal.out > 0.005 || internal.in > 0.005) ? ')' : ''} — pagamento de fatura, transferência
-          entre contas suas. Continuam no extrato e no saldo das contas.
-        </p>
-      )}
-
-
-      <AnnualFlowChart data={chartMonths} year={year} />
-      <YoYComparisonChart
-        balanceData={yoyBalance}
-        incomeData={yoyIncome}
-        currentYear={year}
-        previousYear={year - 1}
-      />
-
-      {/* No celular: receitas e despesas lado a lado, saldo na linha inteira */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 print:grid-cols-3 gap-2 sm:gap-3 [&>*:nth-child(3)]:col-span-2 sm:[&>*:nth-child(3)]:col-span-1 print:[&>*:nth-child(3)]:col-span-1">
-        <div className={card}>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Receitas totais</p>
-          <p className="text-base sm:text-lg print:text-lg font-bold text-emerald-600 dark:text-emerald-400 print:text-emerald-600 mt-1">{fmt(totalIncome)}</p>
-        </div>
-        <div className={card}>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Despesas totais</p>
-          <p className="text-base sm:text-lg print:text-lg font-bold text-red-500 mt-1">{fmt(totalExpenses)}</p>
-        </div>
-        <div className={card}>
-          <p className="text-xs text-slate-400 dark:text-slate-500 print:text-slate-400 uppercase tracking-wide font-semibold">Saldo anual</p>
-          <p className={`text-base sm:text-lg print:text-lg font-bold mt-1 ${totalBalance >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500'}`}>{fmt(totalBalance)}</p>
-        </div>
+      {/* Os mesmos 4 números do Mensal, contra o mesmo período do ano anterior */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Kpi title="Receitas" value={fmt(totalIncome)} valueClass="text-emerald-600 dark:text-emerald-400 print:text-emerald-600">
+          <p className="text-[11px] text-slate-400 mt-0.5">média de {fmt(totalIncome / monthsForAvg)}/mês</p>
+          <Delta now={totalIncome} prev={prevIncome} upIsGood label={prevLabel} />
+        </Kpi>
+        <Kpi title="Despesas" value={fmt(totalExpenses)} valueClass="text-red-500 dark:text-red-400 print:text-red-500">
+          <p className="text-[11px] text-slate-400 mt-0.5">média de {fmt(totalExpenses / monthsForAvg)}/mês</p>
+          <Delta now={totalExpenses} prev={prevExpenses} upIsGood={false} label={prevLabel} />
+        </Kpi>
+        <Kpi title="Saldo" value={fmt(totalBalance)} valueClass={totalBalance >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500 dark:text-red-400 print:text-red-500'}>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            {savedPct !== null ? `sobrou ${savedPct}% da renda` : 'sem receitas no ano'}
+            {prevSavedPct !== null && ` · ${prevLabel}: ${prevSavedPct}%`}
+          </p>
+        </Kpi>
+        <Kpi title="Saúde" value={score !== null ? `${score}/100` : '—'} valueClass="text-purple-600 dark:text-purple-400 print:text-purple-600">
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            {score !== null ? scoreLabel : 'sem movimento'}
+            {prevScore !== null && ` · ${prevLabel}: ${prevScore}/100`}
+          </p>
+        </Kpi>
       </div>
 
-      {bestMonth && worstMonth && (
-        <div className="grid grid-cols-2 gap-3">
-          <div className="border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50 dark:bg-emerald-900/20 print:bg-emerald-50 print:border-emerald-200 rounded-xl p-3">
-            <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 print:text-emerald-600 uppercase tracking-wide">Melhor mês</p>
-            <p className="font-bold text-slate-700 dark:text-slate-200 print:text-slate-700 mt-0.5">{MONTH_NAMES[bestMonth.month - 1]}</p>
-            <p className="text-sm text-emerald-600 dark:text-emerald-400 print:text-emerald-600">{fmt(bestMonth.balance)}</p>
-          </div>
-          <div className="border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/20 print:bg-amber-50 print:border-amber-200 rounded-xl p-3">
-            <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 print:text-amber-600 uppercase tracking-wide">Mês mais apertado</p>
-            <p className="font-bold text-slate-700 dark:text-slate-200 print:text-slate-700 mt-0.5">{MONTH_NAMES[worstMonth.month - 1]}</p>
-            <p className="text-sm text-amber-600 dark:text-amber-400 print:text-amber-600">{fmt(worstMonth.balance)}</p>
-          </div>
+      {highlights.length > 0 && (
+        <div className="grid gap-3 md:grid-cols-3">
+          {highlights.slice(0, 3).map((h, i) => {
+            const { icon: Icon, cls } = HIGHLIGHT_STYLE[h.tone]
+            return (
+              <div key={i} className="flex gap-3 rounded-2xl border border-slate-100 dark:border-white/[0.06] print:border-slate-200 bg-white dark:bg-[#111c2d] print:bg-white p-3.5">
+                <span className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 ${cls}`}><Icon className="h-3.5 w-3.5" /></span>
+                <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400 print:text-slate-600">
+                  <strong className="text-slate-800 dark:text-slate-100 print:text-slate-800">{h.strong}</strong>{h.text ? ' ' : ''}{h.text}
+                </p>
+              </div>
+            )
+          })}
         </div>
       )}
 
-      <div>
-        <h3 className={secTitle}>Evolução Mensal <span className="sm:hidden normal-case font-normal text-slate-400">(R$)</span></h3>
-        <div className={table}>
-          <table className="w-full text-xs sm:text-sm">
-            <thead className={thead}>
-              <tr>
-                <th className={`text-left px-2 sm:px-4 py-2.5 ${th}`}>Mês</th>
-                <th className={`text-right px-2 sm:px-4 py-2.5 ${th}`}>Receitas</th>
-                <th className={`text-right px-2 sm:px-4 py-2.5 ${th}`}>Despesas</th>
-                <th className={`text-right px-2 sm:px-4 py-2.5 ${th}`}>Saldo</th>
-              </tr>
-            </thead>
-            <tbody className={tdiv}>
-              {monthly.map(m => (
-                <tr key={m.month} className={`hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors ${m.income === 0 && m.expenses === 0 ? 'opacity-40' : ''}`}>
-                  <td className="px-2 sm:px-4 py-2.5 font-medium text-slate-700 dark:text-slate-300 print:text-slate-700">
-                    <span className="sm:hidden print:hidden capitalize">{MONTH_SHORT[m.month - 1]}</span>
-                    <span className="hidden sm:inline print:inline">{MONTH_NAMES[m.month - 1]}</span>
-                  </td>
-                  <td className="px-2 sm:px-4 py-2.5 text-right text-emerald-600 dark:text-emerald-400 print:text-emerald-600 font-semibold">{m.income > 0 ? <Money v={m.income} /> : '—'}</td>
-                  <td className="px-2 sm:px-4 py-2.5 text-right text-red-500 font-semibold">{m.expenses > 0 ? <Money v={m.expenses} /> : '—'}</td>
-                  <td className={`px-2 sm:px-4 py-2.5 text-right font-bold ${m.balance >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500'}`}>
-                    {m.income > 0 || m.expenses > 0 ? <Money v={m.balance} /> : '—'}
-                  </td>
-                </tr>
-              ))}
-              <tr className={tfoot}>
-                <td className="px-2 sm:px-4 py-2.5 text-slate-700 dark:text-slate-200 print:text-slate-700">Total<span className="hidden sm:inline print:inline"> {year}</span></td>
-                <td className="px-2 sm:px-4 py-2.5 text-right text-emerald-600 dark:text-emerald-400 print:text-emerald-600"><Money v={totalIncome} /></td>
-                <td className="px-2 sm:px-4 py-2.5 text-right text-red-500"><Money v={totalExpenses} /></td>
-                <td className={`px-2 sm:px-4 py-2.5 text-right ${totalBalance >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500'}`}><Money v={totalBalance} /></td>
-              </tr>
-            </tbody>
-          </table>
+      {/* Os três gráficos de sempre, menores e lado a lado */}
+      {hasYearData(chartMonths) && (
+        <div className="grid gap-4 lg:grid-cols-3 print:hidden">
+          <OverviewSection icon={BarChart2} title={`Receitas × Despesas — ${year}`} subtitle={isCurrentYear ? 'Meses à frente: só o que já está comprometido' : 'Cada mês do ano'}>
+            <div className="mt-3"><AnnualFlowChart data={chartMonths} /></div>
+          </OverviewSection>
+          <OverviewSection icon={TrendingUp} title="Saldo mensal" subtitle={`${year} × ${prevLabel}`}>
+            <div className="mt-3"><YoYBalanceChart data={yoyBalance} currentYear={year} previousYear={year - 1} /></div>
+          </OverviewSection>
+          <OverviewSection icon={BarChart2} iconClass="text-emerald-600 dark:text-emerald-400" title="Receitas" subtitle={`${year} × ${prevLabel}`}>
+            <div className="mt-3"><YoYIncomeChart data={yoyIncome} currentYear={year} previousYear={year - 1} /></div>
+          </OverviewSection>
         </div>
-      </div>
+      )}
 
       {byCategory.length > 0 && (
-        <CategoryTable
-          title="Despesas por Categoria no Ano"
-          rows={byCategory}
-          total={totalExpenses}
-          valueLabel="Total"
-          months={monthsForAvg}
-        />
+        <OverviewSection
+          icon={BarChart2}
+          title="Despesas por categoria no ano"
+          subtitle={`Toque numa categoria para ver as subcategorias. Média sobre ${monthsForAvg} ${monthsForAvg === 1 ? 'mês' : 'meses'} com movimento.`}
+        >
+          <div className="mt-3">
+            <CategoryTable title="" hint="" rows={byCategory} total={totalExpenses} valueLabel="Total" months={monthsForAvg} iconOf={iconOf} />
+          </div>
+        </OverviewSection>
       )}
+
+      {/* Evolução mensal — recolhida na tela, aberta no PDF */}
+      <section className="rounded-xl border border-slate-200 dark:border-white/[0.08] print:border-0 bg-slate-50/70 dark:bg-white/[0.03] print:bg-white">
+        <button type="button" onClick={() => setShowMonthly(v => !v)} aria-expanded={showMonthly} className="w-full flex items-center gap-2 p-4 text-left print:hidden">
+          <ChevronRight className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${showMonthly ? 'rotate-90' : ''}`} />
+          <CalendarDays className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Evolução mensal</span>
+          <span className="text-xs text-slate-400">receitas, despesas e saldo de cada mês</span>
+        </button>
+        <div className={`${showMonthly ? 'block' : 'hidden'} print:block px-4 pb-4 print:p-0`}>
+          <h3 className={`${secTitle} hidden print:block`}>Evolução mensal</h3>
+          <div className={table}>
+            <table className="w-full text-xs sm:text-sm bg-white dark:bg-transparent">
+              <thead className={thead}>
+                <tr>
+                  <th className={`text-left px-2 sm:px-4 py-2.5 ${th}`}>Mês</th>
+                  <th className={`text-right px-2 sm:px-4 py-2.5 ${th}`}>Receitas</th>
+                  <th className={`text-right px-2 sm:px-4 py-2.5 ${th}`}>Despesas</th>
+                  <th className={`text-right px-2 sm:px-4 py-2.5 ${th}`}>Saldo</th>
+                </tr>
+              </thead>
+              <tbody className={tdiv}>
+                {chartMonths.map(m => {
+                  const st = monthStatus(m.month)
+                  const empty = m.receita === 0 && m.despesa === 0
+                  return (
+                    <tr key={m.month} className={`hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors ${empty || st === 'future' ? 'opacity-50' : ''}`}>
+                      <td className="px-2 sm:px-4 py-2.5 font-medium text-slate-700 dark:text-slate-300 print:text-slate-700">
+                        <span className="sm:hidden print:hidden capitalize">{MONTH_SHORT[m.month - 1]}</span>
+                        <span className="hidden sm:inline print:inline">{MONTH_NAMES[m.month - 1]}</span>
+                        {st === 'current' && <span className="ml-1.5 text-[10px] font-normal text-slate-400">em andamento</span>}
+                        {st === 'future' && !empty && <span className="ml-1.5 text-[10px] font-normal text-slate-400">previsto</span>}
+                      </td>
+                      <td className="px-2 sm:px-4 py-2.5 text-right text-emerald-600 dark:text-emerald-400 print:text-emerald-600 font-semibold">{m.receita > 0 ? <Money v={m.receita} /> : '—'}</td>
+                      <td className="px-2 sm:px-4 py-2.5 text-right text-red-500 font-semibold">{m.despesa > 0 ? <Money v={m.despesa} /> : '—'}</td>
+                      <td className={`px-2 sm:px-4 py-2.5 text-right font-bold ${m.saldo >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500'}`}>
+                        {!empty ? <Money v={m.saldo} /> : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
+                <tr className={tfoot}>
+                  <td className="px-2 sm:px-4 py-2.5 text-slate-700 dark:text-slate-200 print:text-slate-700">Total<span className="hidden sm:inline print:inline">{isCurrentYear ? ' até hoje' : ` ${year}`}</span></td>
+                  <td className="px-2 sm:px-4 py-2.5 text-right text-emerald-600 dark:text-emerald-400 print:text-emerald-600"><Money v={totalIncome} /></td>
+                  <td className="px-2 sm:px-4 py-2.5 text-right text-red-500"><Money v={totalExpenses} /></td>
+                  <td className={`px-2 sm:px-4 py-2.5 text-right ${totalBalance >= 0 ? 'text-blue-600 dark:text-blue-400 print:text-blue-600' : 'text-red-500'}`}><Money v={totalBalance} /></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      {internal.count > 0 && (
+        <section className="rounded-xl border border-slate-200 dark:border-white/[0.08] print:border-0 bg-slate-50/70 dark:bg-white/[0.03] print:bg-white">
+          <button type="button" onClick={() => setShowInternal(v => !v)} aria-expanded={showInternal} className="w-full flex items-center gap-2 p-4 text-left print:hidden">
+            <ChevronRight className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${showInternal ? 'rotate-90' : ''}`} />
+            <ArrowLeftRight className="h-4 w-4 text-slate-400" />
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              Fora dos totais: {internal.count} movimentaç{internal.count === 1 ? 'ão' : 'ões'} entre suas contas
+            </span>
+          </button>
+          <p className={`${showInternal ? 'block' : 'hidden'} print:block px-4 pb-4 print:p-0 text-xs text-slate-500 dark:text-slate-400 print:text-slate-500`}>
+            {internal.out > 0.005 && <>{fmt(internal.out)} de saída</>}
+            {internal.out > 0.005 && internal.in > 0.005 && ' e '}
+            {internal.in > 0.005 && <>{fmt(internal.in)} de entrada</>}
+            {' '}— pagamento de fatura e transferência entre contas suas. Continuam no extrato e no saldo das contas, mas não
+            são gasto nem ganho, por isso ficam fora dos números acima.
+          </p>
+        </section>
+      )}
+
+      <section className="print:hidden rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50/70 dark:bg-white/[0.03]">
+        <button type="button" onClick={() => setShowHelp(v => !v)} aria-expanded={showHelp} className="w-full flex items-center gap-2 p-4 text-left">
+          <ChevronRight className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${showHelp ? 'rotate-90' : ''}`} />
+          <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Como ler este relatório</span>
+        </button>
+        {showHelp && (
+          <ul className="px-4 pb-4 pl-10 space-y-1.5 text-xs text-slate-500 dark:text-slate-400 list-disc">
+            <li><strong className="text-slate-700 dark:text-slate-200">Receitas, Despesas e Saldo</strong> somam o ano até hoje, sem as movimentações entre suas contas. A setinha compara com o mesmo período do ano anterior.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Média por mês</strong> divide pelos meses que já tiveram movimento — meses que ainda não chegaram não entram.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Melhor mês e mês mais apertado</strong> consideram só meses que já terminaram.</li>
+            <li>Nos gráficos e na evolução mensal, os meses à frente mostram só o que já está comprometido (parcelas), marcado como <em>previsto</em>.</li>
+            <li>No PDF, a evolução mensal sai completa, mesmo recolhida aqui.</li>
+          </ul>
+        )}
+      </section>
     </div>
   )
 }
