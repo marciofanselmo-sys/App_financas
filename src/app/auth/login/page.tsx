@@ -40,6 +40,14 @@ export default function LoginPage() {
     // Quem chega por aqui veio de um link de e-mail que não valeu mais. Sem
     // esta mensagem a pessoa cai numa tela de senha que ela nunca definiu e
     // não entende o que aconteceu.
+    // Conta recém-criada cujo login automático não foi: o e-mail já vem
+    // preenchido e o texto explica que é só entrar com a senha escolhida.
+    const novo = params.get('novo')
+    if (novo) {
+      setEmail(novo)
+      setAvisoLink('Sua conta foi criada. Entre com a senha que você acabou de escolher.')
+    }
+
     const erro = params.get('erro')
     if (erro === 'link-expirado') {
       setAvisoLink('Esse link de acesso já foi usado ou expirou. Peça um novo abaixo — leva um minuto.')
@@ -75,8 +83,9 @@ export default function LoginPage() {
       return
     }
     clearAuthRateLimit(email)
-    router.push('/dashboard')
-    router.refresh()
+    // Navegação dura: o cookie da sessão precisa estar gravado antes de o
+    // middleware ler, senão ele não vê sessão e devolve para esta mesma tela.
+    window.location.assign('/dashboard')
   }
 
   return (

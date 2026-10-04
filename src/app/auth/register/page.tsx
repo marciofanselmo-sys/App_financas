@@ -120,12 +120,16 @@ export default function RegisterPage() {
     if (loginError) {
       // A conta foi criada; só a entrada automática falhou. Mandar para o
       // login com o e-mail preenchido é melhor do que dizer que deu errado.
+      console.error('[cadastro] login automático falhou:', loginError.message)
       router.push(`/auth/login?novo=${encodeURIComponent(email)}`)
       return
     }
 
-    router.push('/dashboard')
-    router.refresh()
+    // Navegação dura, não `router.push`: o cookie da sessão é gravado pelo
+    // cliente do Supabase, e a navegação do Next pode sair antes de ele estar
+    // visível para o middleware — que não vê sessão e devolve a pessoa para o
+    // login, exatamente depois de ela criar a conta.
+    window.location.assign('/dashboard')
   }
 
   return (

@@ -50,7 +50,20 @@ export default function PrimeiroAcessoPage() {
     const supabase = createClient()
     const { error: updateError } = await supabase.auth.updateUser({ password })
     if (updateError) {
-      setError('Não foi possível salvar a senha. Tente de novo.')
+      // "Tente de novo" escondia o motivo real e deixava a pessoa repetindo a
+      // mesma coisa. Os dois casos comuns têm saídas diferentes: senha igual à
+      // atual se resolve escolhendo outra; sessão perdida só se resolve com um
+      // link novo.
+      const motivo = updateError.message.toLowerCase()
+      if (motivo.includes('different from the old') || motivo.includes('should be different')) {
+        setError('Escolha uma senha diferente da que você já usa nesta conta.')
+      } else if (motivo.includes('session') || motivo.includes('jwt') || motivo.includes('token')) {
+        setError('Seu link de acesso expirou. Peça outro em "Esqueci minha senha" na tela de entrada.')
+      } else if (motivo.includes('weak') || motivo.includes('password')) {
+        setError('Essa senha é fraca demais. Use pelo menos 8 caracteres, misturando letras e números.')
+      } else {
+        setError(`Não foi possível salvar a senha: ${updateError.message}`)
+      }
       setSaving(false)
       return
     }
@@ -62,7 +75,11 @@ export default function PrimeiroAcessoPage() {
       await supabase.from('user_profiles').update({ needs_password: false }).eq('user_id', user.id)
     }
 
-    router.replace('/dashboard')
+    // Navegação dura, não `router.replace`: o cookie da sessão é gravado pelo
+    // cliente do Supabase e a navegação do Next pode acontecer antes de ele
+    // estar disponível para o middleware — que então não vê sessão nenhuma e
+    // devolve a pessoa para o login, logo depois de ela criar a senha.
+    window.location.assign('/dashboard')
   }
 
   if (checking) {
