@@ -263,6 +263,13 @@ function TabConta() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Sessão inválida.')
+      // O arquivo leva o histórico financeiro inteiro. Entregar isso para uma
+      // sessão num endereço que ninguém provou ser real é o único lugar onde
+      // a falta de confirmação sai cara — então é aqui, e só aqui, que ela é
+      // exigida. Usar o app, importar e assinar seguem liberados.
+      if (!user.email_confirmed_at) {
+        throw new Error('Confirme seu e-mail antes de exportar seus dados. O link está na mensagem de boas-vindas — e dá para reenviar pelo aviso no topo da tela.')
+      }
       const data = await exportUserData(user.id)
       downloadJsonExport(data, `financeapp-dados-${new Date().toISOString().slice(0, 10)}.json`)
       setMsg({ ok: true, text: 'Exportação concluída.' })

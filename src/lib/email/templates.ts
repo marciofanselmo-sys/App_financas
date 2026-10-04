@@ -65,18 +65,27 @@ const dataBR = (iso?: string | null) =>
   iso ? iso.slice(0, 10).split('-').reverse().join('/') : ''
 
 // ── 0. Criou conta no plano grátis ──────────────────────────────────────────
-export function emailConfirmacaoCadastro(params: { nome?: string; link: string }): Email {
+/**
+ * Boas-vindas de quem se cadastrou. A pessoa já está dentro do app quando
+ * recebe — o link aqui serve para confirmar o endereço, não para liberar o
+ * acesso. Por isso o texto começa pelo primeiro passo, e não pelo botão.
+ */
+export function emailBoasVindasCadastro(params: { nome?: string; link?: string }): Email {
+  const confirmacao = params.link
+    ? botao(params.link, 'Confirmar meu e-mail') +
+      p('A confirmação leva um clique e serve para garantir que você consiga recuperar a conta se esquecer a senha.')
+    : ''
+
   return {
-    subject: 'Confirme seu e-mail e entre no NOBLI',
+    subject: 'Bem-vindo ao NOBLI',
     html: moldura(
       titulo(ola(params.nome)) +
-      p('Sua conta foi criada. Confirme o e-mail no botão abaixo para entrar.') +
-      botao(params.link, 'Confirmar e entrar') +
-      p('O link é de uso único e vale por 24 horas.') +
-      p('<strong>Primeiro passo lá dentro:</strong> cadastre uma conta e importe o extrato do seu banco. Em poucos minutos o mês fica organizado.'),
+      p('Sua conta está pronta e você já pode usar o NOBLI.') +
+      p('<strong>Primeiro passo:</strong> cadastre uma conta ou cartão e importe o extrato do seu banco. Em poucos minutos o mês inteiro fica organizado, com os gastos já separados por categoria.') +
+      confirmacao,
       'Você recebeu este e-mail porque criou uma conta no NOBLI.',
     ),
-    text: `${ola(params.nome)}\n\nSua conta no NOBLI foi criada. Confirme seu e-mail neste link (uso único, vale 24 horas):\n${params.link}\n\nDúvidas: ${SUPORTE}`,
+    text: `${ola(params.nome)}\n\nSua conta no NOBLI está pronta.\n\nPrimeiro passo: cadastre uma conta ou cartão e importe o extrato do seu banco.\n${params.link ? `\nConfirme seu e-mail neste link: ${params.link}\n` : ''}\nDúvidas: ${SUPORTE}`,
   }
 }
 

@@ -10,6 +10,8 @@ import {
   BarChart2, CreditCard, ArrowLeftRight, FileText, CheckCircle2,
 } from 'lucide-react'
 import { AuthBrandPanel } from '@/components/auth/auth-brand-panel'
+import { createClient } from '@/lib/supabase/client'
+import { sugereCorrecao } from '@/lib/email-typo'
 import { AuthFormShell } from '@/components/auth/auth-form-shell'
 import { BRAND } from '@/lib/brand'
 import { registerSchema } from '@/lib/schemas/auth'
@@ -42,6 +44,13 @@ export default function RegisterPage() {
    * usado, sem saber que a conta dela já existe e só falta a senha.
    */
   const [jaTemConta, setJaTemConta]         = useState(false)
+  /**
+   * Domínio que parece erro de digitação. Vale mais do que parece: a conta
+   * criada num endereço que não existe é a única falha desta tela que custa
+   * dinheiro — na hora de comprar, o e-mail do checkout não bate com o do
+   * cadastro e o plano vai parar numa segunda conta, vazia.
+   */
+  const [dominioSuspeito, setDominioSuspeito] = useState<string | null>(null)
   const [loading, setLoading]               = useState(false)
 
   async function handleRegister(e: React.FormEvent) {
@@ -102,8 +111,21 @@ export default function RegisterPage() {
     // o botão ficava preso em "Criando conta..." até a rota trocar. Se a
     // navegação demorasse ou falhasse, travava de vez — e a conta já tinha
     // sido criada, então tentar de novo dava "e-mail já cadastrado". (14.21)
+    // Entra na hora. O e-mail de boas-vindas já saiu e leva o link de
+    // confirmação; ela confirma quando quiser, por um aviso dentro do app.
+    const supabase = createClient()
+    const { error: loginError } = await supabase.auth.signInWithPassword({ email, password })
     setLoading(false)
-    router.push('/auth/login?confirm=email')
+
+    if (loginError) {
+      // A conta foi criada; só a entrada automática falhou. Mandar para o
+      // login com o e-mail preenchido é melhor do que dizer que deu errado.
+      router.push(`/auth/login?novo=${encodeURIComponent(email)}`)
+      return
+    }
+
+    router.push('/dashboard')
+    router.refresh()
   }
 
   return (
@@ -178,11 +200,28 @@ export default function RegisterPage() {
               type="email"
               placeholder="seu@email.com"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={e => {
+                setEmail(e.target.value)
+                if (dominioSuspeito) setDominioSuspeito(null)
+              }}
+              onBlur={e => setDominioSuspeito(sugereCorrecao(e.target.value))}
               required
               autoComplete="email"
               className="h-11 rounded-xl bg-[#E8F2FF]/40 dark:bg-slate-800/60 border-[#E2E8F0] dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800 focus:border-[#2563EB] transition-colors"
             />
+            {dominioSuspeito && (
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                Você quis dizer{' '}
+                <button
+                  type="button"
+                  onClick={() => { setEmail(dominioSuspeito); setDominioSuspeito(null) }}
+                  className="font-semibold underline"
+                >
+                  {dominioSuspeito}
+                </button>
+                ?
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { enviarEmail } from '@/lib/email/send'
-import { emailConfirmacaoCadastro } from '@/lib/email/templates'
+import { emailBoasVindasCadastro } from '@/lib/email/templates'
 
 /**
  * Cadastro no plano grátis.
@@ -39,6 +39,30 @@ function excedeu(chave: string): boolean {
   return atual.contagem > MAX_PEDIDOS
 }
 
+/**
+ * Link que confirma o e-mail. É um magic link: ao ser usado, o Supabase
+ * marca o endereço como confirmado e devolve a sessão — serve tanto para
+ * quem clicou do próprio navegador quanto para quem abriu no celular.
+ */
+export async function linkDeConfirmacao(
+  admin: ReturnType<typeof createAdminClient>,
+  email: string,
+  siteUrl: string,
+): Promise<string | undefined> {
+  try {
+    const { data, error } = await admin.auth.admin.generateLink({
+      type: 'magiclink',
+      email,
+      options: { redirectTo: `${siteUrl}/auth/confirm?next=/dashboard` },
+    })
+    const hash = data?.properties?.hashed_token
+    if (error || !hash) return undefined
+    return `${siteUrl}/auth/confirm?token_hash=${encodeURIComponent(hash)}&type=magiclink&next=/dashboard`
+  } catch {
+    return undefined
+  }
+}
+
 export async function POST(req: NextRequest) {
   let email = ''
   let senha = ''
@@ -66,28 +90,37 @@ export async function POST(req: NextRequest) {
   try {
     const admin = createAdminClient()
 
-    // `type: 'signup'` cria o usuário e devolve o token de confirmação sem
-    // disparar e-mail nenhum pelo Supabase.
-    const { data, error } = await admin.auth.admin.generateLink({
-      type: 'signup',
+    // A conta nasce **sem** o e-mail confirmado, de propósito: quem acabou de
+    // vir de um anúncio entra na hora (o login é feito pela própria tela, com
+    // a senha que ela escolheu), e a confirmação vira um aviso dentro do app
+    // em vez de um portão no meio do caminho. `email_confirmed_at` continua
+    // sendo a fonte da verdade sobre quem já provou o endereço.
+    const { data, error } = await admin.auth.admin.createUser({
       email,
       password: senha,
-      options: { data: { full_name: nome } },
+      email_confirm: false,
+      user_metadata: { full_name: nome },
     })
 
     if (error) {
-      if (/already (been )?registered|already exists|User already/i.test(error.message)) {
+      if (/already (been )?registered|already exists|User already|duplicate/i.test(error.message)) {
         return NextResponse.json({ ok: false, motivo: 'ja-tem-conta' })
       }
-      console.error('[cadastrar] generateLink falhou:', error.message)
+      console.error('[cadastrar] createUser falhou:', error.message)
       return NextResponse.json({ ok: false, motivo: 'falha' }, { status: 500 })
     }
 
-    const hash = data?.properties?.hashed_token
-    if (!hash) return NextResponse.json({ ok: false, motivo: 'falha' }, { status: 500 })
+    if (data.user) {
+      await admin.from('user_profiles').upsert(
+        { user_id: data.user.id, full_name: nome },
+        { onConflict: 'user_id' },
+      )
+    }
 
-    const link = `${siteUrl}/auth/confirm?token_hash=${encodeURIComponent(hash)}&type=signup&next=/dashboard`
-    await enviarEmail(email, emailConfirmacaoCadastro({ nome: nome || undefined, link }))
+    // Boas-vindas com o link de confirmação. Não bloqueia nada: a pessoa já
+    // está entrando. Falha de e-mail aqui não derruba o cadastro.
+    const link = await linkDeConfirmacao(admin, email, siteUrl)
+    await enviarEmail(email, emailBoasVindasCadastro({ nome: nome || undefined, link }))
 
     return NextResponse.json({ ok: true })
   } catch (e) {
