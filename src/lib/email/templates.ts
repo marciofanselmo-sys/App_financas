@@ -64,6 +64,22 @@ const ola = (nome?: string) => (nome ? `Olá, ${nome.split(' ')[0]}!` : 'Olá!')
 const dataBR = (iso?: string | null) =>
   iso ? iso.slice(0, 10).split('-').reverse().join('/') : ''
 
+// ── 0. Criou conta no plano grátis ──────────────────────────────────────────
+export function emailConfirmacaoCadastro(params: { nome?: string; link: string }): Email {
+  return {
+    subject: 'Confirme seu e-mail e entre no NOBLI',
+    html: moldura(
+      titulo(ola(params.nome)) +
+      p('Sua conta foi criada. Confirme o e-mail no botão abaixo para entrar.') +
+      botao(params.link, 'Confirmar e entrar') +
+      p('O link é de uso único e vale por 24 horas.') +
+      p('<strong>Primeiro passo lá dentro:</strong> cadastre uma conta e importe o extrato do seu banco. Em poucos minutos o mês fica organizado.'),
+      'Você recebeu este e-mail porque criou uma conta no NOBLI.',
+    ),
+    text: `${ola(params.nome)}\n\nSua conta no NOBLI foi criada. Confirme seu e-mail neste link (uso único, vale 24 horas):\n${params.link}\n\nDúvidas: ${SUPORTE}`,
+  }
+}
+
 // ── 0. Esqueceu a senha (ou o convite expirou) ──────────────────────────────
 export function emailRecuperacaoSenha(params: { nome?: string; link: string }): Email {
   return {

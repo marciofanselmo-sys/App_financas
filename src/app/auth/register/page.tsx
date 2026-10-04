@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,9 +13,7 @@ import { AuthBrandPanel } from '@/components/auth/auth-brand-panel'
 import { AuthFormShell } from '@/components/auth/auth-form-shell'
 import { BRAND } from '@/lib/brand'
 import { registerSchema } from '@/lib/schemas/auth'
-import { formatUserError } from '@/lib/supabase-error'
 import { checkAuthRateLimit, recordAuthFailure } from '@/lib/auth-rate-limit'
-import { getAuthCallbackUrl } from '@/lib/auth-redirect'
 
 const FEATURES = [
   { icon: BarChart2,      text: 'Dashboard com visão completa do seu patrimônio' },
@@ -65,32 +62,37 @@ export default function RegisterPage() {
     }
 
     setLoading(true)
-    const supabase = createClient()
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: name.trim() },
-        emailRedirectTo: getAuthCallbackUrl('/auth/login'),
-      },
-    })
 
-    if (error) {
-      recordAuthFailure(email)
-      if (/already (been )?registered|already exists/i.test(error.message)) {
-        setJaTemConta(true)
-      } else {
-        setError(formatUserError(error, 'Erro ao criar conta. Tente novamente.'))
-      }
+    // O cadastro acontece no servidor, não com `supabase.auth.signUp` daqui.
+    // Motivo: aquele caminho faz o Supabase enviar o e-mail de confirmação, e
+    // o serviço embutido dele entrega só 2 mensagens por hora no projeto
+    // inteiro. Com campanha no ar, do terceiro cadastro da hora em diante a
+    // conta era criada e o e-mail nunca chegava — a pessoa não entrava e não
+    // havia erro que explicasse. Agora o e-mail sai pela Resend, pelo mesmo
+    // caminho da compra e da recuperação de senha.
+    let resposta: { ok: boolean; motivo?: string }
+    try {
+      const r = await fetch('/api/auth/cadastrar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome: name.trim(), email, senha: password }),
+      })
+      resposta = await r.json()
+    } catch {
+      setError('Não conseguimos falar com o servidor. Tente de novo em instantes.')
       setLoading(false)
       return
     }
 
-    // O Supabase também pode responder "sucesso" com uma lista de identidades
-    // vazia quando o e-mail já existe — é a forma dele de não confirmar a
-    // existência da conta. Para quem está na tela, o significado é o mesmo.
-    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-      setJaTemConta(true)
+    if (!resposta.ok) {
+      if (resposta.motivo === 'ja-tem-conta') {
+        setJaTemConta(true)
+      } else if (resposta.motivo === 'muitas-tentativas') {
+        setError('Muitas tentativas deste dispositivo. Aguarde alguns minutos.')
+      } else {
+        recordAuthFailure(email)
+        setError('Erro ao criar conta. Tente novamente.')
+      }
       setLoading(false)
       return
     }
@@ -101,14 +103,7 @@ export default function RegisterPage() {
     // navegação demorasse ou falhasse, travava de vez — e a conta já tinha
     // sido criada, então tentar de novo dava "e-mail já cadastrado". (14.21)
     setLoading(false)
-
-    if (!data.session) {
-      router.push('/auth/login?confirm=email')
-      return
-    }
-
-    router.push('/dashboard')
-    router.refresh()
+    router.push('/auth/login?confirm=email')
   }
 
   return (

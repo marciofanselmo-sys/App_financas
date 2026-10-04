@@ -60,17 +60,29 @@ export async function POST(req: NextRequest) {
 
   try {
     const admin = createAdminClient()
-    const { data, error } = await admin.auth.admin.generateLink({
-      type: 'recovery',
-      email,
-      options: { redirectTo: `${siteUrl}/auth/confirm?next=/primeiro-acesso` },
-    })
+    const opcoes = { redirectTo: `${siteUrl}/auth/confirm?next=/primeiro-acesso` }
+
+    let { data, error } = await admin.auth.admin.generateLink({ type: 'recovery', email, options: opcoes })
+    let tipo: 'recovery' | 'magiclink' = 'recovery'
+
+    // Quem nunca confirmou o e-mail pode não aceitar link de recuperação. O
+    // magic link funciona para esse caso e confirma o endereço ao ser usado —
+    // sem ele, quem se cadastrou e não recebeu a confirmação ficava trancado
+    // para fora sem nenhuma saída.
+    if (error || !data?.properties?.hashed_token) {
+      const alternativa = await admin.auth.admin.generateLink({ type: 'magiclink', email, options: opcoes })
+      if (!alternativa.error && alternativa.data?.properties?.hashed_token) {
+        data = alternativa.data
+        error = null
+        tipo = 'magiclink'
+      }
+    }
 
     // Conta inexistente cai aqui. Silêncio proposital: a pessoa recebe a
     // mesma resposta de quem tem conta.
     if (error || !data?.properties?.hashed_token) return NextResponse.json(RESPOSTA)
 
-    const link = `${siteUrl}/auth/confirm?token_hash=${encodeURIComponent(data.properties.hashed_token)}&type=recovery&next=/primeiro-acesso`
+    const link = `${siteUrl}/auth/confirm?token_hash=${encodeURIComponent(data.properties.hashed_token)}&type=${tipo}&next=/primeiro-acesso`
     const nome = (data.user?.user_metadata?.full_name as string | undefined) ?? undefined
 
     await enviarEmail(email, emailRecuperacaoSenha({ nome, link }))

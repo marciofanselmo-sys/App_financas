@@ -63,10 +63,14 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       recordAuthFailure(email)
-      const msg = error.message.toLowerCase().includes('email not confirmed')
-        ? 'Confirme seu e-mail pelo link que enviamos antes de entrar.'
-        : 'E-mail ou senha incorretos.'
-      setError(msg)
+      // E-mail não confirmado não é "senha errada": a pessoa não tem o que
+      // corrigir no formulário. O caminho é receber outro link.
+      if (error.message.toLowerCase().includes('email not confirmed')) {
+        setAvisoLink('Falta confirmar seu e-mail. Se o link não chegou, peça outro abaixo — ele entra direto na sua conta.')
+        setError('')
+      } else {
+        setError('E-mail ou senha incorretos.')
+      }
       setLoading(false)
       return
     }
