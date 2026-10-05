@@ -60,6 +60,12 @@ function normalizePage(page: string) {
   return page.startsWith('/transactions/') ? '/transactions/[conta]' : page
 }
 
+/**
+ * Telas que não entram no ranking: rotas antigas que hoje só redirecionam
+ * (nunca registram visita) e o próprio painel, que é acesso do dono.
+ */
+const TELAS_FORA_DO_RANKING = ['/settings/subcategories', '/admin']
+
 function pageLabel(page: string) {
   return PAGE_LABELS[normalizePage(page)] ?? page
 }
@@ -196,6 +202,14 @@ export default function AdminPage() {
 
   const topPages = useMemo(() => {
     const map = new Map<string, { views: number; users: Set<string> }>()
+
+    // Começa com todas as telas conhecidas em zero. Sem isso, o card só
+    // mostrava o que alguém visitou — e "ninguém abriu Metas este mês" é
+    // justamente a informação que falta para decidir o que melhorar.
+    for (const page of Object.keys(PAGE_LABELS)) {
+      if (!TELAS_FORA_DO_RANKING.includes(page)) map.set(page, { views: 0, users: new Set() })
+    }
+
     for (const v of views) {
       const page = normalizePage(v.page)
       const entry = map.get(page) ?? { views: 0, users: new Set() }
@@ -203,10 +217,12 @@ export default function AdminPage() {
       entry.users.add(v.user_id)
       map.set(page, entry)
     }
+
+    // Sem corte: eram 10 linhas para 19 telas, então metade do app ficava
+    // invisível no painel.
     return Array.from(map.entries())
       .map(([page, d]) => ({ page, views: d.views, users: d.users.size }))
-      .sort((a, b) => b.views - a.views)
-      .slice(0, 10)
+      .sort((a, b) => b.views - a.views || pageLabel(a.page).localeCompare(pageLabel(b.page)))
   }, [views])
 
   const last7Days = useMemo(() => {
@@ -432,6 +448,7 @@ export default function AdminPage() {
         <div className="flex items-center gap-2 px-5 py-4 border-b border-slate-100 dark:border-slate-700">
           <BarChart2 className="h-4 w-4 text-violet-500" />
           <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Páginas mais acessadas — 30 dias</h2>
+          <span className="ml-auto text-xs text-slate-400">{topPages.length} telas</span>
         </div>
         {topPages.length === 0 ? (
           <div className="flex items-center justify-center py-10">
@@ -444,7 +461,11 @@ export default function AdminPage() {
               return (
                 <div key={page}>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{pageLabel(page)}</span>
+                    <span className={v === 0
+                      ? 'text-sm text-slate-400 dark:text-slate-500'
+                      : 'text-sm font-medium text-slate-700 dark:text-slate-200'}>
+                      {pageLabel(page)}
+                    </span>
                     <div className="flex items-center gap-3 text-xs text-slate-400">
                       <span>{users} usuário{users !== 1 ? 's' : ''}</span>
                       <span className="font-semibold text-slate-600 dark:text-slate-300 w-16 text-right">{fmt(v)} views</span>
