@@ -208,6 +208,14 @@ export default function AnalyticsPage() {
   const [boardId, setBoardId] = useState<string>('all')
   // Categoria aberta na lista, mostrando os lançamentos dela ali mesmo.
   const [expandedCat, setExpandedCat] = useState<string | null>(null)
+  // Subcategorias abertas dentro da categoria (chave "categoria|subcategoria") — começam recolhidas.
+  const [openSubs, setOpenSubs] = useState<Set<string>>(new Set())
+  const toggleSub = (key: string) => setOpenSubs(prev => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    return next
+  })
   // Começa sempre recolhido ao abrir a tela.
   const [internalOpen, setInternalOpen] = useState(false)
   const toggleInternal = () => setInternalOpen(v => !v)
@@ -342,8 +350,8 @@ export default function AnalyticsPage() {
     return <div className="mt-2 ml-1.5 pl-3 border-l-2 border-slate-100 dark:border-slate-700">{txs.map(renderTxRow)}</div>
   }
 
-  // Categoria aberta: cada subcategoria é um grupo (nome, quantos e total)
-  // com os lançamentos dela logo embaixo; os que estão direto na categoria
+  // Categoria aberta: cada subcategoria é um grupo recolhível (nome, quantos e
+  // total) com os lançamentos dela embaixo ao abrir; os que estão direto na categoria
   // ficam em "Sem subcategoria", no fim. A linha lateral leva a cor da categoria.
   function renderGrouped(cat: string, color: string, txs: Transaction[], subs: CategoryTotal['subs']) {
     const groups = subs.map(sub => ({ name: sub.name, total: sub.total, items: txs.filter(t => t.category === sub.name) }))
@@ -354,8 +362,14 @@ export default function AnalyticsPage() {
     return (
       <div className="mt-3 mb-1 ml-4 sm:ml-[30px] pl-3 sm:pl-4 border-l-2" style={{ borderColor: `${color}66` }}>
         {groups.map(g => (
-          <div key={g.name} className="pb-1.5">
-            <div className="flex items-center gap-2 px-2 pt-2 pb-1">
+          <div key={g.name} className="pb-0.5">
+            <button
+              type="button"
+              onClick={() => toggleSub(`${cat}|${g.name}`)}
+              aria-expanded={openSubs.has(`${cat}|${g.name}`)}
+              className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03]"
+            >
+              <ChevronRight className={`h-3.5 w-3.5 text-slate-400 shrink-0 transition-transform ${openSubs.has(`${cat}|${g.name}`) ? 'rotate-90' : ''}`} />
               <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
               <p className="flex-1 min-w-0 text-[13px] font-semibold text-slate-700 dark:text-slate-200 truncate">
                 {g.name}
@@ -364,8 +378,8 @@ export default function AnalyticsPage() {
                 </span>
               </p>
               <span className="w-24 text-right text-[13px] font-semibold tabular-nums text-slate-700 dark:text-slate-200 shrink-0">{fmt(g.total)}</span>
-            </div>
-            <div className="sm:pl-4">{g.items.map(renderTxRow)}</div>
+            </button>
+            {openSubs.has(`${cat}|${g.name}`) && <div className="pl-5 sm:pl-6 pb-1">{g.items.map(renderTxRow)}</div>}
           </div>
         ))}
       </div>
