@@ -455,7 +455,10 @@ export default function AdminPage() {
             <p className="text-sm text-slate-400">Nenhum dado ainda. Navegue pelo app para gerar dados.</p>
           </div>
         ) : (
-          <div className="p-5 space-y-3">
+          // Dez telas à vista e o resto no rolar: a lista inteira empurrava o
+          // restante do painel para baixo, e as primeiras são as que importam
+          // no dia a dia.
+          <div className="p-5 space-y-3 max-h-[26rem] overflow-y-auto">
             {topPages.map(({ page, views: v, users }) => {
               const pct = (v / (topPages[0]?.views || 1)) * 100
               return (
