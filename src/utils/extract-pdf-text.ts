@@ -21,7 +21,16 @@ function findPdfHeaderOffset(bytes: Uint8Array): number {
 // Extração de texto de PDF via pdf.js — compartilhada por todos os parsers de
 // PDF (Mercado Pago, Inter, e futuros). Lança 'empty-pdf' se não achar texto
 // extraível (ex: arquivo escaneado, sem camada de texto).
-export async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
+// PDF protegido por senha: o pdf.js lança PasswordException (code 1 = falta a
+// senha, 2 = senha errada). Viramos em mensagens próprias para a tela pedir a
+// senha. A senha só é usada aqui, na memória, para abrir o arquivo.
+function asPasswordError(err: unknown): Error | null {
+  const e = err as { name?: string; code?: number } | null
+  if (e?.name !== 'PasswordException') return null
+  return new Error(e.code === 2 ? 'pdf-password-wrong' : 'pdf-password')
+}
+
+export async function extractPdfText(buffer: ArrayBuffer, password?: string): Promise<string> {
   const pdfjsLib = await import('pdfjs-dist')
   // Cópia local do worker (public/pdf.worker.min.mjs) — o CDN é instável nessa versão.
   //
@@ -40,13 +49,19 @@ export async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
     // pra essa primeira tentativa, nunca o `original` direto. Sem isso, a
     // segunda tentativa (com o cabeçalho recortado) já nasceria com um
     // ArrayBuffer inutilizável, mesmo achando o offset certo.
-    pdf = await pdfjsLib.getDocument({ data: original.slice() }).promise
+    pdf = await pdfjsLib.getDocument({ data: original.slice(), password }).promise
   } catch (firstErr) {
+    const pw = asPasswordError(firstErr)
+    if (pw) throw pw
     // Primeira tentativa falhou — pode ser o problema do cabeçalho deslocado.
     // Só tenta de novo se achar um "%PDF-" real mais adiante; senão, era outro erro.
     const offset = findPdfHeaderOffset(original)
     if (offset <= 0) throw firstErr
-    pdf = await pdfjsLib.getDocument({ data: original.slice(offset) }).promise
+    try {
+      pdf = await pdfjsLib.getDocument({ data: original.slice(offset), password }).promise
+    } catch (secondErr) {
+      throw asPasswordError(secondErr) ?? secondErr
+    }
   }
 
   const parts: string[] = []

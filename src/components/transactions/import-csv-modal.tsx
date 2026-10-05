@@ -14,7 +14,7 @@ import { useCategories } from '@/hooks/use-categories'
 import { useRules, applyUserRules, findInternalRule, internalRuleTarget, isInternalRule, matchesInternalRule } from '@/hooks/use-rules'
 import { useHistoryWindow } from '@/hooks/use-history-window'
 import { textoJanela } from '@/lib/plans'
-import { Upload, Download, CheckCircle, AlertCircle, FileText, Zap, Tag, TrendingUp, History } from 'lucide-react'
+import { Upload, Download, CheckCircle, AlertCircle, FileText, Zap, Tag, TrendingUp, History, Lock } from 'lucide-react'
 import { parseOFX } from '@/utils/parse-ofx'
 import { parseRicoExtratoXLSX, isRicoExtratoRows } from '@/utils/parse-rico-extrato'
 import { extractPdfText } from '@/utils/extract-pdf-text'
@@ -451,6 +451,9 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [step, setStep] = useState<Step>('upload')
+  // PDF protegido: guarda o arquivo enquanto a pessoa digita a senha (nunca a senha).
+  const [pdfPassword, setPdfPassword] = useState<{ file: File; wrong: boolean } | null>(null)
+  const [pdfPasswordInput, setPdfPasswordInput] = useState('')
   const [fileType, setFileType] = useState<FileType>(null)
   const [headers, setHeaders] = useState<string[]>([])
   const [rawRows, setRawRows] = useState<Record<string, string>[]>([])
@@ -521,6 +524,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   }, [rules, categories])
 
   function reset() {
+    setPdfPassword(null); setPdfPasswordInput('')
     setStep('upload'); setFileType(null); setHeaders([]); setRawRows([]); setMapping({}); setPreview([]); setImportWarning(''); setMappingRecognized(false)
     setImporting(false); setImportResult(null); setFileError('')
     setReviewItems([]); setReviewCategories({})
@@ -667,13 +671,14 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   }
 
   // ── PDF (Mercado Pago, Inter — detectados pelo conteúdo do texto extraído) ──
-  function handlePDF(file: File) {
+  function handlePDF(file: File, password?: string) {
     const reader = new FileReader()
     reader.onload = async (ev) => {
       setImporting(true)
       try {
         const buffer = ev.target?.result as ArrayBuffer
-        const text = await extractPdfText(buffer)
+        const text = await extractPdfText(buffer, password)
+        setPdfPassword(null)
 
         // Antes do Inter: o extrato do C6 pode citar "BANCO INTER" num
         // lançamento (pagamento para o Inter) e cair no leitor errado.
@@ -749,7 +754,12 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
         setFileError('Não reconhecemos o formato desse PDF. Hoje suportamos fatura e extrato de conta do Inter, extrato de conta do C6, do Mercado Pago e do Itaú.')
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
-        if (msg === 'empty-pdf') {
+        if (msg === 'pdf-password' || msg === 'pdf-password-wrong') {
+          // PDF com senha: pede a senha na própria tela e tenta de novo.
+          setFileError('')
+          setPdfPassword({ file, wrong: msg === 'pdf-password-wrong' })
+          setPdfPasswordInput('')
+        } else if (msg === 'empty-pdf') {
           setFileError('O PDF não contém texto extraível. Certifique-se de que não é um arquivo escaneado.')
         } else {
           // A mensagem genérica antiga ("verifique se o arquivo não está
@@ -824,6 +834,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
 
   function processFile(file: File) {
     setFileError('')
+    setPdfPassword(null); setPdfPasswordInput('')
     const fileCheck = validateImportFile(file)
     if (!fileCheck.ok) {
       setFileError(fileCheck.error)
@@ -1456,6 +1467,39 @@ function shiftDays(date: string, days: number): string {
                 )}
                 <input ref={fileRef} type="file" accept=".ofx,.qfx,.csv,.xls,.xlsx,.pdf" className="hidden" onChange={handleFile} disabled={importing} />
               </div>
+
+              {pdfPassword && (
+                <form
+                  onSubmit={e => { e.preventDefault(); if (pdfPasswordInput) handlePDF(pdfPassword.file, pdfPasswordInput) }}
+                  className="space-y-2 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3"
+                >
+                  <p className="flex items-center gap-2 text-sm font-semibold text-blue-800 dark:text-blue-300">
+                    <Lock className="h-4 w-4 shrink-0" /> Este PDF tem senha
+                  </p>
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    {pdfPassword.wrong
+                      ? 'Senha incorreta. Confira e tente de novo.'
+                      : 'Digite a senha do arquivo — a que o banco informou ao gerar o extrato. Ela só é usada para abrir o PDF aqui no seu navegador e não fica salva.'}
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      autoFocus
+                      autoComplete="off"
+                      value={pdfPasswordInput}
+                      onChange={e => setPdfPasswordInput(e.target.value)}
+                      placeholder="Senha do PDF"
+                      className="flex-1 min-w-0 h-9 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.04] px-3 text-sm text-slate-800 dark:text-slate-100"
+                    />
+                    <Button type="submit" size="sm" disabled={!pdfPasswordInput || importing} className="h-9">
+                      {importing ? 'Abrindo…' : 'Abrir PDF'}
+                    </Button>
+                  </div>
+                  <button type="button" onClick={() => { setPdfPassword(null); setPdfPasswordInput('') }} className="text-xs text-blue-700 dark:text-blue-300 hover:underline">
+                    Escolher outro arquivo
+                  </button>
+                </form>
+              )}
 
               {fileError && (
                 <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded-lg">

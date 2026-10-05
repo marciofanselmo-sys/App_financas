@@ -181,6 +181,7 @@ export const HELP_SECTIONS: HelpSection[] = [
           '2. Clique em "Importar extrato" e escolha o arquivo (OFX, CSV, PDF ou planilha).',
           '3. O app reconhece o banco pelo conteúdo do arquivo e aplica suas regras de categoria.',
           '4. Revise a lista antes de salvar: dá para mudar categoria ou tirar linhas.',
+          'PDF com senha: o app pede a senha do arquivo na hora. Ela só é usada para abrir o PDF no seu navegador e não fica salva.',
         ],
         tip: 'Importe cada extrato na conta certa — um arquivo do cartão dentro da conta corrente mistura os saldos.',
         link: { href: '/transactions', label: 'Abrir Contas e Cartões' },
