@@ -19,6 +19,11 @@ export interface RegistroStatus {
   note: string | null
   resolved_at: string | null
   updated_at: string
+  /** Preenchidos quando o erro foi mandado para o Claude (migration_admin_claude.sql). */
+  claude_ref?: string | null
+  claude_session_url?: string | null
+  claude_sent_at?: string | null
+  pr_url?: string | null
 }
 
 export interface GrupoErro {

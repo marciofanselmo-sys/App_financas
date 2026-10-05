@@ -113,7 +113,7 @@ function AdminPainel() {
   const carregarStatus = useCallback(async () => {
     const { data, error } = await createClient()
       .from('app_error_status')
-      .select('fingerprint, status, note, resolved_at, updated_at')
+      .select('*')
     setStatusUnavailable(!!error)
     setStatusErros((data as RegistroStatus[] | null) ?? [])
   }, [])

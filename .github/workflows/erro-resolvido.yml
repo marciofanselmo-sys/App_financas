@@ -1,0 +1,27 @@
+name: Erro resolvido no painel Admin
+
+# Quando um PR aberto pelo Claude para um erro do painel ("NOBLI-ERRO: <ref>"
+# no corpo) entra no main, avisa o app para marcar o erro como resolvido.
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  avisar:
+    if: github.event.pull_request.merged == true && contains(github.event.pull_request.body, 'NOBLI-ERRO:')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Marcar erro como resolvido
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SECRET: ${{ secrets.ERRO_RESOLVIDO_SECRET }}
+        run: |
+          REF=$(printf '%s' "$PR_BODY" | grep -oE 'NOBLI-ERRO: [0-9a-f]{8}' | head -1 | awk '{print $2}')
+          if [ -z "$REF" ]; then echo "Sem NOBLI-ERRO no PR"; exit 0; fi
+          curl -sS -f -X POST https://noblifinance.com.br/api/webhooks/erro-resolvido \
+            -H "Authorization: Bearer $SECRET" \
+            -H "Content-Type: application/json" \
+            -d "{\"ref\":\"$REF\",\"pr_url\":\"$PR_URL\",\"pr_number\":$PR_NUMBER}"

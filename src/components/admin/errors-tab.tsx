@@ -6,7 +6,7 @@ import { OverviewSection } from '@/components/ui/overview-blocks'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { ABERTOS, type GrupoErro, type StatusErro, type StatusGravado } from '@/lib/admin/errors'
-import { AlertTriangle, Loader2, HelpCircle } from 'lucide-react'
+import { AlertTriangle, Loader2, HelpCircle, Sparkles, ExternalLink, GitPullRequest } from 'lucide-react'
 import { format } from 'date-fns'
 import { AvisoMigration } from './admin-ui'
 
@@ -31,6 +31,7 @@ export function ErrorsTab({ grupos, errosIndisponiveis, statusIndisponivel, onMu
   const [nota, setNota] = useState('')
   const [salvando, setSalvando] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
+  const [enviado, setEnviado] = useState<{ fp: string; url: string | null; aviso?: string } | null>(null)
 
   const contagem = useMemo(() => ({
     abertos: grupos.filter(g => ABERTOS.includes(g.status)).length,
@@ -63,6 +64,24 @@ export function ErrorsTab({ grupos, errosIndisponiveis, statusIndisponivel, onMu
     onMudou()
   }
 
+  // Dispara a rotina do Claude para este tipo de erro. O servidor monta o
+  // resumo, abre a sessão e passa o erro para "Em análise" com o link do chat.
+  async function mandarParaClaude(g: GrupoErro) {
+    setSalvando(g.fingerprint)
+    setErro(null)
+    setEnviado(null)
+    const res = await fetch('/api/admin/errors/claude', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context: g.context, message: g.message }),
+    })
+    const body = await res.json().catch(() => ({}))
+    setSalvando(null)
+    if (!res.ok) { setErro(body.error ?? 'Não foi possível mandar para o Claude.'); return }
+    setEnviado({ fp: g.fingerprint, url: body.sessionUrl ?? null, aviso: body.aviso })
+    onMudou()
+  }
+
   if (errosIndisponiveis) {
     return <AvisoMigration arquivo="migration_app_errors.sql" oQue="Registro de erros indisponível." />
   }
@@ -87,6 +106,13 @@ export function ErrorsTab({ grupos, errosIndisponiveis, statusIndisponivel, onMu
         </div>
 
         {erro && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{erro}</p>}
+        {enviado && (
+          <p className="mt-3 text-xs text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30 rounded-lg px-3 py-2">
+            Enviado para o Claude. Ele vai investigar, corrigir e abrir um PR para você aprovar.{' '}
+            {enviado.url && <a href={enviado.url} target="_blank" rel="noreferrer" className="font-semibold underline">Abrir o chat</a>}
+            {enviado.aviso && <span className="block mt-1 text-amber-700 dark:text-amber-400">{enviado.aviso}</span>}
+          </p>
+        )}
 
         {visiveis.length === 0 ? (
           <p className="text-sm text-slate-400 text-center py-10">
@@ -121,6 +147,24 @@ export function ErrorsTab({ grupos, errosIndisponiveis, statusIndisponivel, onMu
                           </p>
                         )}
                         {g.registro?.note && <p className="text-xs text-slate-400 mt-0.5">Nota: “{g.registro.note}”</p>}
+                        {(g.registro?.claude_session_url || g.registro?.pr_url) && (
+                          <p className="flex flex-wrap gap-3 text-xs mt-1">
+                            {g.registro.claude_session_url && (
+                              <a href={g.registro.claude_session_url} target="_blank" rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-violet-600 dark:text-violet-400 hover:underline">
+                                <Sparkles className="h-3 w-3" /> Chat no Claude
+                                {g.registro.claude_sent_at && <span className="text-slate-400">· {format(new Date(g.registro.claude_sent_at), 'dd/MM HH:mm')}</span>}
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                            {g.registro.pr_url && (
+                              <a href={g.registro.pr_url} target="_blank" rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 hover:underline">
+                                <GitPullRequest className="h-3 w-3" /> PR da correção <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                          </p>
+                        )}
                         {g.routes.size > 0 && <p className="text-xs text-slate-400 mt-0.5">em {[...g.routes].join(', ')}</p>}
                       </td>
                       <td className="px-5 py-3 text-right font-semibold text-red-600 dark:text-red-400 tabular-nums">{g.count}×</td>
@@ -129,6 +173,13 @@ export function ErrorsTab({ grupos, errosIndisponiveis, statusIndisponivel, onMu
                       <td className="px-5 py-3 whitespace-nowrap text-right">
                         {statusIndisponivel ? null : ocupado ? <Loader2 className="h-4 w-4 animate-spin text-slate-400 inline" /> : (
                           <div className="inline-flex gap-1.5">
+                            {ABERTOS.includes(g.status) && (
+                              <button type="button" onClick={() => mandarParaClaude(g)}
+                                title={g.registro?.claude_session_url ? 'Mandar de novo: abre um chat novo do Claude para este erro' : 'O Claude investiga, corrige e abre um PR para você aprovar'}
+                                className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/15 dark:text-violet-300">
+                                <Sparkles className="h-3.5 w-3.5" /> {g.registro?.claude_session_url ? 'Mandar de novo' : 'Mandar para o Claude'}
+                              </button>
+                            )}
                             {(g.status === 'novo' || g.status === 'voltou') && <Acao onClick={() => mudar(g, 'analise')}>Em análise</Acao>}
                             {ABERTOS.includes(g.status) && <Acao primaria onClick={() => { setNota(g.registro?.note ?? ''); setResolvendo(g) }}>Resolvido</Acao>}
                             {(g.status === 'novo' || g.status === 'analise') && <Acao onClick={() => mudar(g, 'ignorado')}>Ignorar</Acao>}
@@ -159,6 +210,7 @@ export function ErrorsTab({ grupos, errosIndisponiveis, statusIndisponivel, onMu
           ] as [StatusErro, string][]).map(([s, t]) => (
             <p key={s}><span className={`inline-block text-[10px] font-bold rounded-md px-2 py-0.5 mr-2 ${STATUS[s].cls}`}>{STATUS[s].label}</span>{t}</p>
           ))}
+          <p className="pt-1"><b>Mandar para o Claude</b> abre um chat do Claude só para aquele erro: ele investiga, corrige e abre um PR. Quando você aprova o PR no GitHub, o erro vira Resolvido sozinho, com o link do PR.</p>
           <p className="text-xs text-slate-400 pt-1">As ocorrências somem depois de 30 dias; o status de cada tipo fica guardado.</p>
         </div>
       </details>
