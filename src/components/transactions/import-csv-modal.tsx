@@ -78,6 +78,8 @@ interface PreviewRow {
   subcategory?: string | null
   installment_current?: number | null
   installment_total?: number | null
+  /** Débito no cartão do C6 (descrição = nome da loja): ver a deduplicação. */
+  cardDebit?: boolean
   valid: boolean
   errors: string[]
 }
@@ -382,6 +384,26 @@ function parseC6Credit(content: string): PreviewRow[] {
     })
 }
 
+// Compra no débito: no CSV da conta C6 o Título é só o tipo ("Débito de
+// Cartão" / "DEBITO DE CARTAO") e o nome da loja vem na Descrição, em
+// colunas fixas: loja (22 caracteres), cidade e "BRA" — às vezes seguido de
+// ". Cartão 1332". Usa a loja como descrição; nos outros títulos (Pix, fatura,
+// tarifa), o Título já é a descrição certa.
+function c6CheckingDescription(tituloRaw: string, descricaoRaw: string): string {
+  const titulo = tituloRaw.trim()
+  const descricao = descricaoRaw.trim()
+  const tipo = titulo.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  if (!tipo.startsWith('DEBITO DE CARTAO') || !descricao) return titulo
+  // Layout de colunas fixas: "PADARIA CANDANGA       VARGINHA      BRA"
+  if (/^.{22} .{13} ?BRA\b/.test(descricao)) {
+    const loja = descricao.slice(0, 22).trim()
+    if (loja) return loja
+  }
+  // Fora do padrão: tira "BRA. Cartão 1332" do fim e fica com o primeiro bloco.
+  const semFim = descricao.replace(/\s*BRA\.?(\s+Cart[aã]o\s+\d+)?\s*$/i, '').trim()
+  return semFim.split(/\s{2,}/)[0].trim() || titulo
+}
+
 function parseC6Checking(content: string): PreviewRow[] {
   const lines = content.split('\n')
   const headerIdx = lines.findIndex(l => l.trim().startsWith('Data Lançamento'))
@@ -399,7 +421,7 @@ function parseC6Checking(content: string): PreviewRow[] {
     })
     .map(row => {
       const errors: string[] = []
-      const description = stripEmbeddedDate((row['Título'] ?? '').trim())
+      const description = stripEmbeddedDate(c6CheckingDescription(row['Título'] ?? '', row['Descrição'] ?? ''))
       if (!description) errors.push('Descrição vazia')
       const dateRaw = (row['Data Lançamento'] ?? '').split(' - ')[0].trim()
       const date = normalizeDate(dateRaw) ?? ''
@@ -410,7 +432,8 @@ function parseC6Checking(content: string): PreviewRow[] {
       const type: TransactionType = entrada > 0 ? 'receita' : 'despesa'
       const amount = entrada > 0 ? entrada : saida
       if (isNaN(amount) || amount <= 0) errors.push('Valor inválido')
-      return { description, amount: isNaN(amount) ? 0 : amount, date, type, category: 'Outros', valid: errors.length === 0, errors }
+      const cardDebit = (row['Título'] ?? '').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').startsWith('DEBITO DE CARTAO')
+      return { description, amount: isNaN(amount) ? 0 : amount, date, type, category: 'Outros', cardDebit, valid: errors.length === 0, errors }
     })
 }
 
@@ -1001,9 +1024,28 @@ function shiftDays(date: string, days: number): string {
         continue
       }
       const existingSet = new Set(existing.map(e => `${e.date}|${e.amount}|${e.description}`))
-
-      const toInsert = batch.filter(r => !existingSet.has(`${r.date}|${r.amount}|${r.description}`))
-      const dupBatch = batch.filter(r => existingSet.has(`${r.date}|${r.amount}|${r.description}`))
+      // Débito no cartão do C6 já importado com o nome antigo ("Débito de
+      // Cartão", antes de o leitor pegar o nome da loja): mesma data e valor
+      // contam como o mesmo lançamento, senão reimportar o extrato duplicaria.
+      const isGenericCardDebit = (d: string) =>
+        d.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') === 'DEBITO DE CARTAO'
+      const genericDebits = new Map<string, number>()
+      for (const e of existing) {
+        if (!isGenericCardDebit(e.description)) continue
+        const k = `${e.date}|${e.amount}`
+        genericDebits.set(k, (genericDebits.get(k) ?? 0) + 1)
+      }
+      const isDup = (r: { date: string; amount: number; description: string; cardDebit?: boolean }) => {
+        if (existingSet.has(`${r.date}|${r.amount}|${r.description}`)) return true
+        if (!r.cardDebit) return false
+        const k = `${r.date}|${r.amount}`
+        const left = genericDebits.get(k) ?? 0
+        if (left > 0) { genericDebits.set(k, left - 1); return true }
+        return false
+      }
+      const dupFlags = batch.map(isDup)
+      const toInsert = batch.filter((_, idx) => !dupFlags[idx])
+      const dupBatch = batch.filter((_, idx) => dupFlags[idx])
       for (const d of dupBatch) {
         const id = uid()
         insertedOthers.push({ id, description: d.description, amount: d.amount, date: d.date, type: d.type, category: '__duplicate__', installment_current: d.installment_current, installment_total: d.installment_total })
