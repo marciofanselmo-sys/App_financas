@@ -5,7 +5,7 @@ import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useCategories } from '@/hooks/use-categories'
 import {
-  TrendingDown, TrendingUp, Wallet, BarChart2, Loader2, AlertCircle, CheckCircle2, X, ArrowLeftRight, ChevronRight, ChevronDown, Tag,
+  TrendingDown, TrendingUp, Wallet, BarChart2, Loader2, AlertCircle, CheckCircle2, X, ArrowLeftRight, ChevronRight, ChevronDown,
   ArrowRight, ArrowUpRight, ArrowDownRight, ChartPie, Lightbulb, type LucideIcon,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
@@ -293,64 +293,81 @@ export default function AnalyticsPage() {
     setSavingTxId(null)
   }
 
-  // Lançamentos da categoria aberta, direto na lista — sem pop-up.
-  // Cada linha deixa trocar a categoria ali mesmo (regra automática propaga).
-  function renderTxList(txs: Transaction[]) {
+  // Um lançamento numa linha: data, descrição, seletor de categoria e valor.
+  // No celular a data e o seletor descem para uma linha pequena embaixo.
+  // Trocar a categoria aqui mesmo cria/atualiza a regra automática.
+  function renderTxRow(tx: Transaction) {
+    const usable = categoriesForDate(categories, tx.date).filter(c => c.type === tx.type || c.type === 'ambos')
+    const date = format(new Date(tx.date + 'T00:00:00'), 'dd MMM', { locale: ptBR })
+    const select = (
+      <div className="flex items-center gap-1.5 shrink-0">
+        {savingTxId === tx.id && <Loader2 className="h-3 w-3 animate-spin text-slate-400" />}
+        <Select
+          value={tx.category}
+          onValueChange={v => v && v !== tx.category && handleRecategorize(tx.id, v)}
+          disabled={savingTxId === tx.id}
+        >
+          <SelectTrigger className="h-6 text-[11px] px-2 w-auto max-w-[150px] border-dashed rounded-full">
+            <SelectValue placeholder="Categoria" />
+          </SelectTrigger>
+          <SelectContent>
+            <CategoryOptions list={usable} all={categories} className="text-xs" />
+          </SelectContent>
+        </Select>
+      </div>
+    )
     return (
-      <div className="mt-2 ml-1.5 pl-3 border-l-2 border-slate-100 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700/60">
-        {txs.map(tx => {
-          const usable = categoriesForDate(categories, tx.date).filter(c => c.type === tx.type || c.type === 'ambos')
-          return (
-            // Duas linhas compactas: descrição + valor em cima; data/parcela +
-            // seletor de categoria embaixo — cabe no celular sem espremer.
-            <div key={tx.id} className="py-2">
-              <div className="flex items-baseline gap-2">
-                <p className="flex-1 min-w-0 text-[13px] text-slate-700 dark:text-slate-200 truncate">{tx.description}</p>
-                <span className={`text-[13px] font-medium tabular-nums shrink-0 ${tx.type === 'receita' ? 'text-green-600' : 'text-red-500'}`}>
-                  {fmt(Number(tx.amount))}
-                </span>
-              </div>
-              <div className="mt-1 flex items-center gap-2">
-                <p className="flex-1 min-w-0 text-[11px] text-slate-400 truncate">
-                  {format(new Date(tx.date + 'T00:00:00'), "dd 'de' MMM", { locale: ptBR })}
-                  {installmentLabel(tx) && ` · Parcela ${installmentLabel(tx)}`}
-                </p>
-                {savingTxId === tx.id && <Loader2 className="h-3 w-3 animate-spin text-slate-400 shrink-0" />}
-                <Select
-                  value={tx.category}
-                  onValueChange={v => v && v !== tx.category && handleRecategorize(tx.id, v)}
-                  disabled={savingTxId === tx.id}
-                >
-                  <SelectTrigger className="h-6 text-[11px] px-2 w-auto max-w-[150px] shrink-0 border-dashed">
-                    <SelectValue placeholder="Categoria" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <CategoryOptions list={usable} all={categories} className="text-xs" />
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          )
-        })}
+      <div key={tx.id} className="rounded-lg px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-white/[0.03]">
+        <div className="flex items-center gap-3">
+          <span className="hidden sm:block w-12 shrink-0 text-[11px] text-slate-400 tabular-nums">{date}</span>
+          <p className="flex-1 min-w-0 text-[13px] text-slate-600 dark:text-slate-300 truncate" title={tx.description}>
+            {tx.description}
+            {installmentLabel(tx) && <span className="text-[11px] text-slate-400"> · {installmentLabel(tx)}</span>}
+          </p>
+          <div className="hidden sm:block">{select}</div>
+          <span className={`w-24 text-right text-[13px] font-medium tabular-nums shrink-0 ${tx.type === 'receita' ? 'text-green-600' : 'text-red-500'}`}>
+            {fmt(Number(tx.amount))}
+          </span>
+        </div>
+        <div className="sm:hidden mt-1 flex items-center justify-between gap-2">
+          <span className="text-[11px] text-slate-400">{date}</span>
+          {select}
+        </div>
       </div>
     )
   }
 
-  // Subcategorias em linhas, como nos Relatórios, antes dos lançamentos.
-  function renderSubs(subs: CategoryTotal['subs']) {
-    if (subs.length === 0) return null
+  // Lista simples (Entradas por categoria).
+  function renderTxList(txs: Transaction[]) {
+    return <div className="mt-2 ml-1.5 pl-3 border-l-2 border-slate-100 dark:border-slate-700">{txs.map(renderTxRow)}</div>
+  }
+
+  // Categoria aberta: cada subcategoria é um grupo (nome, quantos e total)
+  // com os lançamentos dela logo embaixo; os que estão direto na categoria
+  // ficam em "Sem subcategoria", no fim. A linha lateral leva a cor da categoria.
+  function renderGrouped(cat: string, color: string, txs: Transaction[], subs: CategoryTotal['subs']) {
+    const groups = subs.map(sub => ({ name: sub.name, total: sub.total, items: txs.filter(t => t.category === sub.name) }))
+    const direct = txs.filter(t => t.category === cat || !subs.some(sub => sub.name === t.category))
+    if (direct.length > 0) {
+      groups.push({ name: subs.length > 0 ? 'Sem subcategoria' : cat, total: direct.reduce((acc, t) => acc + Number(t.amount), 0), items: direct })
+    }
     return (
-      <div className="mt-2 ml-1.5 pl-3 border-l-2 border-slate-100 dark:border-slate-700">
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 pt-1 pb-0.5">Subcategorias</p>
-        {subs.map(sub => (
-          <div key={sub.name} className="flex items-center gap-2 py-1">
-            <Tag className="h-3 w-3 text-slate-400 shrink-0" />
-            <span className="flex-1 min-w-0 text-[13px] text-slate-600 dark:text-slate-300 truncate">{sub.name}</span>
-            <span className="text-[11px] text-slate-400 shrink-0">{sub.count} {sub.count === 1 ? 'lançamento' : 'lançamentos'}</span>
-            <span className="text-[13px] font-medium tabular-nums text-slate-700 dark:text-slate-200 shrink-0 w-24 text-right">{fmt(sub.total)}</span>
+      <div className="mt-3 mb-1 ml-4 sm:ml-[30px] pl-3 sm:pl-4 border-l-2" style={{ borderColor: `${color}66` }}>
+        {groups.map(g => (
+          <div key={g.name} className="pb-1.5">
+            <div className="flex items-center gap-2 px-2 pt-2 pb-1">
+              <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+              <p className="flex-1 min-w-0 text-[13px] font-semibold text-slate-700 dark:text-slate-200 truncate">
+                {g.name}
+                <span className="ml-1.5 text-[11px] font-normal text-slate-400">
+                  {g.items.length} {g.items.length === 1 ? 'lançamento' : 'lançamentos'}
+                </span>
+              </p>
+              <span className="w-24 text-right text-[13px] font-semibold tabular-nums text-slate-700 dark:text-slate-200 shrink-0">{fmt(g.total)}</span>
+            </div>
+            <div className="sm:pl-4">{g.items.map(renderTxRow)}</div>
           </div>
         ))}
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 pt-2">Lançamentos</p>
       </div>
     )
   }
@@ -578,12 +595,7 @@ export default function AnalyticsPage() {
                             <div className="sm:hidden mt-2 ml-[76px]">{bar}</div>
                           </button>
 
-                          {open && (
-                            <>
-                              {renderSubs(subs)}
-                              {renderTxList(txs)}
-                            </>
-                          )}
+                          {open && renderGrouped(cat, color, txs, subs)}
                         </div>
                       )
                     })}
