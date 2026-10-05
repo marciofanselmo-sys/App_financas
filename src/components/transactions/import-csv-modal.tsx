@@ -1382,7 +1382,7 @@ function shiftDays(date: string, days: number): string {
   return (
     <>
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle>Importar transações</DialogTitle>
           </DialogHeader>
@@ -1557,7 +1557,7 @@ function shiftDays(date: string, days: number): string {
                   <span><strong>Atenção:</strong> {importWarning}</span>
                 </div>
               )}
-              <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap [&>*]:whitespace-normal [&>*]:h-auto [&>*]:text-left">
                 <Badge className="bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-50">
                   ✓ {validCount} prontas para importar
                 </Badge>
@@ -1586,7 +1586,31 @@ function shiftDays(date: string, days: number): string {
                 )}
               </div>
 
-              <div className="border dark:border-slate-700 rounded-lg overflow-hidden max-h-72 overflow-y-auto">
+              {/* Celular: lista em cartões (a tabela de 7 colunas não cabe). */}
+              <ul className="sm:hidden border dark:border-slate-700 rounded-lg max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700">
+                {preview.map((row, i) => (
+                  <li key={i} className={`px-3 py-2.5 ${!row.valid ? 'bg-red-50/50 dark:bg-red-900/10' : row.category === 'Outros' ? 'bg-amber-50/40 dark:bg-amber-900/10' : ''}`}>
+                    <div className="flex items-start gap-2">
+                      {row.valid
+                        ? <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0 mt-0.5" />
+                        : <AlertCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />}
+                      <p className="flex-1 min-w-0 text-[13px] text-slate-700 dark:text-slate-200 truncate">{row.description || '—'}</p>
+                      <span className={`text-[13px] font-semibold tabular-nums shrink-0 ${row.type === 'receita' ? 'text-green-600' : 'text-red-500'}`}>
+                        {row.type === 'receita' ? '+' : ''}R$ {row.amount.toFixed(2).replace('.', ',')}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 ml-5 text-[11px] text-slate-400 truncate">
+                      {row.date.split('-').reverse().join('/')}
+                      {installmentLabel(row) && ` · parcela ${installmentLabel(row)}`}
+                      {' · '}
+                      <span className={row.category === 'Outros' ? 'text-amber-500 dark:text-amber-400' : ''}>{row.category}</span>
+                      {!row.valid && row.errors.length > 0 && <span className="text-red-500"> · {row.errors.join(', ')}</span>}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="hidden sm:block border dark:border-slate-700 rounded-lg overflow-hidden max-h-72 overflow-y-auto">
                 <table className="w-full text-xs table-fixed">
                   <thead className="bg-slate-50 dark:bg-slate-700/50 sticky top-0">
                     <tr>
@@ -1633,7 +1657,7 @@ function shiftDays(date: string, days: number): string {
                 </p>
               )}
 
-              <div className="flex gap-2">
+              <div className="flex flex-col-reverse sm:flex-row gap-2">
                 <Button variant="outline" onClick={() => setStep(fileType === 'csv' ? 'map' : 'upload')} className="flex-1">Voltar</Button>
                 <Button onClick={handleImport} disabled={importing || validCount === 0} className="flex-1">
                   {importing ? 'Importando...' : `Importar ${validCount} transações`}
