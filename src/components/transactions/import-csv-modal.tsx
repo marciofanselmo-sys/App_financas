@@ -468,7 +468,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   // mapeamento salvo e pulou a tela de colunas. A prévia avisa e oferece ajuste.
   const [mappingRecognized, setMappingRecognized] = useState(false)
   const [importing, setImporting] = useState(false)
-  const [importResult, setImportResult] = useState<{ success: number; errors: number; duplicates: number; fixed: number; errorMessage?: string } | null>(null)
+  const [importResult, setImportResult] = useState<{ success: number; errors: number; duplicates: number; fixed: number; renamed?: number; errorMessage?: string } | null>(null)
   const [fileError, setFileError] = useState('')
 
   // Review state
@@ -958,6 +958,7 @@ function shiftDays(date: string, days: number): string {
     // suficiente pra cobrir arredondamento sem confundir compras diferentes.
     const AMOUNT_TOLERANCE = 2
     let installmentsFixed = 0
+    let debitsRenamed = 0
     const installmentDescs = [...new Set(
       valid.filter(r => r.installment_total && r.installment_total > 1 && r.installment_current).map(r => r.description)
     )]
@@ -1009,9 +1010,9 @@ function shiftDays(date: string, days: number): string {
       const batch = valid.slice(i, i + BATCH)
       const dates = [...new Set(batch.map(r => r.date))]
 
-      const { rows: existing, error: dedupError } = await selectAllPages<{ date: string; amount: number; description: string }>(
+      const { rows: existing, error: dedupError } = await selectAllPages<{ id: string; date: string; amount: number; description: string; board_id: string | null }>(
         () => supabase
-          .from('transactions').select('date, amount, description').eq('user_id', user.id).in('date', dates),
+          .from('transactions').select('id, date, amount, description, board_id').eq('user_id', user.id).in('date', dates),
       )
       if (dedupError) {
         // Sem a lista completa do que já existe não dá para saber o que é
@@ -1025,27 +1026,39 @@ function shiftDays(date: string, days: number): string {
       }
       const existingSet = new Set(existing.map(e => `${e.date}|${e.amount}|${e.description}`))
       // Débito no cartão do C6 já importado com o nome antigo ("Débito de
-      // Cartão", antes de o leitor pegar o nome da loja): mesma data e valor
-      // contam como o mesmo lançamento, senão reimportar o extrato duplicaria.
+      // Cartão", antes de o leitor pegar o nome da loja): mesma data, valor e
+      // conta é o mesmo lançamento. Em vez de duplicar, só troca a descrição
+      // pelo nome da loja — valor, data e categoria ficam como estão.
       const isGenericCardDebit = (d: string) =>
         d.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') === 'DEBITO DE CARTAO'
-      const genericDebits = new Map<string, number>()
+      const genericDebits = new Map<string, string[]>()
       for (const e of existing) {
         if (!isGenericCardDebit(e.description)) continue
+        if (boardId && e.board_id !== boardId) continue
         const k = `${e.date}|${e.amount}`
-        genericDebits.set(k, (genericDebits.get(k) ?? 0) + 1)
+        genericDebits.set(k, [...(genericDebits.get(k) ?? []), e.id])
       }
-      const isDup = (r: { date: string; amount: number; description: string; cardDebit?: boolean }) => {
-        if (existingSet.has(`${r.date}|${r.amount}|${r.description}`)) return true
-        if (!r.cardDebit) return false
-        const k = `${r.date}|${r.amount}`
-        const left = genericDebits.get(k) ?? 0
-        if (left > 0) { genericDebits.set(k, left - 1); return true }
-        return false
+      const renames: { id: string; description: string }[] = []
+      const status = batch.map(r => {
+        if (existingSet.has(`${r.date}|${r.amount}|${r.description}`)) return 'dup' as const
+        if (!r.cardDebit || isGenericCardDebit(r.description)) return 'new' as const
+        const ids = genericDebits.get(`${r.date}|${r.amount}`)
+        if (ids && ids.length > 0) {
+          renames.push({ id: ids.shift()!, description: r.description })
+          return 'rename' as const
+        }
+        return 'new' as const
+      })
+      const toInsert = batch.filter((_, idx) => status[idx] === 'new')
+      const dupBatch = batch.filter((_, idx) => status[idx] === 'dup')
+      for (const rn of renames) {
+        const { error: renameError } = await supabase.from('transactions').update({ description: rn.description }).eq('id', rn.id)
+        if (renameError) {
+          if (!firstErrorMessage) firstErrorMessage = `Não foi possível corrigir o nome de um débito antigo: ${renameError.message}`
+        } else {
+          debitsRenamed++
+        }
       }
-      const dupFlags = batch.map(isDup)
-      const toInsert = batch.filter((_, idx) => !dupFlags[idx])
-      const dupBatch = batch.filter((_, idx) => dupFlags[idx])
       for (const d of dupBatch) {
         const id = uid()
         insertedOthers.push({ id, description: d.description, amount: d.amount, date: d.date, type: d.type, category: '__duplicate__', installment_current: d.installment_current, installment_total: d.installment_total })
@@ -1272,7 +1285,7 @@ function shiftDays(date: string, days: number): string {
       }
     }
 
-    setImportResult({ success, errors, duplicates, fixed: installmentsFixed, errorMessage: firstErrorMessage })
+    setImportResult({ success, errors, duplicates, fixed: installmentsFixed, renamed: debitsRenamed, errorMessage: firstErrorMessage })
     setImporting(false)
     // Só conta como importação do mês o que realmente entrou.
     if (success > 0) void quota.record()
@@ -1781,11 +1794,12 @@ function shiftDays(date: string, days: number): string {
                 <CheckCircle className={`h-12 w-12 ${importResult.success > 0 ? 'text-green-500' : 'text-slate-300'}`} />
                 <div>
                   <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">
-                    {importResult.success > 0 ? 'Importação concluída!' : 'Nenhuma transação importada'}
+                    {importResult.success > 0 || (importResult.renamed ?? 0) > 0 ? 'Importação concluída!' : 'Nenhuma transação importada'}
                   </p>
                   <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                     {importResult.success} transações importadas
                     {importResult.fixed > 0 && ` · ${importResult.fixed} parcela${importResult.fixed !== 1 ? 's' : ''} corrigida${importResult.fixed !== 1 ? 's' : ''}`}
+                    {(importResult.renamed ?? 0) > 0 && ` · ${importResult.renamed} débito${importResult.renamed !== 1 ? 's' : ''} no cartão com o nome da loja corrigido${importResult.renamed !== 1 ? 's' : ''}`}
                     {importResult.duplicates > 0 && ` · ${importResult.duplicates} duplicadas ignoradas`}
                     {importResult.errors > 0 && ` · ${importResult.errors} com erro`}
                   </p>
