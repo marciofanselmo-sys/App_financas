@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { PLANS, PAID_TIERS, PlanTier, tierFor } from '@/lib/plans'
-import type { SubscriptionStatus } from '@/hooks/use-subscription'
+import { PLANS, PAID_TIERS, PlanTier } from '@/lib/plans'
+import type { AdminUser } from '@/lib/admin/types'
+import { tierDe, pagaPelaCakto } from '@/lib/admin/users'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -10,36 +11,11 @@ import { Users, Loader2, Search, ShieldCheck, Shield, Gift, CreditCard } from 'l
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
-interface AdminUser {
-  id: string
-  email: string
-  full_name: string
-  role: 'admin' | 'user'
-  created_at: string
-  last_sign_in_at: string | null
-  subscription: {
-    status: SubscriptionStatus
-    plan: string
-    provider: string
-    current_period_end: string | null
-  } | null
-}
-
 type Pendente =
   | { tipo: 'role'; user: AdminUser; role: 'admin' | 'user' }
   | { tipo: 'plan'; user: AdminUser; plan: PlanTier }
 
 const TIERS: PlanTier[] = ['free', ...PAID_TIERS]
-
-function tierDe(u: AdminUser): PlanTier {
-  return tierFor(u.subscription?.status ?? 'free', u.subscription?.plan)
-}
-
-/** Pagante pela Cakto: o plano vem do pagamento, não se mexe por aqui. */
-function pagaPelaCakto(u: AdminUser) {
-  const s = u.subscription
-  return s?.provider === 'cakto' && (s.status === 'active' || s.status === 'past_due')
-}
 
 function dataCurta(iso: string | null) {
   return iso ? format(new Date(iso), 'dd/MM/yy', { locale: ptBR }) : '—'

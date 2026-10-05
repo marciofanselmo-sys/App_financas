@@ -51,7 +51,7 @@ export async function GET() {
     const [users, perfis, assinaturas] = await Promise.all([
       todosOsUsuarios(admin),
       admin.from('user_profiles').select('user_id, full_name, role'),
-      admin.from('subscriptions').select('user_id, status, plan, provider, current_period_end'),
+      admin.from('subscriptions').select('user_id, status, plan, provider, current_period_end, canceled_at'),
     ])
     if (perfis.error) throw perfis.error
     if (assinaturas.error) throw assinaturas.error
@@ -71,7 +71,7 @@ export async function GET() {
           created_at: u.created_at,
           last_sign_in_at: u.last_sign_in_at ?? null,
           subscription: sub
-            ? { status: sub.status, plan: sub.plan, provider: sub.provider, current_period_end: sub.current_period_end }
+            ? { status: sub.status, plan: sub.plan, provider: sub.provider, current_period_end: sub.current_period_end, canceled_at: sub.canceled_at }
             : null,
         }
       })

@@ -1,4 +1,5 @@
 import { Email } from './templates'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
  * Envio pela Resend, por HTTP puro — uma chamada só não justifica dependência
@@ -9,6 +10,18 @@ import { Email } from './templates'
  * do servidor para a gente ver no painel da Vercel.
  */
 const RESEND_URL = 'https://api.resend.com/emails'
+
+/**
+ * Anota o envio em email_log (só data e se deu certo, sem destinatário) para o
+ * painel Admin comparar com o limite da Resend. Nunca atrapalha o envio: sem a
+ * tabela (migration não rodada) ou sem a chave de serviço, só não registra.
+ */
+async function registrarEnvio(ok: boolean) {
+  try {
+    const { error } = await createAdminClient().from('email_log').insert({ ok })
+    if (error) console.warn('[email] email_log:', error.message)
+  } catch { /* sem chave de serviço: segue sem registrar */ }
+}
 
 export async function enviarEmail(para: string, email: Email): Promise<{ error: string | null }> {
   const apiKey = process.env.RESEND_API_KEY
@@ -35,8 +48,10 @@ export async function enviarEmail(para: string, email: Email): Promise<{ error: 
     if (!res.ok) {
       const detalhe = (await res.text()).slice(0, 300)
       console.error('[email] resend', res.status, detalhe)
+      await registrarEnvio(false)
       return { error: `resend ${res.status}: ${detalhe}` }
     }
+    await registrarEnvio(true)
     return { error: null }
   } catch (e) {
     const message = e instanceof Error ? e.message : 'falha de rede'
