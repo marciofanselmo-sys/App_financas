@@ -26,6 +26,7 @@ import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { parseMercadoPagoPDF, isMercadoPagoPDF, countMercadoPagoCandidates } from '@/utils/parse-mercadopago-pdf'
 import { parseInterInvoicePDF, isInterInvoicePDF, countInterInvoiceCandidates } from '@/utils/parse-inter-pdf'
 import { parseItauExtratoPDF, isItauExtratoPDF, countItauCandidates } from '@/utils/parse-itau-extrato-pdf'
+import { isC6ExtratoPDF, parseC6ExtratoPDF } from '@/utils/parse-c6-extrato-pdf'
 import {
   isInterExtratoCSV, parseInterExtratoCSV,
   isInterExtratoPDF, parseInterExtratoPDF,
@@ -116,7 +117,7 @@ interface ImportCSVModalProps {
 }
 
 type Step = 'upload' | 'map' | 'preview' | 'installments' | 'review' | 'done'
-type FileType = 'ofx' | 'csv' | 'c6-credit' | 'c6-checking' | 'nubank' | 'nubank-checking' | 'rico-xlsx' | 'rico-extrato-xlsx' | 'mercadopago-pdf' | 'inter-pdf' | 'inter-extrato' | 'itau-extrato-pdf' | null
+type FileType = 'ofx' | 'csv' | 'c6-credit' | 'c6-checking' | 'nubank' | 'nubank-checking' | 'rico-xlsx' | 'rico-extrato-xlsx' | 'mercadopago-pdf' | 'inter-pdf' | 'inter-extrato' | 'itau-extrato-pdf' | 'c6-extrato-pdf' | null
 
 // ─── GENERIC CSV HELPERS ─────────────────────────────────────────────────────
 
@@ -674,6 +675,21 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
         const buffer = ev.target?.result as ArrayBuffer
         const text = await extractPdfText(buffer)
 
+        // Antes do Inter: o extrato do C6 pode citar "BANCO INTER" num
+        // lançamento (pagamento para o Inter) e cair no leitor errado.
+        if (isC6ExtratoPDF(text)) {
+          const { rows, skipped } = parseC6ExtratoPDF(text)
+          if (!rows.length) {
+            setFileError('Nenhuma transação encontrada nesse extrato do C6.')
+            return
+          }
+          setImportWarning(skippedWarning(rows.length + skipped, rows.length))
+          setPreview(enhanceWithUserRules(rows.map(r => ({ ...r, installment_current: null, installment_total: null }))))
+          setFileType('c6-extrato-pdf')
+          setStep('preview')
+          return
+        }
+
         if (isInterExtratoPDF(text)) {
           const { rows, skipped } = parseInterExtratoPDF(text)
           if (!rows.length) { setFileError('Nenhuma transação encontrada nesse extrato do Inter.'); return }
@@ -730,7 +746,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
           return
         }
 
-        setFileError('Não reconhecemos o formato desse PDF. Hoje suportamos fatura e extrato de conta do Inter, Extrato de Conta do Mercado Pago e Extrato de Conta do Itaú.')
+        setFileError('Não reconhecemos o formato desse PDF. Hoje suportamos fatura e extrato de conta do Inter, extrato de conta do C6, do Mercado Pago e do Itaú.')
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         if (msg === 'empty-pdf') {
@@ -1351,6 +1367,7 @@ function shiftDays(date: string, days: number): string {
     'nubank-checking': 'Nubank — Conta Corrente',
     'inter-pdf': 'Inter — Fatura de Cartão',
     'itau-extrato-pdf': 'Itaú — Extrato de Conta',
+    'c6-extrato-pdf': 'C6 — Extrato de Conta',
     'rico-extrato-xlsx': 'RICO/XP — Extrato da Conta',
   }
   const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -1406,7 +1423,7 @@ function shiftDays(date: string, days: number): string {
                 </div>
                 <div className="border border-blue-200 dark:border-blue-800/50 rounded-lg p-3 space-y-1 bg-blue-50/50 dark:bg-blue-900/10">
                   <p className="font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-1.5"><FileText className="h-3.5 w-3.5" />PDF (fatura / extrato)</p>
-                  <p className="text-slate-500 dark:text-slate-400 text-xs">Inter, Mercado Pago e Itaú reconhecidos automaticamente.</p>
+                  <p className="text-slate-500 dark:text-slate-400 text-xs">C6, Inter, Mercado Pago e Itaú reconhecidos automaticamente.</p>
                 </div>
               </div>
 

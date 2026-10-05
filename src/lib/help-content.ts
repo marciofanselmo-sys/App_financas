@@ -189,7 +189,7 @@ export const HELP_SECTIONS: HelpSection[] = [
         id: 'formatos',
         title: 'Bancos e formatos aceitos',
         body: [
-          '• C6 Bank: CSV da fatura do cartão e da conta corrente.',
+          '• C6 Bank: CSV da fatura do cartão e da conta corrente, e extrato da conta em PDF.',
           '• Nubank: CSV do cartão e da conta.',
           '• Inter: extrato em CSV ou PDF, e fatura do cartão em PDF.',
           '• Itaú: extrato em PDF.',
@@ -686,7 +686,7 @@ export const HELP_FAQ: { q: string; a: string; link?: { section: string; article
 ]
 
 export const HELP_FORMATS: { bank: string; formats: string[]; note?: string }[] = [
-  { bank: 'C6 Bank', formats: ['CSV'], note: 'cartão e conta' },
+  { bank: 'C6 Bank', formats: ['CSV', 'PDF'], note: 'cartão e conta' },
   { bank: 'Nubank', formats: ['CSV'], note: 'cartão e conta' },
   { bank: 'Inter', formats: ['CSV', 'PDF'], note: 'extrato e fatura' },
   { bank: 'Itaú', formats: ['PDF'], note: 'extrato' },
