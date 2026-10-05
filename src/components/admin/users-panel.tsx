@@ -51,6 +51,7 @@ export function UsersPanel({ enabled }: { enabled: boolean }) {
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [busca, setBusca] = useState('')
+  const [planoFiltro, setPlanoFiltro] = useState<PlanTier | null>(null)
   const [pendente, setPendente] = useState<Pendente | null>(null)
   const [salvando, setSalvando] = useState(false)
 
@@ -72,9 +73,22 @@ export function UsersPanel({ enabled }: { enabled: boolean }) {
 
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase()
-    if (!q) return users
-    return users.filter(u => u.email.toLowerCase().includes(q) || u.full_name.toLowerCase().includes(q))
-  }, [users, busca])
+    return users.filter(u =>
+      (!planoFiltro || tierDe(u) === planoFiltro) &&
+      (!q || u.email.toLowerCase().includes(q) || u.full_name.toLowerCase().includes(q)))
+  }, [users, busca, planoFiltro])
+
+  // Quantos em cada plano — e, nos pagos, quantos pagam de fato (Cakto) e
+  // quantos estão de cortesia, que não entram na receita.
+  const porPlano = useMemo(() => TIERS.map(tier => {
+    const doPlano = users.filter(u => tierDe(u) === tier)
+    return {
+      tier,
+      total: doPlano.length,
+      pagos: doPlano.filter(pagaPelaCakto).length,
+      cortesias: doPlano.filter(u => u.subscription?.provider === 'manual').length,
+    }
+  }), [users])
 
   const resumo = useMemo(() => ({
     admins: users.filter(u => u.role === 'admin').length,
@@ -126,6 +140,34 @@ export function UsersPanel({ enabled }: { enabled: boolean }) {
             className="h-8 w-full sm:w-64 pl-8 pr-3 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 outline-none focus:border-blue-400"
           />
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-5 pt-4">
+        {porPlano.map(({ tier, total, pagos, cortesias }) => {
+          const ativo = planoFiltro === tier
+          return (
+            <button
+              key={tier}
+              type="button"
+              onClick={() => setPlanoFiltro(ativo ? null : tier)}
+              aria-pressed={ativo}
+              title={ativo ? 'Mostrar todos os planos' : `Mostrar só o plano ${PLANS[tier].label}`}
+              className={`text-left rounded-xl border px-3 py-2.5 transition-colors ${
+                ativo
+                  ? 'bg-blue-50 border-blue-300 dark:bg-blue-500/15 dark:border-blue-500/40'
+                  : 'border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700/50'
+              }`}
+            >
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{PLANS[tier].label}</p>
+              <p className="text-2xl font-bold text-slate-800 dark:text-slate-100">{total}</p>
+              <p className="text-[11px] text-slate-400 truncate">
+                {tier === 'free'
+                  ? `${users.length ? Math.round((total / users.length) * 100) : 0}% das contas`
+                  : `${pagos} pago${pagos !== 1 ? 's' : ''} · ${cortesias} cortesia${cortesias !== 1 ? 's' : ''}`}
+              </p>
+            </button>
+          )
+        })}
       </div>
 
       {erro && (
