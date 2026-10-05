@@ -92,8 +92,15 @@ function AdminPainel() {
   const router = useRouter()
   const params = useSearchParams()
   const abaParam = params.get('aba')
-  const aba: Aba = ABAS.some(a => a.id === abaParam) ? abaParam as Aba : 'geral'
-  const irPara = (id: Aba) => router.replace(id === 'geral' ? '/admin' : `/admin?aba=${id}`, { scroll: false })
+  // A aba vive no estado da página; o endereço só acompanha. Antes o clique
+  // fazia router.replace e esperava o Next buscar a página de novo no
+  // servidor — quando essa busca demorava ou ficava na fila, a aba não mudava
+  // e parecia que nenhum clique funcionava.
+  const [aba, setAba] = useState<Aba>(() => ABAS.some(a => a.id === abaParam) ? abaParam as Aba : 'geral')
+  const irPara = (id: Aba) => {
+    setAba(id)
+    window.history.replaceState(null, '', id === 'geral' ? '/admin' : `/admin?aba=${id}`)
+  }
 
   const [refreshKey, setRefreshKey] = useState(0)
   const [statusErros, setStatusErros] = useState<RegistroStatus[]>([])
