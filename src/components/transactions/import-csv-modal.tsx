@@ -15,7 +15,7 @@ import { useRules, applyUserRules, findInternalRule, internalRuleTarget, isInter
 import { useHistoryWindow } from '@/hooks/use-history-window'
 import { textoJanela } from '@/lib/plans'
 import { Upload, Download, CheckCircle, AlertCircle, FileText, Zap, Tag, TrendingUp, History, Lock } from 'lucide-react'
-import { parseOFX } from '@/utils/parse-ofx'
+import { parseOFX, guessCategory } from '@/utils/parse-ofx'
 import { parseRicoExtratoXLSX, isRicoExtratoRows } from '@/utils/parse-rico-extrato'
 import { extractPdfText } from '@/utils/extract-pdf-text'
 import { selectAllPages } from '@/lib/supabase/select-all'
@@ -295,7 +295,7 @@ function parseNubankCheckingCSV(content: string): PreviewRow[] {
       // sinal do valor — usuário reclassifica manualmente se for de fato uma
       // movimentação interna.
       const type: TransactionType = valorNum < 0 ? 'despesa' : 'receita'
-      return { description, amount: isNaN(amount) ? 0 : amount, date, type, category: 'Outros', valid: errors.length === 0, errors }
+      return { description, amount: isNaN(amount) ? 0 : amount, date, type, category: guessCategory(description, type), valid: errors.length === 0, errors }
     })
 }
 
@@ -314,7 +314,7 @@ function parseNubankCSV(content: string): PreviewRow[] {
       if (isNaN(amount) || amount <= 0) errors.push('Valor inválido')
       // Fatura do cartão: valor positivo = compra (despesa); negativo = estorno/pagamento (receita)
       const type: TransactionType = valorNum < 0 ? 'receita' : 'despesa'
-      return { description, amount: isNaN(amount) ? 0 : amount, date, type, category: 'Outros', valid: errors.length === 0, errors }
+      return { description, amount: isNaN(amount) ? 0 : amount, date, type, category: guessCategory(description, type), valid: errors.length === 0, errors }
     })
 }
 
@@ -435,7 +435,7 @@ function parseC6Checking(content: string): PreviewRow[] {
       const amount = entrada > 0 ? entrada : saida
       if (isNaN(amount) || amount <= 0) errors.push('Valor inválido')
       const cardDebit = (row['Título'] ?? '').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').startsWith('DEBITO DE CARTAO')
-      return { description, amount: isNaN(amount) ? 0 : amount, date, type, category: 'Outros', cardDebit, valid: errors.length === 0, errors }
+      return { description, amount: isNaN(amount) ? 0 : amount, date, type, category: guessCategory(description, type), cardDebit, valid: errors.length === 0, errors }
     })
 }
 

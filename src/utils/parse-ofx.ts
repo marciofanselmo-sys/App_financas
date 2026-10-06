@@ -94,7 +94,7 @@ function hasKeyword(text: string, keyword: string): boolean {
   return new RegExp(`(?:^|[^a-z0-9])${word}${end}`).test(text)
 }
 
-function guessCategory(description: string, type: TransactionType): string {
+export function guessCategory(description: string, type: TransactionType): string {
   const lower = stripAccents(description.toLowerCase())
 
   if (type === 'receita') {
