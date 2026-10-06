@@ -42,7 +42,7 @@ import { useBudgetPlansRange } from '@/hooks/use-budget-plans-range'
 import { useGoals } from '@/hooks/use-goals'
 import { sumInvestmentContributions, aggregateContributionsByMonth } from '@/lib/investment-contributions'
 import { InvestTargetChart } from '@/components/dashboard/invest-target-chart'
-import { LayoutGrid, AlertCircle, CreditCard, RefreshCw, CheckCircle, Tag } from 'lucide-react'
+import { LayoutGrid, AlertCircle, CreditCard, RefreshCw, CheckCircle, Tag, Pin } from 'lucide-react'
 import Link from 'next/link'
 import { OnboardingModal } from '@/components/onboarding-modal'
 import { NextActionCard } from '@/components/dashboard/next-action-card'
@@ -232,6 +232,20 @@ export default function DashboardPage() {
       />
 
       <AdjustmentsBanner />
+
+      {/* Conta desafixada não entra em nada desta tela. Sem nenhuma fixada, o
+          Dashboard fica zerado — o aviso precisa estar no topo, não só no fim. */}
+      {!boardsLoading && pinnedBoards.length === 0 && boards.some(b => !b.is_investment) && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
+          <Pin className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <p className="text-sm text-amber-900 dark:text-amber-100">
+            Nenhuma conta está fixada, por isso esta tela, a Análise, os Relatórios e o Planejamento aparecem zerados.
+            Em{' '}
+            <Link href="/transactions" className="font-semibold underline">Contas e Cartões</Link>
+            , clique no 📌 das contas que você quer acompanhar.
+          </p>
+        </div>
+      )}
 
       {/* Patrimônio e composição não dependem do mês — ficam acima do filtro */}
       <MacroOverview

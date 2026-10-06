@@ -179,7 +179,10 @@ export default function TransactionsPage() {
       type: form.type,
       kind: form.kind,
       is_investment: false,
-      show_on_dashboard: editing?.show_on_dashboard ?? false,
+      // Conta nova já nasce fixada: desafixada, ela some do Dashboard, da
+      // Análise, dos Relatórios e do Planejamento — e quem acabou de importar
+      // o extrato via tudo zerado sem saber do 📌.
+      show_on_dashboard: editing?.show_on_dashboard ?? true,
       opening_balance: parseFloat(form.openingBalance.replace(/\./g, '').replace(',', '.')) || 0,
     }
     if (editing) updateBoard(editing.id, data)
