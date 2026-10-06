@@ -24,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Plus, Zap, CheckCircle2, X, AlertCircle, FlaskConical } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
+import { isInternalMovement } from '@/lib/internal-movement'
 
 type MatchType = 'contains' | 'starts_with' | 'ends_with' | 'exact'
 // Tipo é só um filtro client-side pra achar a categoria certa mais rápido — a
@@ -191,7 +192,8 @@ function RulesPage() {
   // Enquanto os lançamentos carregam, toda regra pareceria "não pega nada".
   const zeroCount = txLoading ? 0 : rules.filter(r => r.active && (ruleUses.get(r.id) ?? 0) === 0).length
   const outrosSemRegra = useMemo(
-    () => txLoading ? 0 : transactions.filter(t => t.type === 'despesa' && (t.category ?? '').toLowerCase() === 'outros' && !rules.some(r => r.active && matchesRule(t.description, r))).length,
+    // Movimentação entre contas não é gasto: não precisa de categoria.
+    () => txLoading ? 0 : transactions.filter(t => t.type === 'despesa' && !isInternalMovement(t) && (t.category ?? '').toLowerCase() === 'outros' && !rules.some(r => r.active && matchesRule(t.description, r))).length,
     [transactions, rules, txLoading],
   )
   const autoCount = rules.filter(r => r.auto_created).length

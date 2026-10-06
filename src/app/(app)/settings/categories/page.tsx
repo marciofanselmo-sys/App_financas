@@ -29,6 +29,7 @@ import { CategoriesHelp } from '@/components/categories/categories-help'
 import { OverviewSection } from '@/components/ui/overview-blocks'
 import { cn } from '@/lib/utils'
 import { CATEGORY_ICONS, CategoryIcon, categoryIconKey, guessIconKey } from '@/lib/category-icons'
+import { isInternalMovement } from '@/lib/internal-movement'
 
 const TYPE_LABELS: Record<CategoryType, string> = {
   receita: 'Receita', despesa: 'Despesa', ambos: 'Ambos',
@@ -631,7 +632,9 @@ export default function CategoriesPage() {
   const outrosParent = parents.find(isOutros)
   const strandedKids = outrosParent ? (childrenOf.get(outrosParent.id) ?? []) : []
   const unlabeledList = parents.filter(p => !p.bucket && p.type !== 'receita' && !isOutros(p))
-  const outrosDirect = outrosParent ? (txsByTypeName.get(`despesa|${outrosParent.name.trim().toLowerCase()}`) ?? []) : []
+  // Só gasto de verdade: pagamento de fatura e Pix entre contas ficam em
+  // "Outros" mas não somam, então não pedem revisão.
+  const outrosDirect = outrosParent ? (txsByTypeName.get(`despesa|${outrosParent.name.trim().toLowerCase()}`) ?? []).filter(t => !isInternalMovement(t)) : []
   // Ordem alfabética, "Outros" sempre por último (como antes).
   const expenseParents = bySection.despesa
   const incomeList = bySection.receita
