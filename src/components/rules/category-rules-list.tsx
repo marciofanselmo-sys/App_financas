@@ -139,7 +139,7 @@ export function CategoryRulesList({
           <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Regras por categoria</h2>
         </div>
         <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 ml-6">
-          Clique numa categoria para ver as regras. Se duas combinarem, vale a criada primeiro.
+          Clique numa categoria para ver as regras. Se duas combinarem, vale a mais específica: &ldquo;Igual a&rdquo;, depois &ldquo;Começa/Termina com&rdquo;, depois &ldquo;Contém&rdquo; (no empate, a criada primeiro).
         </p>
         <div className="flex flex-wrap items-center gap-2 mt-3">
           <div className="relative flex-1 min-w-[200px]">

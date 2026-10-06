@@ -3,7 +3,7 @@
 import { withPlan } from '@/components/plan/with-plan'
 
 import { useState, useMemo, useEffect } from 'react'
-import { useRules, CategorizationRule, applyRuleToExisting, isInternalRule, matchesRule } from '@/hooks/use-rules'
+import { useRules, CategorizationRule, applyRuleToExisting, isInternalRule, matchesRule, sortRulesByPriority } from '@/hooks/use-rules'
 import { useTransactions } from '@/hooks/use-transactions'
 import Link from 'next/link'
 import { CategoryRulesList, type RuleFilter } from '@/components/rules/category-rules-list'
@@ -164,7 +164,7 @@ function RulesPage() {
       await createRule(keyword, form.category, payload as Parameters<typeof createRule>[2])
     }
 
-    const { count, error: retroError } = await applyRuleToExisting(payload, categories)
+    const { count, error: retroError } = await applyRuleToExisting(payload, categories, rules.filter(r => r.id !== editing?.id))
     setSaving(false)
     setFormOpen(false)
     setRetroResult({ count, keyword, schemaWarning, error: retroError })
@@ -178,10 +178,13 @@ function RulesPage() {
   }, [rules, transactions])
   const conflicts = useMemo(() => {
     // Uma regra cuja palavra está dentro da palavra de outra, com categoria
-    // diferente: a criada primeiro "engole" os lançamentos da outra.
+    // diferente, e que é lida ANTES dela (mais específica, ou mesmo tipo e
+    // criada antes): "engole" os lançamentos da outra. Regra "Igual a" nunca é
+    // engolida — ela é lida primeiro.
     const ids = new Set<string>()
     const pairs: [CategorizationRule, CategorizationRule][] = []
     const act = rules.filter(r => r.active)
+    const order = new Map(sortRulesByPriority(act).map((r, i) => [r.id, i]))
     for (const a of act) {
       const mt = (a as CategorizationRule & { match_type?: MatchType }).match_type ?? 'contains'
       if (mt === 'exact') continue
@@ -190,6 +193,7 @@ function RulesPage() {
       for (const b of act) {
         if (a.id === b.id || a.category === b.category) continue
         const kb = b.keyword.trim().toUpperCase()
+        if (order.get(a.id)! > order.get(b.id)!) continue
         if (kb !== ka && kb.includes(ka)) { ids.add(a.id); ids.add(b.id); pairs.push([a, b]) }
       }
     }
@@ -249,7 +253,7 @@ function RulesPage() {
   const test = useMemo(() => {
     const d = testText.trim()
     if (d.length < 2) return null
-    const cat = rules.filter(r => r.active && matchesRule(d, r))
+    const cat = sortRulesByPriority(rules.filter(r => r.active && matchesRule(d, r)))
     const internal = internalRules.filter(r => r.active && matchesRule(d, r))
     return { first: cat[0] ?? null, others: cat.slice(1), internal }
   }, [testText, rules, internalRules])

@@ -53,6 +53,26 @@ export function matchesRule(description: string, rule: CategorizationRule): bool
   }
 }
 
+/**
+ * Ordem de leitura das regras: a mais ESPECÍFICA vale primeiro.
+ *   0 · "Igual a"      — a correção que o usuário fez naquele lançamento
+ *   1 · "Começa com" / "Termina com"
+ *   2 · "Contém"
+ * No empate, vale a criada primeiro (ordem em que chegam do banco).
+ * Antes valia sempre a criada primeiro: uma regra geral antiga ("Contém IFOOD")
+ * engolia a correção feita depois num lançamento específico.
+ */
+export function rulePriority(matchType: string | undefined): number {
+  if (matchType === 'exact') return 0
+  if (matchType === 'starts_with' || matchType === 'ends_with') return 1
+  return 2
+}
+
+/** Cópia das regras na ordem em que são lidas (sort estável = desempate por criação). */
+export function sortRulesByPriority<T extends { match_type?: string }>(rules: T[]): T[] {
+  return [...rules].sort((a, b) => rulePriority(a.match_type) - rulePriority(b.match_type))
+}
+
 // Se a categoria da regra for especial (presa a meses específicos), a regra só
 // vale para transações cuja data caia em um dos meses configurados nela.
 function ruleUsableForDate(rule: CategorizationRule, date: string, categories: Category[]): boolean {
@@ -78,7 +98,7 @@ export function applyUserRules(
   categories: Category[],
   type: TransactionType
 ): { category: string | null; board_id: string | null } {
-  for (const rule of rules) {
+  for (const rule of sortRulesByPriority(rules)) {
     if (isInternalRule(rule)) continue
     if (
       rule.active &&
@@ -141,7 +161,9 @@ export async function applyTypeToExisting(
 
 export async function applyRuleToExisting(
   rule: { keyword: string; match_type: string; category: string; board_id: string | null },
-  categories: Category[]
+  categories: Category[],
+  /** Demais regras do usuário: uma mais específica, de outra categoria, continua valendo. */
+  otherRules: CategorizationRule[] = [],
 ): Promise<{ count: number; error?: string }> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -176,6 +198,11 @@ export async function applyRuleToExisting(
   if (!txs.length) return { count: 0 }
 
   const kw = rule.keyword.toUpperCase()
+  const myPriority = rulePriority(rule.match_type)
+  const stronger = otherRules.filter(r =>
+    r.active && !isInternalRule(r) && r.category !== rule.category && rulePriority(r.match_type) < myPriority,
+  )
+  const outranked = (description: string) => stronger.some(r => matchesRule(description, r))
   const ids = txs
     .filter(t => {
       if (specialCategoryNames.has(t.category)) return false
@@ -189,6 +216,9 @@ export async function applyRuleToExisting(
         }
       })()
       if (!descMatches) return false
+      // "Corrigir histórico" de uma regra geral não passa por cima do que uma
+      // regra mais específica (ex.: "Igual a") de outra categoria decide.
+      if (outranked(t.description)) return false
       if (!targetCategory) return true
       if (targetCategory.type !== 'ambos' && targetCategory.type !== t.type) return false
       return isCategoryUsableForDate(targetCategory, t.date)
