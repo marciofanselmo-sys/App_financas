@@ -30,7 +30,10 @@ export function CategoryOptions({ list, all, className, emptyLabel = 'Nenhuma ca
   return (
     <>
       {options.map(({ cat, parentName }) => (
-        <SelectItem key={cat.id} value={cat.name} className={className}>
+        // label: é por ele que a lista acha a categoria quando a pessoa digita
+        // com o menu aberto. Sem ele, o texto tem a bolinha de cor junto e a
+        // busca por digitação não encontrava nada.
+        <SelectItem key={cat.id} value={cat.name} label={cat.name} className={className}>
           <span className={parentName ? 'flex items-center gap-2 pl-4' : 'flex items-center gap-2 font-medium'}>
             <span
               className={parentName ? 'h-1.5 w-1.5 rounded-full shrink-0' : 'h-2.5 w-2.5 rounded-full shrink-0'}
