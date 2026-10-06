@@ -74,8 +74,18 @@ export function buildDisplayItems(
     // metade quando as descrições se sobrepõem (bug corrigido em 2026-07-09).
     const unionMonths = new Set(members.flatMap(r => r.months ?? []))
     const monthsCount = unionMonths.size
-    const totalAmount = members.reduce((s, r) => s + r.avgAmount * r.monthsCount, 0)
-    const avgAmount = monthsCount > 0 ? totalAmount / monthsCount : 0
+    // Total do grupo mês a mês (soma de quem caiu naquele mês) e a MEDIANA
+    // desses totais. Antes era soma ÷ meses: com o mês corrente incompleto
+    // (só um dos dois salários caiu) a "renda fixa" saía R$ 10.428 em vez de
+    // R$ 11.000. Descrições que se alternam ("NETFLIX"/"NETFLIX.COM") seguem
+    // contando uma vez por mês, como no ajuste de 2026-07-09.
+    const perMonth = [...unionMonths].map(m =>
+      members.reduce((s, r) => s + ((r.months ?? []).includes(m) ? r.avgAmount : 0), 0),
+    ).sort((a, b) => a - b)
+    const mid = Math.floor(perMonth.length / 2)
+    const avgAmount = perMonth.length === 0
+      ? 0
+      : perMonth.length % 2 === 0 ? (perMonth[mid - 1] + perMonth[mid]) / 2 : perMonth[mid]
     const lastDate = members.reduce((max, r) => r.lastDate > max ? r.lastDate : max, '')
     items.push({
       key: decisionKey(type, `group:${label}`),
