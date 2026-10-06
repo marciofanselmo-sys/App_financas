@@ -40,6 +40,15 @@ const securityHeaders = [
  *
  * `form-action` inclui a Cakto porque o botão de compra leva ao checkout.
  * Nenhum dado de cliente do app passa por estas páginas.
+ *
+ * Rastreamento do marketing (liberado em 06/10/2026 — antes ficava bloqueado e
+ * nenhum evento de visita, lead ou compra chegava à Meta nem ao Google):
+ *  - Meta Pixel: script em connect.facebook.net, eventos para facebook.com
+ *  - Google Analytics 4: script em googletagmanager.com, eventos para
+ *    *.google-analytics.com / *.analytics.google.com
+ *  - Quiz: html2canvas (cdnjs) e o envio de leads para a planilha (Apps Script)
+ * Ferramenta nova do marketing (TikTok, Hotjar, Clarity...) precisa entrar
+ * aqui também, senão o navegador bloqueia. Login e app NÃO recebem nada disso.
  */
 const marketingHeaders = [
   ...baseHeaders,
@@ -47,11 +56,11 @@ const marketingHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://connect.facebook.net https://www.googletagmanager.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://connect.facebook.net https://www.facebook.com https://www.googletagmanager.com https://*.google-analytics.com https://*.analytics.google.com https://script.google.com https://script.googleusercontent.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self' https://pay.cakto.com.br",
@@ -132,6 +141,8 @@ const nextConfig: NextConfig = {
       '/',
       '/landing-page',
       '/landing-page/:path*',
+      '/lp',
+      '/lp/:path*',
       '/quiz',
       '/quiz/:path*',
       '/obrigado',
