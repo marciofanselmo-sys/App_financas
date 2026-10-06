@@ -55,6 +55,20 @@ function goalStatus(goal: Goal): { label: string; color: string; Icon: React.Ele
   return { label: 'Atrasada', color: 'text-amber-500', Icon: AlertTriangle }
 }
 
+// O selo segue a mesma previsão mostrada no card ("Previsão mar/2029"). Antes
+// ele vinha só do % guardado × tempo passado, com 8% de folga, e uma meta com
+// previsão depois do prazo aparecia como "No prazo".
+function paceStatus(
+  base: ReturnType<typeof goalStatus>,
+  projectedMonths: number | null,
+  monthsLeft: number,
+): ReturnType<typeof goalStatus> {
+  if (!base || base.label === 'Prazo expirado' || projectedMonths == null) return base
+  if (projectedMonths > monthsLeft) return { label: 'Atrasada', color: 'text-amber-500', Icon: AlertTriangle }
+  if (projectedMonths <= monthsLeft - 2) return { label: 'Adiantada', color: 'text-emerald-500', Icon: CheckCircle }
+  return { label: 'No prazo', color: 'text-blue-500', Icon: Clock }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function monthsRemaining(deadline: string): number {
   const [year, month] = deadline.split('-').map(Number)
@@ -293,7 +307,7 @@ function GoalsPage() {
         deadlineLabel: deadlineLabel(goal.deadline),
         typeLabel: typeConf.label,
         TypeIcon: typeConf.icon,
-        status: goalStatus(goal),
+        status: paceStatus(goalStatus(goal), monthsElapsed >= 1 ? projectedMonths : null, months),
         awaitingBoard: imp?.source === 'board' && (() => {
           const board = boards.find(b => b.id === imp.boardId)
           return !board || !boardValue(board).has
