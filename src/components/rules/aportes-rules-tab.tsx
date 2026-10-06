@@ -86,7 +86,7 @@ export function AportesRulesTab({ boards, rules, transactions, createRule, updat
                   <Link href={`/transactions/${board.id}`} className="text-sm font-medium text-slate-700 dark:text-slate-200 hover:underline truncate block">{board.name.trim()}</Link>
                   <p className="text-[11px] text-slate-400">
                     {boardRules.length} regra{boardRules.length === 1 ? '' : 's'} · {count} aporte{count === 1 ? '' : 's'}
-                    {manual > 0 && <> · {manual} marcado{manual === 1 ? '' : 's'} à mão</>}
+                    {manual > 0 && <> · {manual} ligado{manual === 1 ? '' : 's'} sem regra (na importação ou à mão)</>}
                   </p>
                 </div>
                 <span className="text-right shrink-0">

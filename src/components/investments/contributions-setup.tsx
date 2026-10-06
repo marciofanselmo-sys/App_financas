@@ -193,7 +193,10 @@ export function ContributionsSetup({ board, boards, rules, createRule, updateRul
 
           <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 px-3 py-2 text-xs text-blue-800 dark:text-blue-300">
             Total aportado: <strong>{formatCurrency((baseValue > 0 ? baseValue : 0) + totalFound)}</strong>
-            {board.last_position_import && (() => {
+            {/* Rendimento só com a lista de aportes carregada e a data do ponto de
+                partida preenchida: antes aparecia "+37%" contando só o ponto de
+                partida, sem os aportes, enquanto a pessoa ainda digitava. */}
+            {board.last_position_import && found !== null && !(baseValue > 0 && !baseDate) && (() => {
               const invested = (baseValue > 0 ? baseValue : 0) + totalFound
               const gain = board.last_position_import.patrimonio - invested
               return invested > 0 ? <> · rendimento <strong>{gain >= 0 ? '+' : '−'}{formatCurrency(Math.abs(gain))} ({gain >= 0 ? '+' : ''}{((gain / invested) * 100).toFixed(1).replace('.', ',')}%)</strong> sobre o valor atual de {formatCurrency(board.last_position_import.patrimonio)}</> : null
