@@ -1784,10 +1784,11 @@ function shiftDays(date: string, days: number): string {
                 </div>
                 <div>
                   <p className="font-semibold text-slate-800 dark:text-slate-100">
-                    {reviewItems.length} transação{reviewItems.length > 1 ? 'ões' : ''} para revisar
-                    {groupReviewItems(reviewItems).length < reviewItems.length && (
-                      <span className="font-normal text-slate-400"> · {groupReviewItems(reviewItems).length} descrições</span>
-                    )}
+                    {reviewItems.length} {reviewItems.length > 1 ? 'transações' : 'transação'} para revisar
+                    {groupReviewItems(reviewItems).length < reviewItems.length && (() => {
+                      const n = groupReviewItems(reviewItems).length
+                      return <span className="font-normal text-slate-400"> · {n} {n === 1 ? 'descrição' : 'descrições'}</span>
+                    })()}
                   </p>
                   <p className="text-xs text-slate-400 dark:text-slate-500">
                     Categorias sugeridas automaticamente — confirme ou ajuste
