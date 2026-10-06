@@ -60,6 +60,8 @@ const marketingHeaders = [
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net",
+      // Confete do /obrigado roda num worker criado pela própria página (blob:).
+      "worker-src 'self' blob:",
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://connect.facebook.net https://www.facebook.com https://www.googletagmanager.com https://*.google-analytics.com https://*.analytics.google.com https://script.google.com https://script.googleusercontent.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
