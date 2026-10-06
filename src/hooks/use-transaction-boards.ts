@@ -19,6 +19,10 @@ function fromRow(row: any): TransactionBoard {
     opening_balance: Number(row.opening_balance ?? 0),
     last_position_import: row.last_position_import ?? undefined,
     position_import_history: row.position_import_history ?? undefined,
+    // Ponto de partida dos aportes: era gravado mas não lido de volta, então
+    // sumia ao recarregar e o rendimento ignorava o que já estava aplicado.
+    invested_base: row.invested_base != null ? Number(row.invested_base) : null,
+    invested_base_date: row.invested_base_date ?? null,
     created_at: row.created_at,
   }
 }
