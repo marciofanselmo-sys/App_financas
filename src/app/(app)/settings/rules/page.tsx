@@ -397,7 +397,7 @@ function RulesPage() {
                       <p className="font-semibold text-slate-700 dark:text-slate-200">{outrosSemRegra} lançamento{outrosSemRegra === 1 ? '' : 's'} em &ldquo;Outros&rdquo; sem regra</p>
                       <p className="mt-0.5 leading-relaxed">Categorize por descrição e a regra nasce sozinha.</p>
                     </div>
-                    <Link href="/settings/categories" className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0">Revisar</Link>
+                    <Link href="/settings/categories?revisar=outros" className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0">Revisar</Link>
                   </li>
                 )}
               </ul>

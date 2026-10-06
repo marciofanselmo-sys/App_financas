@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCategories } from '@/hooks/use-categories'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useEvents } from '@/hooks/use-events'
@@ -656,8 +656,21 @@ export default function CategoriesPage() {
     setSearch('')
     setExpanded(prev => new Set(prev).add(outrosParent.id))
     setOpenDirect(`despesa|${outrosParent.id}`)
-    setTimeout(() => document.getElementById(`cat-despesa-${outrosParent.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+    // Espera a lista abrir antes de rolar: com 50 ms a altura da página ainda
+    // mudava enquanto ela abria e a rolagem parava no lugar errado (no topo).
+    setTimeout(() => document.getElementById(`cat-despesa-${outrosParent.id}`)?.scrollIntoView({ behavior: 'auto', block: 'start' }), 350)
   }
+
+  // Vindo de outra tela com ?revisar=outros (ex.: "Revisar" em Regras), abre a
+  // revisão de "Outros" direto, quando os lançamentos já carregaram.
+  const reviewFromUrl = useRef(false)
+  useEffect(() => {
+    if (reviewFromUrl.current || !outrosParent || outrosDirect.length === 0) return
+    if (new URLSearchParams(window.location.search).get('revisar') !== 'outros') return
+    reviewFromUrl.current = true
+    window.history.replaceState(null, '', window.location.pathname)
+    reviewOutros()
+  })
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
