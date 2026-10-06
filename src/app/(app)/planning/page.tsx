@@ -510,6 +510,8 @@ function PlanningPage() {
   const quietRows = rows.filter(r => !isActive(r)).sort((a, b) => a.cat.name.localeCompare(b.cat.name, 'pt-BR'))
 
   const incomeNum = parseNum(expectedIncome)
+  // Soma dos limites efetivos (categoria ou suas subcategorias, nunca os dois).
+  const totalPlannedLimits = rows.reduce((sum, r) => sum + r.planned, 0)
   const investNum = parseNum(investmentTarget)
   const totalPlanned = rows.reduce((s, r) => s + r.planned, 0)
   // Realizado só das categorias com limite, para bater com o planejado.
@@ -1335,8 +1337,12 @@ function PlanningPage() {
                             type="number"
                             min={0}
                             max={100}
-                            value={pillarPct[p.key]}
-                            onChange={e => setPillar(p.key, Number(e.target.value))}
+                            // Zero aparece vazio: com "0" fixo não dava para apagar e
+                            // digitar outro número. Ao clicar, o valor fica selecionado.
+                            value={pillarPct[p.key] === 0 ? '' : pillarPct[p.key]}
+                            placeholder="0"
+                            onFocus={e => e.currentTarget.select()}
+                            onChange={e => setPillar(p.key, Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
                             className="h-8 text-sm text-right"
                           />
                           <span className="text-sm text-slate-400">%</span>
@@ -1370,6 +1376,11 @@ function PlanningPage() {
                       </Button>
                     )}
                   </div>
+                  {incomeNum > 0 && totalPlannedLimits > incomeNum && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2">
+                      Os limites somam {fmt(totalPlannedLimits)}, {fmt(totalPlannedLimits - incomeNum)} acima da renda prevista ({fmt(incomeNum)}).
+                    </p>
+                  )}
                   {activeRows.length === 0 ? (
                     <p className="text-sm text-slate-400 dark:text-slate-500 py-6 text-center">
                       Nenhum gasto registrado ainda. Importe um extrato para ver as categorias aqui.
