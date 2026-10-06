@@ -31,3 +31,13 @@ export function logSafeError(context: string, error: unknown) {
   }
   console.error(`[${context}]`, error)
 }
+
+/**
+ * Falta uma migração no banco. O usuário final não sabe o que é Supabase nem
+ * migração — antes ele lia "rode a migração X no Supabase". Agora vê uma
+ * mensagem comum e o nome do arquivo vai para os Erros do admin.
+ */
+export function missingMigrationMessage(file: string): string {
+  reportError('migração pendente', new Error(`Falta rodar ${file} no Supabase`))
+  return 'Não deu para salvar agora: falta um ajuste no nosso servidor e a equipe já foi avisada. Tente de novo mais tarde.'
+}

@@ -41,6 +41,7 @@ import { useImportQuota } from '@/hooks/use-import-quota'
 import { usePlan } from '@/hooks/use-subscription'
 import { PLANS, planoComMais } from '@/lib/plans'
 import { UpgradeCard } from '@/components/plan/plan-gate'
+import { missingMigrationMessage } from '@/lib/supabase-error'
 
 // ─── CSV TEMPLATE ────────────────────────────────────────────────────────────
 
@@ -1241,7 +1242,7 @@ function shiftDays(date: string, days: number): string {
         errors += toInsert.length
         if (!firstErrorMessage) {
           firstErrorMessage = error.code === '23514'
-            ? 'Categoria não permitida pelo banco de dados. Rode a migração migration_categories.sql no Supabase.'
+            ? missingMigrationMessage('migration_categories.sql')
             : error.message
         }
       } else {

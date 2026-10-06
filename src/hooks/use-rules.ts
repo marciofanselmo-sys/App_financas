@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Category, TransactionType } from '@/types'
 import { isCategoryUsableForDate } from '@/lib/special-category-filter'
 import { findPairedEntry, buildCounterpartLeg } from '@/lib/internal-counterpart'
+import { missingMigrationMessage } from '@/lib/supabase-error'
 
 export type MatchType = 'contains' | 'starts_with' | 'ends_with' | 'exact'
 
@@ -208,7 +209,7 @@ export async function applyRuleToExisting(
   if (error) {
     console.error('[applyRuleToExisting] update error:', error.message, '| code:', error.code, '| details:', error.details)
     const friendly = error.code === '23514'
-      ? 'Categoria não permitida pelo banco de dados. Rode a migração migration_categories.sql no Supabase.'
+      ? missingMigrationMessage('migration_categories.sql')
       : error.message
     return { count: 0, error: friendly }
   }
@@ -317,7 +318,7 @@ export async function applyInternalRule(
       .range(from, from + PAGE - 1)
     if (error) {
       const friendly = error.code === '42703'
-        ? 'Falta atualizar o banco: rode a migração migration_rules_internal.sql no Supabase.'
+        ? missingMigrationMessage('migration_rules_internal.sql')
         : error.message
       return { count: 0, paired: 0, legs: 0, error: friendly }
     }
@@ -559,7 +560,7 @@ export function useRules() {
       // Sobe o erro real para a tela — "rode a migração" genérico escondia
       // qual passo do banco faltava.
       throw new Error(res.error.code === '42703'
-        ? 'Falta atualizar o banco: rode a migração migration_rules_internal.sql no Supabase.'
+        ? missingMigrationMessage('migration_rules_internal.sql')
         : res.error.code === '23505'
           ? 'Já existe uma regra com esse mesmo texto e tipo de correspondência. Edite a existente ou mude o texto.'
           : res.error.message)
@@ -690,9 +691,9 @@ export function useRules() {
     if (error || !data) {
       console.error('[syncCategoryToRule] upsert error:', error?.message, '| code:', error?.code, '| details:', error?.details)
       const friendly = error?.code === '23502'
-        ? 'A coluna "id" de categorization_rules não tem geração automática configurada. Rode a migração migration_rules_id_default.sql no Supabase.'
+        ? missingMigrationMessage('migration_rules_id_default.sql')
         : error?.code === '42P10'
-          ? 'Falta uma trava no banco pra evitar regra duplicada. Rode a migração migration_rules_unique.sql no Supabase.'
+          ? missingMigrationMessage('migration_rules_unique.sql')
           : error?.message
       return { applied: 0, error: friendly }
     }

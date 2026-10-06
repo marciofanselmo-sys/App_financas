@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { logSafeError } from '@/lib/supabase-error'
+import { logSafeError, missingMigrationMessage } from '@/lib/supabase-error'
 import { todayISO } from '@/utils/local-date'
 import { findLateCredits, findPairSuggestions, isCreditCardBoard, PairSuggestion, SuggestionRule, SuggestionTx } from '@/lib/data-suggestions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
@@ -74,7 +74,7 @@ export function useAdjustments() {
       if (e) {
         logSafeError('useAdjustments.transactions', e)
         setError(e.code === '42703'
-          ? 'Falta atualizar o banco: rode a migração migration_rules_internal.sql no Supabase.'
+          ? missingMigrationMessage('migration_rules_internal.sql')
           : 'Não foi possível ler seus lançamentos.')
         setLoading(false)
         return
@@ -192,7 +192,7 @@ export function useAdjustments() {
       }
       const r = await updateRule(s.existingRule.id, { scope_board_id: s.originBoardId, target_board_id: s.targetBoardId, active: true, require_pair: true, pair_sides: sides })
       if (!r.ok || r.error === 'partial') {
-        return { error: 'Não foi possível atualizar a regra existente. Rode a migração migration_rules_internal.sql no Supabase e tente de novo.' }
+        return { error: missingMigrationMessage('migration_rules_internal.sql') }
       }
       rule = { kind: 'updated', id: s.existingRule.id, prev }
       // A regra existente guarda o próprio tipo de correspondência.

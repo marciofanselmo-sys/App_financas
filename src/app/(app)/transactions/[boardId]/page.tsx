@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback} from 'react'
 import { decisionKey } from '@/lib/recurring-groups'
-import { logSafeError } from '@/lib/supabase-error'
+import { logSafeError, missingMigrationMessage } from '@/lib/supabase-error'
 import { balanceFromTransactions, accountBalance } from '@/lib/dashboard-patrimony'
 import { useParams, useRouter } from 'next/navigation'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
@@ -253,7 +253,7 @@ export default function BoardDetailPage() {
     const { error } = await setTransactionInternal(tx.id, !isInternalMovement(tx))
     if (error) {
       setRuleSyncError(error.includes('is_internal')
-        ? 'Falta atualizar o banco: rode a migração migration_rules_internal.sql no Supabase.'
+        ? missingMigrationMessage('migration_rules_internal.sql')
         : error)
     }
     refetch()
@@ -321,7 +321,7 @@ export default function BoardDetailPage() {
     const { error } = await setTransactionsInternal(ids, internal)
     if (error) {
       setRuleSyncError(error.includes('is_internal')
-        ? 'Falta atualizar o banco: rode a migração migration_rules_internal.sql no Supabase.'
+        ? missingMigrationMessage('migration_rules_internal.sql')
         : error)
     }
     refetch()

@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { missingMigrationMessage } from '@/lib/supabase-error'
 
 type UpdateBoardFn = (id: string, data: Partial<Omit<TransactionBoard, 'id' | 'user_id' | 'created_at'>>) => Promise<{ error: string | null }>
 
@@ -111,7 +112,7 @@ export function ContributionsSetup({ board, boards, rules, createRule, updateRul
       : { error: null }
     setSaving(false)
     if (boardError) {
-      setError('Falta atualizar o banco para guardar o ponto de partida: rode a migração migration_investment_base.sql no Supabase.')
+      setError(missingMigrationMessage('migration_investment_base.sql'))
       return
     }
     onSaved(`Aportes de ${board.name.trim()} configurados.`)

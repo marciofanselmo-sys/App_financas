@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { missingMigrationMessage } from '@/lib/supabase-error'
 
 const MATCH_LABELS: Record<MatchType, string> = {
   contains: 'Contém',
@@ -114,7 +115,7 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
       const r = await updateRule(editing.id, fields)
       if (!r.ok || r.error === 'partial') {
         setSaving(false); setFormOpen(false)
-        setResult({ count: 0, legs: 0, error: 'Não foi possível salvar. Rode a migração migration_rules_internal.sql no Supabase e tente de novo.' })
+        setResult({ count: 0, legs: 0, error: missingMigrationMessage('migration_rules_internal.sql') })
         return
       }
     } else {
