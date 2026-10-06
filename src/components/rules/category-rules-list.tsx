@@ -10,7 +10,7 @@ import { CategoryIcon, categoryIconKey, guessIconKey } from '@/lib/category-icon
 import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 import { cn } from '@/lib/utils'
 
-export type RuleFilter = 'all' | 'manual' | 'auto' | 'off' | 'zero' | 'conflict'
+export type RuleFilter = 'all' | 'manual' | 'auto' | 'off' | 'zero' | 'conflict' | 'redundant'
 
 const MATCH_LABELS: Record<string, string> = {
   contains: 'Contém', starts_with: 'Começa com', ends_with: 'Termina com', exact: 'Igual a',
@@ -22,7 +22,7 @@ const MATCH_LABELS: Record<string, string> = {
  * correspondência, Manual/Automática, quantos lançamentos pega e ⋮.
  */
 export function CategoryRulesList({
-  rules, categories, uses, usesLoading = false, conflictIds, filter, onFilter, search, onSearch, boardMap,
+  rules, categories, uses, usesLoading = false, conflictIds, redundant, filter, onFilter, search, onSearch, boardMap,
   onToggle, onEdit, onDelete, onCreateIn,
 }: {
   rules: CategorizationRule[]
@@ -32,6 +32,8 @@ export function CategoryRulesList({
   /** Lançamentos ainda carregando: não mostrar contagem nem "não pega nada". */
   usesLoading?: boolean
   conflictIds: Set<string>
+  /** Regra repetida → a regra mais geral, de mesma categoria, que já a cobre. */
+  redundant: Map<string, CategorizationRule>
   filter: RuleFilter
   onFilter: (f: RuleFilter) => void
   search: string
@@ -53,6 +55,7 @@ export function CategoryRulesList({
     if (filter === 'off' && r.active) return false
     if (filter === 'zero' && (!r.active || (uses.get(r.id) ?? 0) > 0)) return false
     if (filter === 'conflict' && !conflictIds.has(r.id)) return false
+    if (filter === 'redundant' && !redundant.has(r.id)) return false
     if (q && !r.keyword.toLowerCase().includes(q) && !r.category.toLowerCase().includes(q) && !motherOf(r.category, mothers).toLowerCase().includes(q)) return false
     return true
   }
@@ -67,7 +70,7 @@ export function CategoryRulesList({
     if (b.toLowerCase() === 'outros') return -1
     return a.localeCompare(b, 'pt-BR')
   })
-  const forceOpen = !!q || filter === 'zero' || filter === 'conflict'
+  const forceOpen = !!q || filter === 'zero' || filter === 'conflict' || filter === 'redundant'
   const counts = {
     all: rules.length,
     manual: rules.filter(r => !r.auto_created).length,
@@ -92,6 +95,14 @@ export function CategoryRulesList({
         </span>
         {!usesLoading && r.active && n === 0 && <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">não pega nada</span>}
         {conflictIds.has(r.id) && <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400">em conflito</span>}
+        {redundant.has(r.id) && (
+          <span
+            title={`A regra "${redundant.get(r.id)!.keyword}" já pega este lançamento com a mesma categoria.`}
+            className="text-[10px] font-bold rounded-full px-1.5 py-0.5 bg-slate-100 text-slate-600 dark:bg-white/[0.08] dark:text-slate-300"
+          >
+            repetida · coberta por &ldquo;{redundant.get(r.id)!.keyword}&rdquo;
+          </span>
+        )}
         {boardId && boardMap[boardId] && <span className="text-[11px] text-slate-400">· conta {boardMap[boardId]}</span>}
         <span className="ml-auto text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap">{usesLoading ? 'contando…' : `${n} lançamento${n === 1 ? '' : 's'}`}</span>
         <DropdownMenu>
@@ -139,9 +150,9 @@ export function CategoryRulesList({
           <button type="button" className={chip(filter === 'manual')} onClick={() => onFilter('manual')}>Manuais · {counts.manual}</button>
           <button type="button" className={chip(filter === 'auto')} onClick={() => onFilter('auto')}>Automáticas · {counts.auto}</button>
           {counts.off > 0 && <button type="button" className={chip(filter === 'off')} onClick={() => onFilter('off')}>Desativadas · {counts.off}</button>}
-          {(filter === 'zero' || filter === 'conflict') && (
+          {(filter === 'zero' || filter === 'conflict' || filter === 'redundant') && (
             <button type="button" className={chip(true)} onClick={() => onFilter('all')}>
-              {filter === 'zero' ? 'Não pegam nada' : 'Em conflito'} ✕
+              {filter === 'zero' ? 'Não pegam nada' : filter === 'conflict' ? 'Em conflito' : 'Repetidas'} ✕
             </button>
           )}
         </div>

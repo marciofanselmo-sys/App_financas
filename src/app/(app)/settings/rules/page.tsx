@@ -25,6 +25,7 @@ import { Plus, Zap, CheckCircle2, X, AlertCircle, FlaskConical } from 'lucide-re
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
 import { isInternalMovement } from '@/lib/internal-movement'
+import { findRedundantRules, findMergeGroups, type MergeGroup } from '@/lib/rule-hygiene'
 
 type MatchType = 'contains' | 'starts_with' | 'ends_with' | 'exact'
 // Tipo é só um filtro client-side pra achar a categoria certa mais rápido — a
@@ -75,6 +76,11 @@ function RulesPage() {
   const [tab, setTab] = useState<RuleKind>('categorias')
   const [ruleFilter, setRuleFilter] = useState<RuleFilter>('all')
   const [testText, setTestText] = useState('')
+  // Faxina das regras (Vale revisar): juntar um grupo / excluir as repetidas.
+  const [mergeTarget, setMergeTarget] = useState<MergeGroup | null>(null)
+  const [cleanOpen, setCleanOpen] = useState(false)
+  const [hygieneBusy, setHygieneBusy] = useState(false)
+  const [hygieneDone, setHygieneDone] = useState<string | null>(null)
   const { transactions, loading: txLoading, refetch: refetchTransactions } = useTransactions()
 
   const boardMap = useMemo(() => {
@@ -197,6 +203,36 @@ function RulesPage() {
     [transactions, rules, txLoading],
   )
   const autoCount = rules.filter(r => r.auto_created).length
+  const redundant = useMemo(() => findRedundantRules(rules), [rules])
+  const mergeGroups = useMemo(() => findMergeGroups(rules, redundant), [rules, redundant])
+
+  // Nada aqui muda a categoria de um lançamento: a regra nova (ou a que já
+  // cobre) dá a mesma categoria que as regras que saem.
+  async function confirmMerge(g: MergeGroup) {
+    setHygieneBusy(true)
+    let created = null
+    try { created = await createRule(g.prefix, g.category, { match_type: 'starts_with' }) } catch { created = null }
+    // Sem a regra nova gravada, as antigas ficam: apagar antes deixaria os
+    // lançamentos sem regra nenhuma.
+    if (!created) {
+      setHygieneBusy(false)
+      setMergeTarget(null)
+      setHygieneDone('Não deu para criar a regra nova; nada foi apagado. Tente de novo.')
+      return
+    }
+    for (const r of g.rules) await deleteRule(r.id)
+    setHygieneBusy(false)
+    setMergeTarget(null)
+    setHygieneDone(`${g.rules.length} regras viraram uma: "Começa com ${g.prefix}" → ${g.category}.`)
+  }
+  async function confirmClean() {
+    setHygieneBusy(true)
+    const n = redundant.size
+    for (const id of redundant.keys()) await deleteRule(id)
+    setHygieneBusy(false)
+    setCleanOpen(false)
+    setHygieneDone(`${n} regra${n === 1 ? '' : 's'} repetida${n === 1 ? '' : 's'} excluída${n === 1 ? '' : 's'}. As categorias dos lançamentos não mudaram.`)
+  }
 
   // Entre minhas contas × Aportes: o destino decide.
   const investmentIds = useMemo(() => new Set(boards.filter(b => b.is_investment).map(b => b.id)), [boards])
@@ -328,6 +364,7 @@ function RulesPage() {
               uses={ruleUses}
               usesLoading={txLoading}
               conflictIds={conflicts.ids}
+              redundant={redundant}
               filter={ruleFilter}
               onFilter={setRuleFilter}
               search={search}
@@ -365,7 +402,14 @@ function RulesPage() {
         </div>
 
         <div className="space-y-4 lg:sticky lg:top-6">
-          {(zeroCount > 0 || conflicts.pairs.length > 0 || outrosSemRegra > 0) && (
+          {hygieneDone && (
+            <div className="flex items-start gap-2 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 p-3 text-xs text-emerald-800 dark:text-emerald-300">
+              <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+              <p className="flex-1">{hygieneDone}</p>
+              <button type="button" onClick={() => setHygieneDone(null)} aria-label="Fechar"><X className="h-4 w-4" /></button>
+            </div>
+          )}
+          {(zeroCount > 0 || conflicts.pairs.length > 0 || outrosSemRegra > 0 || mergeGroups.length > 0 || redundant.size > 0) && (
             <section className="bg-amber-50/60 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 rounded-xl p-4">
               <div className="flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
@@ -373,6 +417,27 @@ function RulesPage() {
               </div>
               <p className="text-xs text-slate-400 mt-0.5 ml-6">Deixa a categorização da importação mais certa</p>
               <ul className="mt-2 divide-y divide-amber-200/70 dark:divide-amber-800/40">
+                {mergeGroups.map(g => (
+                  <li key={`${g.prefix}|${g.category}`} className="flex items-start gap-3 py-2.5">
+                    <div className="flex-1 min-w-0 text-xs text-slate-600 dark:text-slate-300">
+                      <p className="font-semibold text-slate-700 dark:text-slate-200">{g.rules.length} regras de &ldquo;{g.prefix}&rdquo; podem virar uma só</p>
+                      <p className="mt-0.5 leading-relaxed">&ldquo;Começa com {g.prefix}&rdquo; → {g.category}. Nenhum lançamento muda de categoria.</p>
+                    </div>
+                    <button type="button" onClick={() => setMergeTarget(g)} className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0">Juntar</button>
+                  </li>
+                ))}
+                {redundant.size > 0 && (
+                  <li className="flex items-start gap-3 py-2.5">
+                    <div className="flex-1 min-w-0 text-xs text-slate-600 dark:text-slate-300">
+                      <p className="font-semibold text-slate-700 dark:text-slate-200">{redundant.size} regra{redundant.size === 1 ? '' : 's'} repetida{redundant.size === 1 ? '' : 's'}</p>
+                      <p className="mt-0.5 leading-relaxed">Outra regra, com a mesma categoria, já pega esses lançamentos.</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <button type="button" onClick={() => setCleanOpen(true)} className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline">Excluir</button>
+                      <button type="button" onClick={() => goFilter('redundant')} className="text-xs font-semibold text-slate-500 dark:text-slate-400 hover:underline">Ver</button>
+                    </div>
+                  </li>
+                )}
                 {zeroCount > 0 && (
                   <li className="flex items-start gap-3 py-2.5">
                     <div className="flex-1 min-w-0 text-xs text-slate-600 dark:text-slate-300">
@@ -556,6 +621,58 @@ function RulesPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Juntar regras de um mesmo app/intermediador */}
+      <Dialog open={!!mergeTarget} onOpenChange={v => { if (!v && !hygieneBusy) setMergeTarget(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Juntar regras</DialogTitle></DialogHeader>
+          {mergeTarget && (
+            <div className="space-y-3 pt-1 text-sm">
+              <p className="text-slate-600 dark:text-slate-300">
+                Vou criar a regra <strong>&ldquo;Começa com {mergeTarget.prefix}&rdquo; → {mergeTarget.category}</strong> e excluir estas {mergeTarget.rules.length} regras automáticas, que ela substitui:
+              </p>
+              <ul className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700">
+                {mergeTarget.rules.map(r => (
+                  <li key={r.id} className="px-3 py-1.5 text-xs font-mono text-slate-600 dark:text-slate-300">{r.keyword}</li>
+                ))}
+              </ul>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Nenhum lançamento muda de categoria. Daqui pra frente, todo lançamento que começa com &ldquo;{mergeTarget.prefix}&rdquo; já chega em {mergeTarget.category} — inclusive lojas novas.
+              </p>
+              <div className="flex gap-2 pt-1">
+                <Button variant="outline" onClick={() => setMergeTarget(null)} disabled={hygieneBusy} className="flex-1">Cancelar</Button>
+                <Button onClick={() => confirmMerge(mergeTarget)} disabled={hygieneBusy} className="flex-1">{hygieneBusy ? 'Juntando...' : 'Juntar'}</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Excluir regras repetidas */}
+      <Dialog open={cleanOpen} onOpenChange={v => { if (!v && !hygieneBusy) setCleanOpen(false) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Excluir regras repetidas</DialogTitle></DialogHeader>
+          <div className="space-y-3 pt-1 text-sm">
+            <p className="text-slate-600 dark:text-slate-300">Estas regras automáticas já são cobertas por outra regra, com a mesma categoria:</p>
+            <ul className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700">
+              {[...redundant.entries()].map(([id, cover]) => {
+                const r = rules.find(x => x.id === id)
+                return (
+                  <li key={id} className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-300">
+                    <span className="font-mono">{r?.keyword}</span>
+                    <span className="text-slate-400"> · coberta por &ldquo;{cover.keyword}&rdquo; → {cover.category}</span>
+                  </li>
+                )
+              })}
+            </ul>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Nenhum lançamento muda de categoria.</p>
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" onClick={() => setCleanOpen(false)} disabled={hygieneBusy} className="flex-1">Cancelar</Button>
+              <Button variant="destructive" onClick={confirmClean} disabled={hygieneBusy} className="flex-1">{hygieneBusy ? 'Excluindo...' : `Excluir ${redundant.size}`}</Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
