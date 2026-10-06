@@ -19,6 +19,7 @@ import { PAIRING_TOLERANCE_DAYS } from '@/lib/internal-counterpart'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { cn } from '@/lib/utils'
+import { toLocalISO } from '@/utils/local-date'
 
 const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 const fmtDate = (d: string) => format(new Date(`${d}T00:00:00`), "dd 'de' MMM yyyy", { locale: ptBR })
@@ -374,7 +375,7 @@ function LateCreditsCard({ groups, name, onRemove }: {
                 <div key={c.id} className="px-3 py-1.5 flex items-center gap-3 text-xs">
                   <span className="w-16 shrink-0 text-slate-400">{fmtShort(c.date)}</span>
                   <span className="flex-1 min-w-0 truncate">{c.description}</span>
-                  <span className="shrink-0 text-[11px] text-slate-400 hidden sm:inline">lançada em {c.created_at ? fmtShort(c.created_at.slice(0, 10)) : '—'}</span>
+                  <span className="shrink-0 text-[11px] text-slate-400 hidden sm:inline">lançada em {c.created_at ? fmtShort(toLocalISO(new Date(c.created_at))) : '—'}</span>
                   <span className="shrink-0 tabular-nums font-medium">{fmt(Number(c.amount))}</span>
                 </div>
               ))}
@@ -556,7 +557,7 @@ function AdjustmentsPage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-slate-700 dark:text-slate-200 truncate">&ldquo;{a.keyword}&rdquo; — {name(a.originBoardId)} → {name(a.targetBoardId)}</p>
                   <p className="text-xs text-slate-400">
-                    {fmtDate(a.appliedAt.slice(0, 10))} · {plural(a.marked + a.paired, 'lançamento', 'lançamentos')} fora das somas
+                    {fmtDate(toLocalISO(new Date(a.appliedAt)))} · {plural(a.marked + a.paired, 'lançamento', 'lançamentos')} fora das somas
                     {a.sides && a.sides !== 'both' ? ` · não soma: ${a.sides === 'out' ? 'só a saída' : 'só a entrada'}` : ''}
                   </p>
                 </div>
