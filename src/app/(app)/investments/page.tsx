@@ -298,7 +298,8 @@ function InvestmentsPage() {
             aportesOnlyCount={aportesOnly.length}
             contributions={monthlyContributions}
             target={investTarget}
-            income={monthIncome}
+            // Mesma base do Dashboard: renda prevista do Planejamento, se houver.
+            income={(plan?.expected_income ?? 0) > 0 ? plan!.expected_income : monthIncome}
             goal={linkedGoal}
           />
 

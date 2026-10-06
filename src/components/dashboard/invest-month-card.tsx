@@ -28,6 +28,8 @@ function calcTargetFromPct(income: number, pct: number) {
 
 interface InvestMonthCardProps {
   monthlyIncome: number
+  /** Renda prevista do Planejamento. Quando existe, é a base do percentual. */
+  plannedIncome?: number
   investmentTarget: number
   actualContributions?: number
   loading?: boolean
@@ -38,6 +40,7 @@ interface InvestMonthCardProps {
 
 export function InvestMonthCard({
   monthlyIncome,
+  plannedIncome = 0,
   investmentTarget,
   actualContributions = 0,
   loading,
@@ -50,7 +53,12 @@ export function InvestMonthCard({
   const [saveError, setSaveError] = useState('')
 
   const hasPlan = investmentTarget > 0
-  const incomeBase = monthlyIncome > 0 ? monthlyIncome : 0
+  // Base do percentual: a renda prevista do Planejamento, quando definida — é
+  // sobre ela que a meta foi montada (10% de R$ 11.000). Antes usava só o que
+  // já tinha entrado no mês e, no início do mês, os 10% viravam "16%".
+  const usesPlannedIncome = plannedIncome > 0
+  const incomeBase = usesPlannedIncome ? plannedIncome : monthlyIncome > 0 ? monthlyIncome : 0
+  const incomeLabel = usesPlannedIncome ? 'renda prevista' : 'receita do mês'
   const pct =
     incomeBase > 0 && hasPlan ? Math.round((investmentTarget / incomeBase) * 100) : null
   const contributionPct =
@@ -118,7 +126,7 @@ export function InvestMonthCard({
           </div>
           <div className="flex items-center gap-2">
             {hasPlan && pct != null && (
-              <span className="text-xs font-bold bg-white/15 px-2 py-1 rounded-lg">{pct}% da receita</span>
+              <span className="text-xs font-bold bg-white/15 px-2 py-1 rounded-lg">{pct}% da {usesPlannedIncome ? 'renda' : 'receita'}</span>
             )}
             {onSaveTarget && (
               <button
@@ -139,7 +147,7 @@ export function InvestMonthCard({
             <p className="text-xs text-white/70 mt-1">
               {pct != null ? (
                 <>
-                  {pct}% × receita do mês
+                  {pct}% × {incomeLabel}
                   {incomeBase > 0 && <> ({formatDashboardCurrency(incomeBase)})</>}
                 </>
               ) : (
@@ -193,14 +201,16 @@ export function InvestMonthCard({
           <DialogHeader>
             <DialogTitle>Meta de investimento</DialogTitle>
             <DialogDescription>
-              Percentual da receita do mês selecionado no dashboard.
+              {usesPlannedIncome
+                ? 'Percentual da renda prevista no Planejamento deste mês.'
+                : 'Percentual da receita do mês selecionado no dashboard.'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 pt-1">
             <div>
               <Label htmlFor="invest-pct" className="text-xs text-slate-500">
-                % da receita a investir
+                % da {usesPlannedIncome ? 'renda' : 'receita'} a investir
               </Label>
               <div className="flex items-center gap-2 mt-1.5">
                 <Input
@@ -237,7 +247,7 @@ export function InvestMonthCard({
             <div className="rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.06] p-3 text-sm">
               {incomeBase > 0 ? (
                 <>
-                  <p className="text-slate-500 dark:text-slate-400 text-xs mb-1">Receita do mês</p>
+                  <p className="text-slate-500 dark:text-slate-400 text-xs mb-1">{usesPlannedIncome ? 'Renda prevista' : 'Receita do mês'}</p>
                   <p className="font-semibold text-slate-800 dark:text-slate-100 tabular-nums">
                     {formatDashboardCurrency(incomeBase)}
                   </p>
