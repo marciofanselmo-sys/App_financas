@@ -9,7 +9,7 @@ interface Props {
   hasTransactions: boolean
   hasBoards: boolean
   pendingRecurring: number
-  activeInstallments: number
+  confirmedRecurring: number
 }
 
 interface Action {
@@ -20,7 +20,7 @@ interface Action {
   done: boolean
 }
 
-export function NextActionCard({ hasTransactions, hasBoards, pendingRecurring, activeInstallments }: Props) {
+export function NextActionCard({ hasTransactions, hasBoards, pendingRecurring, confirmedRecurring }: Props) {
   const now = new Date()
   const { goals } = useGoals()
   const { plan } = useBudgetPlan(now.getMonth() + 1, now.getFullYear())
@@ -67,7 +67,10 @@ export function NextActionCard({ hasTransactions, hasBoards, pendingRecurring, a
       label: 'Confirmar recorrências',
       description: 'Revise e confirme os gastos fixos detectados automaticamente.',
       href: '/fixos',
-      done: pendingRecurring === 0 && activeInstallments > 0,
+      // Feito quando já confirmou algum fixo (ou não há nada a revisar). Antes
+      // exigia decidir TODOS os candidatos e ter parcela ativa — com 13 fixos
+      // confirmados o passo continuava pendente.
+      done: confirmedRecurring > 0 || (hasTransactions && pendingRecurring === 0),
     },
   ]
 

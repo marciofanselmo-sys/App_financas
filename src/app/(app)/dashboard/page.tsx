@@ -437,10 +437,11 @@ export default function DashboardPage() {
       {/* Primeiros passos */}
       {!loading && !boardsLoading && !recurringLoading && !decisionsLoading && (
         <NextActionCard
-          hasTransactions={transactions.length > 0}
+          // Qualquer lançamento no histórico, não só no mês aberto.
+          hasTransactions={transactions.length > 0 || allTransactions.length > 0}
           hasBoards={boards.length > 0}
           pendingRecurring={pendingRecurringCount}
-          activeInstallments={activeInstallments.length}
+          confirmedRecurring={confirmedRecurring.length}
         />
       )}
 
