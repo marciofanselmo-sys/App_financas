@@ -139,7 +139,13 @@ export function MonthCalendar({ despesas, receitas, installments }: {
   ]
   const weeks = WEEKS.map(([a, b]) => {
     const list = all.filter(i => i.day >= a && i.day <= b).sort((x, y) => y.value - x.value)
-    return { a, b, list, out: list.filter(i => i.out).reduce((s, i) => s + i.value, 0) }
+    return {
+      a, b, list,
+      out: list.filter(i => i.out).reduce((s, i) => s + i.value, 0),
+      // Entrada da semana também aparece: antes só a saída tinha valor e o chip
+      // verde "Salário" ficava ao lado de um número vermelho que não era dele.
+      inn: list.filter(i => !i.out).reduce((s, i) => s + i.value, 0),
+    }
   })
   const heavy = weeks.reduce((m, w) => (w.out > m.out ? w : m), weeks[0])
   return (
@@ -157,7 +163,10 @@ export function MonthCalendar({ despesas, receitas, installments }: {
                 </span>
               ))}
             </span>
-            <span className="text-xs font-bold tabular-nums text-red-500 shrink-0 pt-0.5">{w.out > 0 ? `−${fmt(w.out)}` : ''}</span>
+            <span className="flex flex-col items-end shrink-0 pt-0.5 text-xs font-bold tabular-nums">
+              {w.inn > 0 && <span className="text-green-600 dark:text-green-400">+{fmt(w.inn)}</span>}
+              {w.out > 0 && <span className="text-red-500">−{fmt(w.out)}</span>}
+            </span>
           </li>
         ))}
       </ul>
