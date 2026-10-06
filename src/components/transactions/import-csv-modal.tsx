@@ -86,6 +86,16 @@ interface PreviewRow {
   errors: string[]
 }
 
+/** Agrupa a revisão por descrição + tipo, mantendo a ordem de aparição. */
+function groupReviewItems(items: ReviewItem[]): ReviewItem[][] {
+  const map = new Map<string, ReviewItem[]>()
+  for (const it of items) {
+    const key = `${it.type}|${it.description}`
+    map.set(key, [...(map.get(key) ?? []), it])
+  }
+  return [...map.values()]
+}
+
 interface ReviewItem {
   id: string
   description: string
@@ -1349,11 +1359,16 @@ function shiftDays(date: string, days: number): string {
     setSavingReview(true)
     const supabase = createClient()
     const toUpdate = reviewItems.filter(item => reviewCategories[item.id] && reviewCategories[item.id] !== 'Outros')
+    const synced = new Set<string>()
     for (const item of toUpdate) {
       await supabase.from('transactions').update({ category: reviewCategories[item.id] }).eq('id', item.id)
       // Categoria normal: regra automática cuida de propagar pro histórico e
       // futuras importações (categoria especial nunca entra aqui). Transferência
       // também entra normalmente (decisão revertida em 2026-07-08).
+      // Uma vez por descrição: o grupo inteiro tem a mesma categoria.
+      const syncKey = `${item.description}|${reviewCategories[item.id]}`
+      if (synced.has(syncKey)) continue
+      synced.add(syncKey)
       const syncResult = await syncCategoryToRule(item.description, reviewCategories[item.id], categories)
       if (syncResult.error) console.error('[handleSaveReview] syncCategoryToRule falhou:', syncResult.error)
     }
@@ -1770,6 +1785,9 @@ function shiftDays(date: string, days: number): string {
                 <div>
                   <p className="font-semibold text-slate-800 dark:text-slate-100">
                     {reviewItems.length} transação{reviewItems.length > 1 ? 'ões' : ''} para revisar
+                    {groupReviewItems(reviewItems).length < reviewItems.length && (
+                      <span className="font-normal text-slate-400"> · {groupReviewItems(reviewItems).length} descrições</span>
+                    )}
                   </p>
                   <p className="text-xs text-slate-400 dark:text-slate-500">
                     Categorias sugeridas automaticamente — confirme ou ajuste
@@ -1805,8 +1823,15 @@ function shiftDays(date: string, days: number): string {
 
               {/* Lista de revisão */}
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                {reviewItems.map(item => {
-                  const isSuggested = reviewCategories[item.id] !== 'Outros'
+                {/* Agrupado por descrição: 6 "Tarifa Pacote" viram uma linha só, e
+                    escolher a categoria vale para todas elas. */}
+                {groupReviewItems(reviewItems).map(group => {
+                  const item = group[0]
+                  const ids = group.map(g => g.id)
+                  const current = reviewCategories[item.id] ?? 'Outros'
+                  const isSuggested = current !== 'Outros'
+                  const total = group.reduce((sum, g) => sum + g.amount, 0)
+                  const dates = group.map(g => g.date).sort()
                   return (
                     <div key={item.id} className={`flex items-center gap-3 p-3 rounded-xl border ${
                       isSuggested
@@ -1815,12 +1840,14 @@ function shiftDays(date: string, days: number): string {
                     }`}>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{item.description}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           <span className={`text-xs ${item.type === 'receita' ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>
-                            {fmt(item.amount)}
+                            {fmt(total)}
                           </span>
-                          <span className="text-xs text-slate-400">· {item.date}</span>
-                          {installmentLabel(item) && (
+                          <span className="text-xs text-slate-400">
+                            · {group.length > 1 ? `${group.length}× · ${dates[0]} a ${dates[dates.length - 1]}` : item.date}
+                          </span>
+                          {group.length === 1 && installmentLabel(item) && (
                             <span className="text-xs text-slate-400">· Parcela {installmentLabel(item)}</span>
                           )}
                           {isSuggested && (
@@ -1832,12 +1859,14 @@ function shiftDays(date: string, days: number): string {
                       </div>
                       {(() => {
                         const usable = categoriesForDate(categories, item.date).filter(c => c.type === item.type || c.type === 'ambos')
-                        const current = reviewCategories[item.id] ?? 'Outros'
                         return (
                           <div className="flex items-center gap-1.5 shrink-0">
                             <Select
                               value={current}
-                              onValueChange={v => { if (v) setReviewCategories(prev => ({ ...prev, [item.id]: v })) }}
+                              onValueChange={v => {
+                                if (!v) return
+                                setReviewCategories(prev => ({ ...prev, ...Object.fromEntries(ids.map(id => [id, v])) }))
+                              }}
                             >
                               <SelectTrigger className="h-8 text-xs w-40">
                                 <SelectValue placeholder="Categoria" />
