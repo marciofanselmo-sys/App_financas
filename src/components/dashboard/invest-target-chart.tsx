@@ -40,8 +40,13 @@ export function InvestTargetChart({ data, loading }: InvestTargetChartProps) {
   if (!hasData) return null
 
   const totalAportes = series.reduce((s, d) => s + d.aportes, 0)
-  const totalMeta = series.reduce((s, d) => s + (d.meta ?? 0), 0)
-  const pct = totalMeta > 0 ? Math.round((totalAportes / totalMeta) * 100) : null
+  // O percentual compara só os meses que TÊM meta: antes o aporte dos 6 meses
+  // era dividido pela meta de um mês só (o único com plano) e dava "909%".
+  const withMeta = series.filter(d => d.meta !== null && d.meta > 0)
+  const totalMeta = withMeta.reduce((s, d) => s + (d.meta ?? 0), 0)
+  const aportesWithMeta = withMeta.reduce((s, d) => s + d.aportes, 0)
+  const pct = totalMeta > 0 ? Math.round((aportesWithMeta / totalMeta) * 100) : null
+  const allMonthsHaveMeta = withMeta.length === series.length
 
   return (
     <div className="nobli-card overflow-hidden">
@@ -56,12 +61,16 @@ export function InvestTargetChart({ data, loading }: InvestTargetChartProps) {
         <div className="text-right">
           <p className="text-lg font-bold tabular-nums text-[#0B2D6B] dark:text-slate-100">
             {formatChartCurrency(totalAportes)}
-            {totalMeta > 0 && (
+            {totalMeta > 0 && allMonthsHaveMeta && (
               <span className="text-xs font-medium text-slate-400"> de {formatChartCurrency(totalMeta)}</span>
             )}
           </p>
           <p className="text-[11px] text-slate-400 dark:text-slate-500">
-            {pct !== null ? `${pct}% da meta no período` : 'aportado no período'}
+            {pct === null
+              ? 'aportado no período'
+              : allMonthsHaveMeta
+                ? `${pct}% da meta no período`
+                : `aportado em 6 meses · ${pct}% da meta ${withMeta.length === 1 ? 'no mês com meta' : `nos ${withMeta.length} meses com meta`}`}
           </p>
         </div>
       </div>

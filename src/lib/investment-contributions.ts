@@ -7,34 +7,40 @@ export function sumInvestmentContributions(
   boards: TransactionBoard[],
 ): number {
   const investmentIds = new Set(boards.filter(b => b.is_investment).map(b => b.id))
-  const investmentNames = boards
-    .filter(b => b.is_investment)
-    .map(b => b.name.toLowerCase().trim())
-    .filter(n => n.length >= 2)
 
-  const matches = transactions.filter(t => {
+  // Para cada lançamento, a conta de investimento que recebeu o dinheiro.
+  const destinationOf = (t: Transaction): string | null => {
     // Aporte é dinheiro CHEGANDO na conta de investimento, ou saindo de outra
     // conta em direção a ela. Resgate (o contrário) não conta.
-    if (t.board_id && investmentIds.has(t.board_id)) return t.type === 'receita'
+    if (t.board_id && investmentIds.has(t.board_id)) return t.type === 'receita' ? t.board_id : null
+    if (t.type !== 'despesa') return null
     // Saída ligada a uma conta de investimento pela regra "Entre minhas
     // contas" (ex.: "ENVIO DE TED TRANSF" do C6 → RICO). É o critério certo;
     // o do nome no texto abaixo fica para quem ainda não configurou.
-    if (t.type === 'despesa' && t.counterpart_board_id && investmentIds.has(t.counterpart_board_id)) return true
+    if (t.counterpart_board_id && investmentIds.has(t.counterpart_board_id)) return t.counterpart_board_id
     const desc = t.description.toLowerCase()
-    return t.type === 'despesa' && investmentNames.some(name => desc.includes(name))
-  })
-
-  const seen = new Set<string>()
-  let total = 0
-  for (const t of matches) {
-    // A chave inclui a conta: dois aportes de R$ 500 no mesmo dia, em
-    // corretoras diferentes, tinham a mesma chave e um deles era descartado
-    // como se fosse a outra perna do mesmo movimento. (14.18)
-    const key = `${t.date}|${Number(t.amount)}|${t.board_id ?? 'sem-conta'}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    total += Number(t.amount)
+    const byName = boards.find(b => b.is_investment && b.name.trim().length >= 2 && desc.includes(b.name.toLowerCase().trim()))
+    return byName ? byName.id : null
   }
+
+  // Um aporte aparece duas vezes: a saída na conta corrente e a entrada na
+  // corretora (do extrato dela ou criada pelo app). Antes a chave usava a
+  // conta de cada lado e o mesmo aporte somava em dobro. Agora a chave é a
+  // conta de DESTINO — igual nos dois lados — e cada chave vale o maior número
+  // entre saídas e entradas: o par conta uma vez, dois aportes iguais no mesmo
+  // dia contam dois, e corretoras diferentes seguem separadas (14.18).
+  const groups = new Map<string, { amount: number; out: number; in: number }>()
+  for (const t of transactions) {
+    const dest = destinationOf(t)
+    if (!dest) continue
+    const key = `${t.date}|${Number(t.amount)}|${dest}`
+    const g = groups.get(key) ?? { amount: Number(t.amount), out: 0, in: 0 }
+    if (t.type === 'receita') g.in++
+    else g.out++
+    groups.set(key, g)
+  }
+  let total = 0
+  for (const g of groups.values()) total += g.amount * Math.max(g.out, g.in)
   return total
 }
 
