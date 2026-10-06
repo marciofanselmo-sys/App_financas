@@ -30,6 +30,8 @@ interface FormState {
 
 const EMPTY: FormState = { keyword: '', matchType: 'contains', scope: '', target: '', requirePair: false, sides: 'both' }
 
+const brl = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
+
 const SIDE_LABELS: Record<PairSides, string> = {
   both: 'A saída e a entrada',
   out: 'Só a saída (a entrada é receita)',
@@ -54,7 +56,10 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<CategorizationRule | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY)
-  const [preview, setPreview] = useState<{ count: number; skipped: number; paired: number } | null>(null)
+  const [preview, setPreview] = useState<{ count: number; skipped: number; paired: number; missingLegs: number; missingLegsTotal: number } | null>(null)
+  // Lançar no destino os pagamentos já importados que não chegaram lá. Muda o
+  // saldo do destino, por isso nasce desmarcado e só vale se o usuário marcar.
+  const [addLegs, setAddLegs] = useState(false)
   const [saving, setSaving] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<CategorizationRule | null>(null)
@@ -75,18 +80,19 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
         { keyword, match_type: form.matchType, scope_board_id: form.scope || null, target_board_id: form.target || null, require_pair: !!form.target && form.requirePair, pair_sides: form.target ? form.sides : 'both' },
         { dryRun: true },
       )
-      if (!cancelled) setPreview(r.error ? null : { count: r.count, skipped: r.skipped ?? 0, paired: r.paired })
+      if (!cancelled) setPreview(r.error ? null : { count: r.count, skipped: r.skipped ?? 0, paired: r.paired, missingLegs: r.missingLegs ?? 0, missingLegsTotal: r.missingLegsTotal ?? 0 })
     }, 400)
     return () => { cancelled = true; clearTimeout(t) }
   }, [formOpen, form.keyword, form.matchType, form.scope, form.target, form.requirePair, form.sides])
 
   function openCreate() {
-    setEditing(null); setForm(EMPTY); setPreview(null); setFormOpen(true)
+    setEditing(null); setForm(EMPTY); setPreview(null); setAddLegs(false); setFormOpen(true)
   }
   function openEdit(r: CategorizationRule) {
     setEditing(r)
     setForm({ keyword: r.keyword, matchType: r.match_type, scope: r.scope_board_id ?? '', target: r.target_board_id ?? '', requirePair: !!r.require_pair, sides: r.pair_sides ?? 'both' })
     setPreview(null)
+    setAddLegs(false)
     setFormOpen(true)
   }
 
@@ -125,7 +131,8 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
         return
       }
     }
-    const applied = await applyInternalRule(fields)
+    const legsOffered = !!form.target && form.sides === 'both' && !form.requirePair && (preview?.missingLegs ?? 0) > 0
+    const applied = await applyInternalRule(fields, { withMissingLegs: legsOffered && addLegs })
     setSaving(false)
     setFormOpen(false)
     setResult(applied)
@@ -275,7 +282,7 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
                 </SelectContent>
               </Select>
               <p className="text-[11px] text-slate-400">
-                Escolhendo o cartão, as próximas importações registram o pagamento nele também — assim a fatura aparece como paga. Salvar a regra só marca o que já existe; nenhum saldo muda.
+                Escolhendo o cartão, as próximas importações registram o pagamento nele também — assim a fatura aparece como paga. Salvar a regra só marca o que já existe; nenhum saldo muda, a não ser que você marque a opção de lançar os pagamentos já importados.
               </p>
             </div>
 
@@ -320,6 +327,25 @@ export function InternalRulesSection({ rules, boards, createRule, updateRule, de
                   </span>
                 )}
               </p>
+            )}
+
+            {form.target && form.sides === 'both' && !form.requirePair && preview !== null && preview.missingLegs > 0 && (
+              <label className="flex items-start gap-2.5 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={addLegs}
+                  onChange={e => setAddLegs(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-blue-600"
+                />
+                <span className="text-xs text-slate-700 dark:text-slate-200">
+                  <strong className="font-semibold">
+                    Lançar em {targetItems[form.target]} os {preview.missingLegs} pagamento{preview.missingLegs === 1 ? '' : 's'} já importado{preview.missingLegs === 1 ? '' : 's'} ({brl(preview.missingLegsTotal)})
+                  </strong>
+                  <span className="block text-slate-500 dark:text-slate-400 mt-0.5">
+                    Eles saíram desta conta mas não aparecem lá, então a fatura continua como não paga. Marcando, o saldo de {targetItems[form.target]} sobe nesse valor; gastos e relatórios não mudam. Se você já acertou o saldo inicial dessa conta para compensar, não marque.
+                  </span>
+                </span>
+              </label>
             )}
 
             <div className="flex gap-2 pt-2">

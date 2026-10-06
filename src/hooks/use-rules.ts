@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Category, TransactionType } from '@/types'
 import { isCategoryUsableForDate } from '@/lib/special-category-filter'
-import { findPairedEntry } from '@/lib/internal-counterpart'
+import { findPairedEntry, buildCounterpartLeg } from '@/lib/internal-counterpart'
 
 export type MatchType = 'contains' | 'starts_with' | 'ends_with' | 'exact'
 
@@ -273,6 +273,8 @@ export interface InternalApplyResult {
   paired: number   // entradas do banco no destino que passaram a não somar
   restored?: number // lançamentos do lado NÃO escolhido que voltaram a somar
   legs: number     // entradas criadas pelo app no destino (banco não lança)
+  missingLegs?: number      // pagamentos já importados sem a entrada no destino (só com fatura no período)
+  missingLegsTotal?: number // soma desses pagamentos
   error?: string
   undo?: InternalUndo
 }
@@ -299,7 +301,7 @@ export interface InternalApplyResult {
  */
 export async function applyInternalRule(
   rule: InternalRuleFields,
-  opts: { dryRun?: boolean } = {},
+  opts: { dryRun?: boolean; withMissingLegs?: boolean } = {},
 ): Promise<InternalApplyResult> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -346,6 +348,20 @@ export async function applyInternalRule(
   const entriesToClear: TxForInternal[] = []
   const unpaired: TxForInternal[] = []
   const isMarked = (t: TxForInternal) => !!t.is_internal || !!t.counterpart_board_id
+  // Pagamentos do histórico que a importação teria creditado no destino se a
+  // regra já existisse (fatura do C6, que não traz o pagamento). Só entram os
+  // que têm compra no destino nos 45 dias antes — pagamento de fatura cujas
+  // compras nunca foram importadas deixaria o cartão positivo (30/09/2026).
+  const destPurchaseDates = target
+    ? destTxs.filter(t => t.type === 'despesa').map(t => t.date).sort()
+    : []
+  const hasPurchaseBefore = (date: string) => {
+    const from = new Date(`${date}T12:00:00`)
+    from.setDate(from.getDate() - 45)
+    const fromIso = from.toISOString().slice(0, 10)
+    return destPurchaseDates.some(d => d >= fromIso && d < date)
+  }
+  const missingLegs: TxForInternal[] = []
   for (const t of withTarget) {
     // Já ligado a OUTRA conta (ex.: o usuário marcou à mão "Aporte em Binance"
     // num TED que a regra da RICO também pegaria): a escolha dele vale mais.
@@ -363,11 +379,16 @@ export async function applyInternalRule(
       unpaired.push(t)
     } else if (markOut) {
       outsToMark.push(t)
+      if (sides === 'both' && t.type === 'despesa' && hasPurchaseBefore(t.date)) missingLegs.push(t)
     }
   }
   const count = plain.length + outsToMark.length
   const restored = outsToClear.length + entriesToClear.length
-  const summary = { count, skipped: unpaired.length, paired: entriesToMark.length, restored, legs: 0 }
+  const missingLegsTotal = missingLegs.reduce((s, t) => s + Number(t.amount), 0)
+  const summary = {
+    count, skipped: unpaired.length, paired: entriesToMark.length, restored, legs: 0,
+    missingLegs: missingLegs.length, missingLegsTotal,
+  }
 
   if (opts.dryRun || count + entriesToMark.length + restored === 0) return summary
 
@@ -392,6 +413,20 @@ export async function applyInternalRule(
   if (e) return failed('Não deu para voltar a somar as saídas', e.message)
   e = await write(entriesToClear, { is_internal: false })
   if (e) return failed('Não deu para voltar a somar as entradas', e.message)
+
+  // Só quando o usuário pede, na própria tela da regra: lança no destino a
+  // entrada que faltava, igual à importação faz. Muda o saldo do destino.
+  if (opts.withMissingLegs && missingLegs.length > 0 && target) {
+    const legs = missingLegs.map(t => buildCounterpartLeg(
+      { id: t.id, description: t.description, amount: Number(t.amount), date: t.date, type: t.type, category: t.category, counterpartBoardId: target },
+      user.id,
+      crypto.randomUUID(),
+    ))
+    const { error: legError } = await supabase.from('transactions').insert(legs)
+    if (legError) return failed('Saídas marcadas, mas não deu para lançar os pagamentos no destino', legError.message)
+    undo.legIds.push(...legs.map(l => l.id as string))
+    return { ...summary, legs: legs.length, undo }
+  }
 
   return { ...summary, undo }
 }
