@@ -17,7 +17,9 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
   Educação: ['escola', 'faculdade', 'universidade', 'curso', 'livro', 'mensalidade', 'colegio', 'colégio', 'educacao', 'educação', 'alura', 'udemy', 'coursera', 'material escolar'],
   Lazer: ['cinema', 'teatro', 'show', 'ingresso', 'netflix', 'spotify', 'prime video', 'disney', 'hbo', 'clube', 'viagem', 'hotel', 'airbnb', 'booking', 'passagem aerea', 'aérea', 'latam', 'gol ', 'azul ', 'decathlon', 'esporte', 'jogo', 'game'],
   Salário: ['salario', 'salário', 'pagamento sal', 'folha', 'remuneracao', 'remuneração', 'pro-labore', 'prolabore'],
-  Freelance: ['freelance', 'honorario', 'honorário', 'servico prestado', 'serviço prestado', 'consultoria', 'autonomo', 'autônomo', 'pix recebido', 'transferencia recebida'],
+  // "pix recebido" e "transferencia recebida" saíram daqui: Pix de familiar ou
+  // da própria conta virava Freelance (ex.: o cônjuge mandando dinheiro).
+  Freelance: ['freelance', 'honorario', 'honorário', 'servico prestado', 'serviço prestado', 'consultoria', 'autonomo', 'autônomo'],
   Outros: [],
 }
 
@@ -79,15 +81,28 @@ function cleanDescription(raw: string): string {
   return s || raw
 }
 
+const stripAccents = (v: string) => v.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+const escapeRegex = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+// A palavra-chave precisa começar uma palavra: "tim" (a operadora) casava no
+// meio de "inves-TIM-entos" e mandava aplicação para Moradia. Palavra-chave
+// com espaço no fim ("bar ", "oi ") também precisa terminar a palavra.
+function hasKeyword(text: string, keyword: string): boolean {
+  const kw = stripAccents(keyword.toLowerCase())
+  const word = escapeRegex(kw.trim())
+  const end = kw.endsWith(' ') ? '(?![a-z0-9])' : ''
+  return new RegExp(`(?:^|[^a-z0-9])${word}${end}`).test(text)
+}
+
 function guessCategory(description: string, type: TransactionType): string {
-  const lower = description.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  const lower = stripAccents(description.toLowerCase())
 
   if (type === 'receita') {
     for (const kw of CATEGORY_KEYWORDS['Salário']) {
-      if (lower.includes(kw.normalize('NFD').replace(/[̀-ͯ]/g, ''))) return 'Salário'
+      if (hasKeyword(lower, kw)) return 'Salário'
     }
     for (const kw of CATEGORY_KEYWORDS['Freelance']) {
-      if (lower.includes(kw.normalize('NFD').replace(/[̀-ͯ]/g, ''))) return 'Freelance'
+      if (hasKeyword(lower, kw)) return 'Freelance'
     }
     return 'Outros'
   }
@@ -95,9 +110,7 @@ function guessCategory(description: string, type: TransactionType): string {
   for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
     if (cat === 'Salário' || cat === 'Freelance' || cat === 'Outros') continue
     for (const kw of keywords) {
-      if (lower.includes(kw.normalize('NFD').replace(/[̀-ͯ]/g, '').trim())) {
-        return cat
-      }
+      if (hasKeyword(lower, kw)) return cat
     }
   }
 
