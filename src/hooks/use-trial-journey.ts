@@ -68,4 +68,14 @@ export function useTrialJourneySync(inTrial: boolean) {
     }
     void sincronizarJornada()
   }, [inTrial, pathname])
+
+  // Tarefa feita sem trocar de tela (criar a conta, salvar o planejamento):
+  // confere de novo a cada 45s enquanto a aba está aberta e visível.
+  useEffect(() => {
+    if (!inTrial) return
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') void sincronizarJornada()
+    }, 45_000)
+    return () => clearInterval(id)
+  }, [inTrial])
 }
