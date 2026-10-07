@@ -1,5 +1,6 @@
 'use client'
 
+import { useTrial } from '@/hooks/use-trial'
 import { useSubscription, checkoutUrl } from '@/hooks/use-subscription'
 import { PAID_TIERS, PLANS, PlanTier } from '@/lib/plans'
 import { PlanCard, ctaClasses } from '@/components/plan/plan-card'
@@ -27,7 +28,8 @@ const STATUS_TEXTO: Record<string, { texto: string; cor: string }> = {
 const dataBR = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/')
 
 export default function AssinaturaPage() {
-  const { subscription, status, tier, userId, loading } = useSubscription()
+  const { subscription, status, tier, userId, loading, inTrial } = useSubscription()
+  const { endsAt } = useTrial()
 
   if (loading) {
     return (
@@ -55,10 +57,19 @@ export default function AssinaturaPage() {
         <div className="flex items-center gap-3 flex-wrap">
           <Crown className="h-5 w-5 text-blue-600 dark:text-blue-400" />
           <span className="font-semibold text-slate-800 dark:text-slate-100">
-            Plano {PLANS[tier].label}
+            {inTrial ? 'Teste grátis do NOBLI' : `Plano ${PLANS[tier].label}`}
           </span>
-          <Badge className={cn('text-xs border-0', info.cor)}>{info.texto}</Badge>
+          {inTrial
+            ? <Badge className="text-xs border-0 bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">Em andamento</Badge>
+            : <Badge className={cn('text-xs border-0', info.cor)}>{info.texto}</Badge>}
         </div>
+
+        {inTrial && endsAt && (
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Seu teste termina em <strong>{endsAt.toLocaleDateString('pt-BR')} às {endsAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</strong>.
+            Depois disso a conta volta ao plano Grátis, sem apagar nada. Assine para manter tudo liberado.
+          </p>
+        )}
 
         {status === 'past_due' && (
           <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-xl p-3">
@@ -76,7 +87,8 @@ export default function AssinaturaPage() {
           </p>
         )}
 
-        {subscription?.customer_email && (
+        {/* Só quem comprou tem compra registrada — no teste e no Grátis não aparece. */}
+        {tier !== 'free' && subscription?.customer_email && (
           <p className="text-xs text-slate-400 dark:text-slate-500">
             Compra registrada no e-mail {subscription.customer_email}
           </p>

@@ -1,6 +1,7 @@
 'use client'
 
 import { withPlan } from '@/components/plan/with-plan'
+import { useVitrine } from '@/components/plan/vitrine'
 import { PlanGate } from '@/components/plan/plan-gate'
 import Link from 'next/link'
 import { usePlan } from '@/hooks/use-subscription'
@@ -1623,8 +1624,11 @@ function InvestmentsReport({ year, boardId }: { year: number; boardId: string })
 // ── Página principal ──────────────────────────────────────────────────────────
 function ReportsPage() {
   const [type, setType] = useState<ReportType>('mensal')
-  const [month, setMonth] = useState(now.getMonth() + 1)
-  const [year, setYear] = useState(now.getFullYear())
+  // Em vitrine (sem o plano), abre no último mês fechado: o mês corrente
+  // costuma estar pela metade.
+  const vitrine = useVitrine()
+  const [month, setMonth] = useState(vitrine.ativo ? vitrine.mes : now.getMonth() + 1)
+  const [year, setYear] = useState(vitrine.ativo ? vitrine.ano : now.getFullYear())
   const [boardId, setBoardId] = useState<string>('all')
 
   const { boards } = useTransactionBoards()

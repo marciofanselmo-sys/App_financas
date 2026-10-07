@@ -11,6 +11,7 @@ export type ProductEvent =
   | 'teste_inicio'          // começou o teste de 7 dias (gravado pelo servidor)
   | 'resumo_visto'          // abriu "Seu mês em números" (tarefa 4 da jornada)
   | 'visita'                // abriu o app no dia (key = AAAA-MM-DD; tarefa 10)
+  | 'vitrine_clique'        // clicou num cadeado da vitrine (key = recurso)
 
 /** O que já foi enviado nesta aba — evita ir ao banco a cada clique. */
 const sent = new Set<string>()

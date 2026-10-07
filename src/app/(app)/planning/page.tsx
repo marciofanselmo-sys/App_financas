@@ -1,6 +1,7 @@
 'use client'
 
 import { withPlan } from '@/components/plan/with-plan'
+import { useVitrine } from '@/components/plan/vitrine'
 
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { useTransactions } from '@/hooks/use-transactions'
@@ -239,8 +240,11 @@ function MobileRow({ label, planned, actual, actualClass, higherIsBetter = false
 
 function PlanningPage() {
   const now = new Date()
-  const [month, setMonth] = useState(now.getMonth() + 1)
-  const [year, setYear] = useState(now.getFullYear())
+  // Em vitrine (sem o plano), abre no último mês fechado: o mês corrente
+  // costuma estar pela metade.
+  const vitrine = useVitrine()
+  const [month, setMonth] = useState(vitrine.ativo ? vitrine.mes : now.getMonth() + 1)
+  const [year, setYear] = useState(vitrine.ativo ? vitrine.ano : now.getFullYear())
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [boardId, setBoardId] = useState('all')
