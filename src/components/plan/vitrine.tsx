@@ -54,7 +54,6 @@ const EXEMPLOS: Record<string, { img: string; tabela: string; investimento?: boo
   '/recurring':      { img: 'parcelas', tabela: 'transactions' },
   '/fixos':          { img: 'fixos', tabela: 'transactions' },
   '/settings/rules': { img: 'regras', tabela: 'categorization_rules' },
-  '/ajustes':        { img: 'ajustes', tabela: 'transactions' },
 }
 
 function useSemDados(tabela: string | undefined, investimento?: boolean) {
@@ -108,7 +107,7 @@ export function VitrineFrame({ feature, pitch, children }: { feature: Feature; p
       </div>
 
       {vazio && exemplo && imgOk && (
-        <figure className="max-w-6xl mx-auto mb-6 nobli-card overflow-hidden">
+        <figure className="max-w-[560px] mx-auto mb-6 nobli-card overflow-hidden">
           <figcaption className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-500 border-b border-[#DDE7F3] dark:border-white/[0.08]">
             <span className="rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300 px-2 py-0.5 font-bold uppercase tracking-wider text-[10px]">Exemplo</span>
             Família Almeida Souza · dados fictícios
