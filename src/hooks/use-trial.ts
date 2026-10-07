@@ -14,19 +14,26 @@ let cache: { trial: TrialRow | null; loading: boolean } = { trial: null, loading
 let pedido: Promise<void> | null = null
 const ouvintes = new Set<() => void>()
 const avisar = () => ouvintes.forEach(f => f())
+let seq = 0
 
 async function buscar() {
+  // A busca inicial da página pode terminar depois da que a jornada pediu ao
+  // ganhar horas; só a mais recente vale, senão o relógio volta ao valor velho.
+  const minha = ++seq
   try {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { cache = { trial: null, loading: false }; return }
+    if (minha !== seq) return
+    if (!user) { cache = { trial: null, loading: false }; avisar(); return }
     const { data } = await supabase
       .from('user_trials')
       .select('user_id, started_at, base_ends_at, bonus_hours, ended_seen_at')
       .eq('user_id', user.id)
       .maybeSingle()
+    if (minha !== seq) return
     cache = { trial: (data as TrialRow | null) ?? null, loading: false }
   } catch {
+    if (minha !== seq) return
     cache = { trial: null, loading: false }
   }
   avisar()
