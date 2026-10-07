@@ -18,8 +18,8 @@ const CORES = ['#2563EB', '#F97316', '#1E3A8A']
  * fechado organizado numa tela só (ou o mês atual, se o anterior está vazio).
  * Abrir conta como a tarefa 4.
  */
-export function MonthNumbersModal({ open, onClose, nome, onNext }: {
-  open: boolean; onClose: () => void; nome?: string; onNext?: () => void
+export function MonthNumbersModal({ open, onClose, nome, onNext, proximaLabel }: {
+  open: boolean; onClose: () => void; nome?: string; onNext?: () => void; proximaLabel?: string
 }) {
   const hoje = new Date()
   const ant = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1)
@@ -97,7 +97,7 @@ export function MonthNumbersModal({ open, onClose, nome, onNext }: {
             <button type="button" onClick={onClose} className="flex-1 rounded-xl border border-slate-200 dark:border-white/10 py-2.5 text-sm font-semibold text-slate-600 dark:text-slate-300">Fechar</button>
             {onNext && (
               <button type="button" onClick={onNext} className="flex-1 rounded-xl bg-blue-600 hover:bg-blue-700 text-white py-2.5 text-sm font-bold">
-                Próxima tarefa: confirmar meus fixos (+6h) →
+                {proximaLabel ?? 'Próxima tarefa: confirmar meus fixos (+6h) →'}
               </button>
             )}
           </div>

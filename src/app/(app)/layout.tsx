@@ -10,11 +10,14 @@ import { TrialToasts } from '@/components/trial/trial-toasts'
 import { TrialEndModal } from '@/components/trial/trial-end-modal'
 import { useTrialJourneySync } from '@/hooks/use-trial-journey'
 import { useSubscription } from '@/hooks/use-subscription'
+import { usePrimeirosPassosCandidato } from '@/hooks/use-primeiros-passos'
 
 function LayoutInner({ children }: { children: React.ReactNode }) {
   usePageTracker()
   const { inTrial } = useSubscription()
-  useTrialJourneySync(inTrial)
+  // Teste e primeiros passos usam a mesma lista de tarefas, conferida no servidor.
+  const passos = usePrimeirosPassosCandidato()
+  useTrialJourneySync(inTrial || passos)
   return (
     <div className="flex min-h-screen bg-background">
       <ErrorListener />

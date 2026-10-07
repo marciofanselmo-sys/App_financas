@@ -50,6 +50,7 @@ import { AppPageHeader } from '@/components/layout/app-page-header'
 import { useSubscription } from '@/hooks/use-subscription'
 import { useTrial } from '@/hooks/use-trial'
 import { TrialJourneyCard } from '@/components/trial/trial-journey-card'
+import { PrimeirosPassosCard } from '@/components/trial/primeiros-passos'
 import { TrialWelcome } from '@/components/trial/trial-welcome'
 
 const fmt = (v: number) =>
@@ -537,6 +538,8 @@ export default function DashboardPage() {
           </div>
         )
       })()}
+
+      <PrimeirosPassosCard />
     </div>
   )
 }

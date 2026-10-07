@@ -1,5 +1,6 @@
 'use client'
 
+import { PrimeirosPassosChip } from '@/components/trial/primeiros-passos'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -273,6 +274,8 @@ export function Sidebar() {
             active={pathname === '/admin'}
           />
         )}
+
+        <PrimeirosPassosChip />
 
         {/* Promo NOBLI — foto orbital da REF 01 com véu deep blue.
             Só aparece quando a altura comporta o card inteiro (evita clip). */}

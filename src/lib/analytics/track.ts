@@ -12,6 +12,7 @@ export type ProductEvent =
   | 'resumo_visto'          // abriu "Seu mês em números" (tarefa 4 da jornada)
   | 'visita'                // abriu o app no dia (key = AAAA-MM-DD; tarefa 10)
   | 'vitrine_clique'        // clicou num cadeado da vitrine (key = recurso)
+  | 'passos_ocultos'        // assinante ocultou os primeiros passos
 
 /** O que já foi enviado nesta aba — evita ir ao banco a cada clique. */
 const sent = new Set<string>()
