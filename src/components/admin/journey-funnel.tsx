@@ -28,6 +28,7 @@ export function JourneyFunnel({ users, refreshKey }: { users: AdminUser[]; refre
     const quem = (ev: string) => new Set((eventos.data ?? []).filter(e => e.event === ev && ids.has(e.user_id)).map(e => e.user_id)).size
     return [
       { label: 'Criaram conta no app', n: coorte.length },
+      { label: 'Começaram o teste de 7 dias', n: quem('teste_inicio') },
       { label: 'Criaram a 1ª conta ou cartão', n: quem('primeira_conta') },
       { label: 'Importaram o 1º extrato', n: quem('primeira_importacao') },
       { label: 'Abriram uma tela do plano pago', n: quem('bloqueio_visto') },

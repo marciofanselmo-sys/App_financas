@@ -8,6 +8,7 @@ export type ProductEvent =
   | 'primeira_conta'        // criou a primeira conta ou cartão
   | 'primeira_importacao'   // importou o primeiro extrato
   | 'bloqueio_visto'        // abriu uma tela do plano pago (key = recurso)
+  | 'teste_inicio'          // começou o teste de 7 dias (gravado pelo servidor)
 
 /** O que já foi enviado nesta aba — evita ir ao banco a cada clique. */
 const sent = new Set<string>()

@@ -40,6 +40,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/assets') ||
     // Links curtos de assinatura: quem vem do anúncio não tem sessão.
     pathname.startsWith('/assinar') ||
+    // Porta do teste grátis de 7 dias (leva ao cadastro).
+    pathname === '/teste' ||
     // Páginas de marketing servidas pelo projeto de aquisição.
     pathname.startsWith('/lp') ||
     pathname.startsWith('/quiz') ||

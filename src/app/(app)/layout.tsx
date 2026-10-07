@@ -5,6 +5,7 @@ import { ErrorListener } from '@/components/error-listener'
 import { MobileNav } from '@/components/layout/mobile-nav'
 import { EmailConfirmBanner } from '@/components/auth/email-confirm-banner'
 import { usePageTracker } from '@/hooks/use-page-tracker'
+import { TrialClock } from '@/components/trial/trial-clock'
 
 function LayoutInner({ children }: { children: React.ReactNode }) {
   usePageTracker()
@@ -16,6 +17,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
       </div>
       <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 min-w-0">
         <EmailConfirmBanner />
+        <TrialClock />
         {children}
       </main>
       <div className="print:hidden">

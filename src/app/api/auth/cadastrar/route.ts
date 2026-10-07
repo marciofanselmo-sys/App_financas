@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { enviarEmail } from '@/lib/email/send'
 import { emailBoasVindasCadastro } from '@/lib/email/templates'
+import { iniciarTeste, COOKIE_TESTE } from '@/lib/trial-server'
 
 /**
  * Cadastro no plano grátis.
@@ -67,11 +68,13 @@ export async function POST(req: NextRequest) {
   let email = ''
   let senha = ''
   let nome = ''
+  let teste = false
   try {
-    const body = await req.json() as { email?: string; senha?: string; nome?: string }
+    const body = await req.json() as { email?: string; senha?: string; nome?: string; teste?: boolean }
     email = (body.email ?? '').trim().toLowerCase()
     senha = body.senha ?? ''
     nome = (body.nome ?? '').trim()
+    teste = body.teste === true
   } catch {
     return NextResponse.json({ ok: false, motivo: 'dados-invalidos' }, { status: 400 })
   }
@@ -115,6 +118,15 @@ export async function POST(req: NextRequest) {
         { user_id: data.user.id, full_name: nome },
         { onConflict: 'user_id' },
       )
+    }
+
+    // Veio do /teste (pela URL ou pelo cookie que o /teste deixou): a conta já
+    // nasce com o teste de 7 dias. Falha aqui não derruba o cadastro.
+    const cookieTeste = req.cookies.get(COOKIE_TESTE)?.value
+    if (data.user && (teste || cookieTeste)) {
+      let origem: Record<string, string> = {}
+      try { origem = cookieTeste ? JSON.parse(cookieTeste) : {} } catch { origem = {} }
+      await iniciarTeste(admin, data.user.id, email, origem)
     }
 
     // Boas-vindas com o link de confirmação. Não bloqueia nada: a pessoa já

@@ -84,7 +84,8 @@ export default function RegisterPage() {
       const r = await fetch('/api/auth/cadastrar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nome: name.trim(), email, senha: password }),
+        // Veio do /teste: o servidor já cria a conta com o teste de 7 dias ativo.
+        body: JSON.stringify({ nome: name.trim(), email, senha: password, teste: new URLSearchParams(window.location.search).get('teste') === '1' }),
       })
       resposta = await r.json()
     } catch {
