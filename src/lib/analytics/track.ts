@@ -9,6 +9,8 @@ export type ProductEvent =
   | 'primeira_importacao'   // importou o primeiro extrato
   | 'bloqueio_visto'        // abriu uma tela do plano pago (key = recurso)
   | 'teste_inicio'          // começou o teste de 7 dias (gravado pelo servidor)
+  | 'resumo_visto'          // abriu "Seu mês em números" (tarefa 4 da jornada)
+  | 'visita'                // abriu o app no dia (key = AAAA-MM-DD; tarefa 10)
 
 /** O que já foi enviado nesta aba — evita ir ao banco a cada clique. */
 const sent = new Set<string>()

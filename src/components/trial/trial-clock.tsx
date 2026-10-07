@@ -17,7 +17,7 @@ const HORA = 60 * 60 * 1000
  */
 export function TrialClock() {
   const { trial, endsAt } = useTrial()
-  const { isPro, loading } = useSubscription()
+  const { inTrial, loading } = useSubscription()
   const [agora, setAgora] = useState<number | null>(null)
 
   useEffect(() => {
@@ -26,7 +26,7 @@ export function TrialClock() {
     return () => clearInterval(id)
   }, [])
 
-  if (!trial || !endsAt || loading || isPro || agora === null) return null
+  if (!trial || !endsAt || loading || !inTrial || agora === null) return null
   const restante = endsAt.getTime() - agora
   if (restante <= 0) return null
 

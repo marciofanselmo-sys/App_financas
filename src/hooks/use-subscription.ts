@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { logSafeError } from '@/lib/supabase-error'
-import { Feature, PLANS, PaidTier, PlanDefinition, PlanTier, tierFor } from '@/lib/plans'
+import { Feature, PLANS, PaidTier, PlanDefinition, PlanTier, TRIAL_PLAN, tierFor } from '@/lib/plans'
+import { useTrial } from '@/hooks/use-trial'
 
 export type SubscriptionStatus =
   | 'free' | 'active' | 'past_due' | 'canceled' | 'refunded' | 'chargeback'
@@ -48,13 +49,16 @@ export function useSubscription() {
 
   useEffect(() => { load() }, [load])
 
+  const trial = useTrial()
   const status = subscription?.status ?? 'free'
   const isPro = status === 'active' || status === 'past_due'
   const tier = tierFor(status, subscription?.plan)
-  const plan: PlanDefinition = PLANS[tier]
+  // Teste grátis em andamento (e sem assinatura): vale o plano de teste.
+  const inTrial = !isPro && trial.active
+  const plan: PlanDefinition = inTrial ? TRIAL_PLAN : PLANS[tier]
   const can = (feature: Feature) => plan.features[feature]
 
-  return { subscription, status, isPro, tier, plan, can, userId, loading, refetch: load }
+  return { subscription, status, isPro, inTrial, tier, plan, can, userId, loading: loading || trial.loading, refetch: load }
 }
 
 /** Atalho para telas que só precisam saber o que está liberado. */

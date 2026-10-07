@@ -47,6 +47,10 @@ import Link from 'next/link'
 import { OnboardingModal } from '@/components/onboarding-modal'
 import { NextActionCard } from '@/components/dashboard/next-action-card'
 import { AppPageHeader } from '@/components/layout/app-page-header'
+import { useSubscription } from '@/hooks/use-subscription'
+import { useTrial } from '@/hooks/use-trial'
+import { TrialJourneyCard } from '@/components/trial/trial-journey-card'
+import { TrialWelcome } from '@/components/trial/trial-welcome'
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -101,6 +105,8 @@ export default function DashboardPage() {
   const { goals, loading: goalsLoading } = useGoals()
   const { categories } = useCategories()
   const subcategoryNames = useSubcategoryNames()
+  const { inTrial, loading: subLoading } = useSubscription()
+  const { trial } = useTrial()
 
   // Pagamento de fatura e transferência entre as contas do usuário não são
   // gasto nem ganho — entram no saldo da conta, não no total do período.
@@ -225,11 +231,14 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
-      <OnboardingModal />
+      {/* Espera saber se é teste: senão o tour antigo pisca para quem está no teste */}
+      {subLoading ? null : inTrial ? <TrialWelcome userId={trial?.user_id ?? null} /> : <OnboardingModal />}
       <AppPageHeader
         title="Dashboard"
         subtitle="Patrimônio acumulado + fluxo do mês"
       />
+
+      {inTrial && <TrialJourneyCard />}
 
       <AdjustmentsBanner />
 

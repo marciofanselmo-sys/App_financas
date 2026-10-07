@@ -127,6 +127,20 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
 }
 
 /**
+ * Plano em vigor durante o teste grátis de 7 dias (decidido em 07/10/2026):
+ * o Grátis + as telas que as tarefas da jornada usam (fixos, planejamento,
+ * metas, regras/ajustes) e espaço para a 2ª conta com importação. Relatórios,
+ * investimentos e exportações seguem fechados (viram vitrine).
+ */
+export const TRIAL_PLAN: PlanDefinition = {
+  ...PLANS.free,
+  label: 'Teste',
+  maxBoards: 3,
+  importsPerMonth: 3,
+  features: { ...PLANS.free.features, rules: true, recurring: true, planning: true, goals: true },
+}
+
+/**
  * Primeiro dia do histórico visível, no formato que o banco entende
  * (`YYYY-MM-DD`). Conta do primeiro dia do mês atual para trás, para o recorte
  * não mudar no meio do mês: quem tem 6 meses em 30/09 continua vendo abril

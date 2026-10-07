@@ -6,9 +6,14 @@ import { MobileNav } from '@/components/layout/mobile-nav'
 import { EmailConfirmBanner } from '@/components/auth/email-confirm-banner'
 import { usePageTracker } from '@/hooks/use-page-tracker'
 import { TrialClock } from '@/components/trial/trial-clock'
+import { TrialToasts } from '@/components/trial/trial-toasts'
+import { useTrialJourneySync } from '@/hooks/use-trial-journey'
+import { useSubscription } from '@/hooks/use-subscription'
 
 function LayoutInner({ children }: { children: React.ReactNode }) {
   usePageTracker()
+  const { inTrial } = useSubscription()
+  useTrialJourneySync(inTrial)
   return (
     <div className="flex min-h-screen bg-background">
       <ErrorListener />
@@ -18,6 +23,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
       <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 min-w-0">
         <EmailConfirmBanner />
         <TrialClock />
+        {inTrial && <TrialToasts />}
         {children}
       </main>
       <div className="print:hidden">
