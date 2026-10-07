@@ -12,6 +12,8 @@ export interface TrialRow {
   base_ends_at: string
   bonus_hours: number
   ended_seen_at: string | null
+  /** Conta que fica ativa no Grátis depois do teste (null = a mais antiga). */
+  conta_ativa?: string | null
 }
 
 /** Quando o teste termina, já com as horas de bônus somadas. */

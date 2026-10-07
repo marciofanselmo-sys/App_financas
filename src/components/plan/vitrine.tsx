@@ -72,10 +72,16 @@ function useSemDados(tabela: string | undefined, investimento?: boolean) {
  * só para consulta. Qualquer botão, campo ou filtro mostra o cadeado e a
  * oferta. Usado no teste (telas fora da jornada) e no Grátis.
  */
-export function VitrineFrame({ feature, pitch, children }: { feature: Feature; pitch?: string; children: React.ReactNode }) {
+export function VitrineFrame({ feature, pitch, aviso, children }: {
+  feature: Feature
+  pitch?: string
+  /** Texto próprio da faixa (ex.: conta inativa no Grátis); sem exemplo. */
+  aviso?: React.ReactNode
+  children: React.ReactNode
+}) {
   const { inTrial, userId } = useSubscription()
   const pathname = usePathname()
-  const exemplo = EXEMPLOS[pathname]
+  const exemplo = aviso ? undefined : EXEMPLOS[pathname]
   const vazio = useSemDados(exemplo?.tabela, exemplo?.investimento)
   const [imgOk, setImgOk] = useState(true)
   const [acao, setAcao] = useState<string | null>(null)
@@ -99,10 +105,10 @@ export function VitrineFrame({ feature, pitch, children }: { feature: Feature; p
       <div className="max-w-6xl mx-auto mb-4 flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-100">
         <Eye className="h-4 w-4 mt-0.5 shrink-0" />
         <p className="flex-1">
-          {vazio
+          {aviso ?? <>{vazio
             ? <><b>Ainda não há dados seus aqui.</b> Veja abaixo como esta tela fica com os números de uma família de exemplo.</>
             : <><b>Você está vendo seus números reais.</b> </>}
-          {' '}{inTrial ? 'Durante o teste' : 'No plano Grátis'}, esta tela é só para consulta: para trocar de mês, abrir detalhes, criar ou editar, assine.
+          {' '}{inTrial ? 'Durante o teste' : 'No plano Grátis'}, esta tela é só para consulta: para trocar de mês, abrir detalhes, criar ou editar, assine.</>}
         </p>
       </div>
 

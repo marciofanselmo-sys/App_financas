@@ -27,7 +27,8 @@ async function buscar() {
     if (!user) { cache = { trial: null, loading: false }; avisar(); return }
     const { data } = await supabase
       .from('user_trials')
-      .select('user_id, started_at, base_ends_at, bonus_hours, ended_seen_at')
+      // '*' e não a lista: conta_ativa pode ainda não existir (migração nova).
+      .select('*')
       .eq('user_id', user.id)
       .maybeSingle()
     if (minha !== seq) return

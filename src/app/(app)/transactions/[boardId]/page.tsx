@@ -5,6 +5,8 @@ import { decisionKey } from '@/lib/recurring-groups'
 import { logSafeError, missingMigrationMessage } from '@/lib/supabase-error'
 import { balanceFromTransactions, accountBalance } from '@/lib/dashboard-patrimony'
 import { useParams, useRouter } from 'next/navigation'
+import { VitrineFrame } from '@/components/plan/vitrine'
+import { useContaAtiva } from '@/hooks/use-conta-ativa'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useCategories } from '@/hooks/use-categories'
@@ -49,7 +51,30 @@ const TYPE_LABELS: Record<TransactionType, string> = {
   receita: 'Receita',
 }
 
+/**
+ * No Grátis depois do teste, só uma conta fica ativa: as outras abrem em
+ * vitrine (números à vista, importar e editar com cadeado).
+ */
 export default function BoardDetailPage() {
+  const params = useParams()
+  const { boards } = useTransactionBoards()
+  const conta = useContaAtiva(boards)
+  const ativa = boards.find(b => b.id === conta.ativaId)
+  if (conta.travada(params.boardId as string)) {
+    return (
+      <VitrineFrame
+        feature="import"
+        pitch="Assine para importar e editar em todas as suas contas."
+        aviso={<><b>Esta conta está só para consulta.</b> No plano Grátis, só uma conta fica ativa para importar e editar{ativa ? <> — hoje é <b>{ativa.name}</b></> : null}. Você pode trocar em Contas e Cartões, ou assinar para liberar todas.</>}
+      >
+        <BoardDetailInner />
+      </VitrineFrame>
+    )
+  }
+  return <BoardDetailInner />
+}
+
+function BoardDetailInner() {
   const params = useParams()
   const router = useRouter()
   const boardId = params.boardId as string

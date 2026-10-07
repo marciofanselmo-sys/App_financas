@@ -7,6 +7,7 @@ import { UpgradeCard } from '@/components/plan/plan-gate'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
+import { useContaAtiva, escolherContaAtiva } from '@/hooks/use-conta-ativa'
 import { useTransactions } from '@/hooks/use-transactions'
 import { TransactionBoard, Transaction, BoardType, BoardKind, BOARD_COLORS, BOARD_ICONS, BoardIconKey } from '@/types'
 import { BOARD_KINDS, boardKind } from '@/lib/board-kind'
@@ -90,6 +91,9 @@ export default function TransactionsPage() {
   const router = useRouter()
   const now = new Date()
   const { boards: allBoards, loading, createBoard, updateBoard, deleteBoard } = useTransactionBoards()
+  const contaAtiva = useContaAtiva(allBoards)
+  const [trocandoAtiva, setTrocandoAtiva] = useState(false)
+  const [erroAtiva, setErroAtiva] = useState<string | null>(null)
   const { plan, tier } = usePlan()
   const boards = allBoards.filter(b => !b.is_investment)
   const { transactions } = useTransactions({ month: now.getMonth() + 1, year: now.getFullYear() })
@@ -198,6 +202,30 @@ export default function TransactionsPage() {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
+      {contaAtiva.aplica && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-100 space-y-2">
+          <p>
+            <b>No plano Grátis, só uma conta fica ativa</b> para importar e editar. As outras continuam aqui, só para consulta.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs">Conta ativa:</span>
+            <select
+              value={contaAtiva.ativaId ?? ''}
+              disabled={trocandoAtiva}
+              onChange={async e => {
+                setTrocandoAtiva(true)
+                setErroAtiva(await escolherContaAtiva(e.target.value))
+                setTrocandoAtiva(false)
+              }}
+              className="h-8 rounded-lg border border-blue-200 bg-white px-2 text-sm dark:bg-slate-800 dark:border-white/10"
+            >
+              {allBoards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+            {erroAtiva && <span className="text-xs text-red-600">{erroAtiva}</span>}
+            <a href="/settings/assinatura" className="ml-auto text-xs font-semibold underline">Assinar e liberar todas</a>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#0B2D6B] dark:text-slate-100">Contas e Cartões</h1>
@@ -265,6 +293,9 @@ export default function TransactionsPage() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate" title={board.name}>{board.name}</p>
+                              {contaAtiva.travada(board.id) && (
+                                <span className="inline-block mt-0.5 mr-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400">só consulta</span>
+                              )}
                               <span className={`inline-block mt-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
                                 board.type === 'entrada'
                                   ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'

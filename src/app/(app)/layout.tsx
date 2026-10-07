@@ -7,6 +7,7 @@ import { EmailConfirmBanner } from '@/components/auth/email-confirm-banner'
 import { usePageTracker } from '@/hooks/use-page-tracker'
 import { TrialClock } from '@/components/trial/trial-clock'
 import { TrialToasts } from '@/components/trial/trial-toasts'
+import { TrialEndModal } from '@/components/trial/trial-end-modal'
 import { useTrialJourneySync } from '@/hooks/use-trial-journey'
 import { useSubscription } from '@/hooks/use-subscription'
 
@@ -24,6 +25,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
         <EmailConfirmBanner />
         <TrialClock />
         {inTrial && <TrialToasts />}
+        <TrialEndModal />
         {children}
       </main>
       <div className="print:hidden">
