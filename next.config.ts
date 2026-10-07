@@ -129,6 +129,10 @@ const nextConfig: NextConfig = {
       { source: '/entrar', destination: '/auth/login', permanent: false },
       { source: '/cadastro', destination: '/auth/register', permanent: false },
       { source: '/registro', destination: '/auth/register', permanent: false },
+      // Link do teste grátis para divulgar (anúncio, quiz, página de vendas).
+      // Os UTMs seguem junto: o redirect mantém a query.
+      { source: '/teste-gratis', destination: '/teste', permanent: false },
+      { source: '/teste\\+gratis', destination: '/teste', permanent: false },
       // Categorias, Subcategorias e Categorias isoladas viraram uma tela só
       // (dois níveis + eventos). Link antigo cai nela.
       { source: '/categories', destination: '/settings/categories', permanent: false },
