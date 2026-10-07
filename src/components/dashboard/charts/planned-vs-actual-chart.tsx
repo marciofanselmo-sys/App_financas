@@ -56,7 +56,7 @@ export function PlannedVsActualChart({ data, loading }: PlannedVsActualChartProp
             tick={{ fontSize: 10, fill: '#94a3b8' }}
             axisLine={false}
             tickLine={false}
-            tickFormatter={v => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))}
+            tickFormatter={v => (v >= 1000 ? `${(v / 1000).toFixed(1).replace('.0', '').replace('.', ',')}k` : String(v))}
           />
           <YAxis
             type="category"

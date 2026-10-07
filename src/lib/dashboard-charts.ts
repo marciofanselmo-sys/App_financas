@@ -232,9 +232,19 @@ export function buildPlannedVsActual(
 
   const rows: PlannedVsActualRow[] = []
 
-  for (const [key, planned] of Object.entries(plan.category_limits)) {
+  // Mesma leitura do Planejamento: plano salvo antes da conversão de
+  // categorias pode ter "sub:Moradia" E "Moradia" para a mesma categoria (hoje
+  // principal). Junta pelo nome, valendo o último — senão a categoria
+  // aparecia duas vezes no gráfico.
+  const limits = new Map<string, number>()
+  for (const [key, value] of Object.entries(plan.category_limits)) {
+    const name = isSubKey(key) ? subName(key) : key
+    if (categories.length > 0 && !categories.some(c => c.name === name)) continue
+    limits.set(name, Number(value))
+  }
+
+  for (const [label, planned] of limits) {
     if (planned <= 0) continue
-    const label = isSubKey(key) ? subName(key) : key
     if (skip.has(label)) continue
     // Limite de categoria principal cobre o que foi gasto nas subcategorias
     // dentro dela; limite de subcategoria conta só ela. O que manda é o nome,
