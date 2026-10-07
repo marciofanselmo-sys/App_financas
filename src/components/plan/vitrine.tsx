@@ -36,9 +36,11 @@ function alvoTrancado(t: EventTarget | null): HTMLElement | null {
 }
 
 function rotulo(el: HTMLElement): string {
-  const tag = el.tagName
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return 'Editar valores'
-  const t = (el.getAttribute('aria-label') || el.textContent || '').replace(/\s+/g, ' ').trim()
+  // Filtro (select da página ou o campo escondido dentro dele)
+  if (el.tagName === 'SELECT' || el.getAttribute('role') === 'combobox' || el.closest('[role="combobox"]')) return 'Trocar o filtro'
+  if (/^(INPUT|TEXTAREA)$/.test(el.tagName)) return 'Editar valores'
+  // innerText e não textContent: o texto escondido dos ícones ficaria colado no nome.
+  const t = (el.getAttribute('aria-label') || el.innerText || '').replace(/\s+/g, ' ').trim()
   if (!t || t.length > 40) return 'Esta ação'
   return t
 }
