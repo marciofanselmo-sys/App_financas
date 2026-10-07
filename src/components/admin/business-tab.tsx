@@ -7,6 +7,7 @@ import { pagaPelaCakto, ehCortesia, tierDe } from '@/lib/admin/users'
 import { PLANS, PAID_TIERS, precoDe, type PaidTier } from '@/lib/plans'
 import { BarChart2, Wallet, Receipt } from 'lucide-react'
 import { Carregando, Erro } from './admin-ui'
+import { JourneyFunnel } from './journey-funnel'
 import { format, startOfWeek, subWeeks, addWeeks } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
@@ -119,6 +120,8 @@ export function BusinessTab({ refreshKey }: { refreshKey: number }) {
           </div>
         </OverviewSection>
       </div>
+
+      <JourneyFunnel users={users.data ?? []} refreshKey={refreshKey} />
 
       <OverviewSection icon={Receipt} title="Últimos eventos de assinatura" subtitle="o que a Cakto mandou ao webhook, do mais recente para o mais antigo">
         {eventos.loading ? <Carregando /> : eventos.error ? <Erro msg={eventos.error} /> : !eventos.data?.length ? (

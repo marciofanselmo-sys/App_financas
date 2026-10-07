@@ -66,3 +66,18 @@ export function useDbSize(refreshKey: number) {
     return { data: data == null ? null : Number(data), error: error?.message ?? null }
   })
 }
+
+export interface ProductEventRow { user_id: string; event: string; dedupe_key: string; created_at: string }
+
+/** Marcos da jornada (product_events). Erro = migration_product_events.sql ainda não rodou. */
+export function useProductEvents(refreshKey: number) {
+  return useAdminFetch<ProductEventRow[]>('product_events', refreshKey, async () => {
+    const desde = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString()
+    const { data, error } = await createClient()
+      .from('product_events')
+      .select('user_id, event, dedupe_key, created_at')
+      .gte('created_at', desde)
+      .limit(20000)
+    return { data: (data as ProductEventRow[] | null) ?? null, error: error?.message ?? null }
+  })
+}

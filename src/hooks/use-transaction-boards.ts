@@ -3,6 +3,7 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { TransactionBoard, BoardIconKey, BoardType } from '@/types'
 import { createClient } from '@/lib/supabase/client'
+import { trackEvent } from '@/lib/analytics/track'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function fromRow(row: any): TransactionBoard {
@@ -140,6 +141,8 @@ export function useTransactionBoards() {
       const created = fromRow(data)
       boardsCache = [...boardsCache, created]
       notify()
+      // Marco do funil: registrado uma vez só, na primeira conta criada.
+      trackEvent('primeira_conta')
       return created
     }
     return null

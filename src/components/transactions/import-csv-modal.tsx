@@ -42,6 +42,7 @@ import { usePlan } from '@/hooks/use-subscription'
 import { PLANS, planoComMais } from '@/lib/plans'
 import { UpgradeCard } from '@/components/plan/plan-gate'
 import { missingMigrationMessage } from '@/lib/supabase-error'
+import { trackEvent } from '@/lib/analytics/track'
 
 // ─── CSV TEMPLATE ────────────────────────────────────────────────────────────
 
@@ -1326,7 +1327,11 @@ function shiftDays(date: string, days: number): string {
     setImportResult({ success, errors, duplicates, fixed: installmentsFixed, renamed: debitsRenamed, errorMessage: firstErrorMessage })
     setImporting(false)
     // Só conta como importação do mês o que realmente entrou.
-    if (success > 0) void quota.record()
+    if (success > 0) {
+      void quota.record()
+      // Marco do funil: só a primeira importação conta (uma vez por usuário).
+      trackEvent('primeira_importacao', { props: { formato: fileType ?? 'desconhecido' } })
+    }
     onImported()
 
     const dups = insertedOthers.filter(i => i.category === '__duplicate__')

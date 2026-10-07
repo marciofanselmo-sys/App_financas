@@ -1,8 +1,10 @@
 'use client'
 
+import { useEffect } from 'react'
 import { Feature } from '@/lib/plans'
 import { usePlan } from '@/hooks/use-subscription'
 import { UpgradeCard } from '@/components/plan/plan-gate'
+import { trackEvent } from '@/lib/analytics/track'
 
 /**
  * Tranca uma tela inteira atrás do plano. Em vez de esconder o item do menu
@@ -19,7 +21,10 @@ export function withPlan<P extends object>(
 ) {
   function Guarded(props: P) {
     const { can, loading } = usePlan()
-    if (!loading && !can(feature)) {
+    const blocked = !loading && !can(feature)
+    // Marco do funil: quem abriu cada tela do plano pago (uma vez por tela).
+    useEffect(() => { if (blocked) trackEvent('bloqueio_visto', { key: feature }) }, [blocked])
+    if (blocked) {
       return (
         <div className="max-w-3xl mx-auto">
           <UpgradeCard feature={feature} pitch={pitch} />
