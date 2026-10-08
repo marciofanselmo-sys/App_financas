@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { enviarEmail } from '@/lib/email/send'
-import { emailBoasVindasCadastro } from '@/lib/email/templates'
+import { emailBoasVindasCadastro, emailTesteInicio } from '@/lib/email/templates'
 import { iniciarTeste, COOKIE_TESTE } from '@/lib/trial-server'
 
 /**
@@ -123,16 +123,20 @@ export async function POST(req: NextRequest) {
     // Veio do /teste (pela URL ou pelo cookie que o /teste deixou): a conta já
     // nasce com o teste de 7 dias. Falha aqui não derruba o cadastro.
     const cookieTeste = req.cookies.get(COOKIE_TESTE)?.value
+    let comTeste = false
     if (data.user && (teste || cookieTeste)) {
       let origem: Record<string, string> = {}
       try { origem = cookieTeste ? JSON.parse(cookieTeste) : {} } catch { origem = {} }
-      await iniciarTeste(admin, data.user.id, email, origem)
+      comTeste = (await iniciarTeste(admin, data.user.id, email, origem)) === 'iniciado'
     }
 
     // Boas-vindas com o link de confirmação. Não bloqueia nada: a pessoa já
     // está entrando. Falha de e-mail aqui não derruba o cadastro.
     const link = await linkDeConfirmacao(admin, email, siteUrl)
-    await enviarEmail(email, emailBoasVindasCadastro({ nome: nome || undefined, link }))
+    // Com teste, o boas-vindas já é o e-mail 1 da sequência do teste.
+    await enviarEmail(email, comTeste
+      ? emailTesteInicio({ nome: nome || undefined, link })
+      : emailBoasVindasCadastro({ nome: nome || undefined, link }))
 
     return NextResponse.json({ ok: true })
   } catch (e) {

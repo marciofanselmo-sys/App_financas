@@ -53,6 +53,8 @@ export async function middleware(request: NextRequest) {
     // Webhook de pagamento: quem chama é a Cakto, que não tem sessão. A
     // autenticação dele é a assinatura HMAC da própria entrega.
     pathname.startsWith('/api/webhooks') ||
+    // Cron da Vercel (e-mails do teste): autenticado pelo CRON_SECRET.
+    pathname.startsWith('/api/cron') ||
     // Pedido de novo link de acesso: quem precisa dele é, por definição, quem
     // não consegue entrar.
     pathname.startsWith('/api/auth') ||

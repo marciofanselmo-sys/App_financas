@@ -220,3 +220,120 @@ export function emailNovaVenda(params: {
     text: `Nova venda NOBLI\n\n${linhas.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\nPainel: ${SITE}/admin`,
   }
 }
+
+// ── Teste grátis de 7 dias (plano de conversão, 07/10/2026) ─────────────────
+const SAIR = 'Se não quiser mais receber e-mails como este, responda com SAIR.'
+const precoAnual = 'R$ 14,08/mês'
+
+/** A1 — o teste começou (na criação da conta, ou ao entrar pelo /teste já logado). */
+export function emailTesteInicio(params: { nome?: string; link?: string }): Email {
+  const confirmacao = params.link
+    ? p('Aproveite e confirme seu e-mail — leva um clique e garante que você recupera a conta se esquecer a senha:') +
+      `<p style="margin:0 0 12px;font-size:14px;"><a href="${params.link}" style="color:${AZUL_BOTAO};">Confirmar meu e-mail</a></p>`
+    : ''
+  return {
+    subject: 'Seu teste de 7 dias do NOBLI começou ⏳',
+    html: moldura(
+      titulo(ola(params.nome)) +
+      p('Seu teste do NOBLI começou: você tem <strong>5 dias</strong> para colocar suas finanças em ordem — e pode ganhar até <strong>2 dias extras</strong> completando a sua jornada no app.') +
+      p('O primeiro passo leva 2 minutos: crie a conta que você mais usa e importe o extrato do último mês. Só a importação vale <strong>+8 horas</strong> de teste.') +
+      botao(`${SITE}/dashboard`, 'Começar agora') +
+      confirmacao,
+      'Você recebeu este e-mail porque começou o teste grátis do NOBLI.',
+    ),
+    text: `${ola(params.nome)}\n\nSeu teste do NOBLI começou: 5 dias para colocar suas finanças em ordem, e até 2 dias extras completando a sua jornada no app.\n\nPrimeiro passo: crie a conta que você mais usa e importe o extrato do último mês (+8 horas de teste).\n\nComeçar: ${SITE}/dashboard\n${params.link ? `\nConfirme seu e-mail: ${params.link}\n` : ''}\nDúvidas: ${SUPORTE}`,
+  }
+}
+
+/** A2 — dia 2, só para quem ainda não importou nenhum extrato. */
+export function emailTesteImportar(params: { nome?: string }): Email {
+  const primeiro = params.nome ? params.nome.split(' ')[0] : ''
+  return {
+    subject: 'Falta o passo que mais vale no seu teste',
+    html: moldura(
+      titulo(`${primeiro ? `${primeiro}, seu` : 'Seu'} NOBLI ainda está vazio`) +
+      p('Importar o extrato do último mês é o passo que mais vale: <strong>+8 horas</strong> de teste e o seu mês organizado numa tela só.') +
+      p('Funciona com OFX, CSV ou PDF do seu banco.') +
+      botao(`${SITE}/transactions`, 'Importar meu extrato'),
+      SAIR,
+    ),
+    text: `${primeiro ? `${primeiro}, seu` : 'Seu'} NOBLI ainda está vazio.\n\nImportar o extrato do último mês vale +8 horas de teste e organiza seu mês numa tela só. Funciona com OFX, CSV ou PDF.\n\nImportar: ${SITE}/transactions\n\n${SAIR}`,
+  }
+}
+
+export interface ResumoTeste { contas: number; lancamentos: number; fixos: number; meta?: string | null }
+
+function frasesResumo(r: ResumoTeste): string | null {
+  if (r.contas === 0 && r.lancamentos === 0) return null
+  const partes = [`organizou <strong>${r.contas} conta${r.contas === 1 ? '' : 's'} e ${r.lancamentos} lançamento${r.lancamentos === 1 ? '' : 's'}</strong>`]
+  if (r.fixos > 0) partes.push(`confirmou ${r.fixos} gasto${r.fixos === 1 ? '' : 's'} fixo${r.fixos === 1 ? '' : 's'}`)
+  if (r.meta) partes.push(`criou a meta “${r.meta}”`)
+  return `Até agora você ${partes.join(', ')}.`
+}
+
+/** A3 — último dia do teste. `quando` = 'hoje' ou 'amanhã'. */
+export function emailTesteTermina(params: { nome?: string; quando: 'hoje' | 'amanhã'; resumo: ResumoTeste; checkout: string }): Email {
+  const primeiro = params.nome ? params.nome.split(' ')[0] : ''
+  const resumo = frasesResumo(params.resumo)
+  return {
+    subject: `Seu teste do NOBLI termina ${params.quando}`,
+    html: moldura(
+      titulo(`${primeiro ? `${primeiro}, ` : ''}seu teste termina ${params.quando}`) +
+      (resumo ? p(resumo) : '') +
+      p('Quando o teste acabar, o planejamento, as metas e os relatórios ficam só para consulta. Assine para manter tudo liberado — nada do que você fez se perde.') +
+      botao(params.checkout, `Assinar o Anual · ${precoAnual}`) +
+      `<p style="margin:0 0 12px;font-size:14px;"><a href="${SITE}/settings/assinatura" style="color:${AZUL_BOTAO};">Ver os planos</a></p>`,
+      SAIR,
+    ),
+    text: `${primeiro ? `${primeiro}, ` : ''}seu teste do NOBLI termina ${params.quando}.\n\n${resumo ? resumo.replace(/<[^>]+>/g, '') + '\n\n' : ''}Depois disso, planejamento, metas e relatórios ficam só para consulta. Assine para manter tudo liberado.\n\nAssinar o Anual (${precoAnual}): ${params.checkout}\nVer os planos: ${SITE}/settings/assinatura\n\n${SAIR}`,
+  }
+}
+
+/** A4 — o teste terminou. */
+export function emailTesteTerminou(params: { nome?: string; duracao: string; checkout: string }): Email {
+  const primeiro = params.nome ? params.nome.split(' ')[0] : ''
+  return {
+    subject: 'Seu teste terminou — e nada foi apagado',
+    html: moldura(
+      titulo(`${primeiro ? `${primeiro}, seu` : 'Seu'} teste de ${params.duracao} terminou`) +
+      p('Tudo o que você construiu continua no app. No plano Grátis você segue com 1 conta ativa e suas regras continuam categorizando — o resto fica só para consulta.') +
+      p('Para continuar de onde parou:') +
+      botao(params.checkout, `Assinar o Anual · ${precoAnual}`) +
+      `<p style="margin:0 0 12px;font-size:14px;"><a href="${SITE}/settings/assinatura" style="color:${AZUL_BOTAO};">Ver os planos</a></p>`,
+      SAIR,
+    ),
+    text: `${primeiro ? `${primeiro}, seu` : 'Seu'} teste de ${params.duracao} terminou.\n\nTudo o que você construiu continua no app. No Grátis: 1 conta ativa e as regras continuam funcionando; o resto fica só para consulta.\n\nAssinar o Anual (${precoAnual}): ${params.checkout}\nVer os planos: ${SITE}/settings/assinatura\n\n${SAIR}`,
+  }
+}
+
+/** B — oferta do teste para quem já é Grátis (envio único, pelo Admin). */
+export function emailOfertaTeste(params: { nome?: string }): Email {
+  const link = `${SITE}/teste-gratis?utm_source=email&utm_campaign=gratis`
+  return {
+    subject: 'Liberamos 7 dias do NOBLI completo para você',
+    html: moldura(
+      titulo(ola(params.nome)) +
+      p('Você está no plano Grátis — e agora pode testar o NOBLI completo por <strong>7 dias</strong>, sem cartão: planejamento 50/30/20, metas, gastos fixos e regras automáticas.') +
+      p('É só clicar: o teste começa na hora, com os dados que você já tem.') +
+      botao(link, 'Começar meu teste grátis'),
+      SAIR,
+    ),
+    text: `${ola(params.nome)}\n\nVocê está no plano Grátis — e agora pode testar o NOBLI completo por 7 dias, sem cartão: planejamento 50/30/20, metas, gastos fixos e regras automáticas.\n\nComeçar: ${link}\n\n${SAIR}`,
+  }
+}
+
+/** C — checkout abandonado na Cakto. */
+export function emailCheckoutAbandonado(params: { nome?: string; checkout: string }): Email {
+  const teste = `${SITE}/teste-gratis?utm_source=email&utm_campaign=checkout_abandonado`
+  return {
+    subject: 'Ficou faltando pouco para organizar seu dinheiro',
+    html: moldura(
+      titulo(`${ola(params.nome)} Vimos que você começou a assinar o NOBLI e não terminou.`) +
+      p('Se ficou alguma dúvida, é só responder este e-mail.') +
+      botao(params.checkout, 'Voltar e concluir minha assinatura') +
+      p(`Prefere conhecer antes? <a href="${teste}" style="color:${AZUL_BOTAO};font-weight:600;">Testar grátis por 7 dias</a>`),
+      SAIR,
+    ),
+    text: `${ola(params.nome)} Vimos que você começou a assinar o NOBLI e não terminou.\n\nSe ficou alguma dúvida, é só responder este e-mail.\n\nConcluir a assinatura: ${params.checkout}\nPrefere conhecer antes? Teste grátis por 7 dias: ${teste}\n\n${SAIR}`,
+  }
+}

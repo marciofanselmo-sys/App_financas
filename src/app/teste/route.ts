@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { iniciarTeste, COOKIE_TESTE } from '@/lib/trial-server'
+import { enviarEmail } from '@/lib/email/send'
+import { emailTesteInicio } from '@/lib/email/templates'
 
 /**
  * noblifinance.com.br/teste — porta do teste grátis de 7 dias.
@@ -28,6 +30,11 @@ export async function GET(req: NextRequest) {
 
   if (user?.email) {
     const r = await iniciarTeste(createAdminClient(), user.id, user.email, origem)
+    // Quem já tinha conta (ex.: Grátis que veio pelo e-mail da oferta) também
+    // recebe o e-mail 1 da sequência.
+    if (r === 'iniciado') {
+      await enviarEmail(user.email, emailTesteInicio({ nome: (user.user_metadata?.full_name as string | undefined) }))
+    }
     return NextResponse.redirect(`${site}/dashboard?teste=${r}`, 302)
   }
 

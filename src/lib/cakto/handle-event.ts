@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { enviarRecuperacaoCheckout } from '@/lib/email/trial-emails'
 import { CaktoOrderData, CaktoPayload, ordersOf } from './types'
 import { enviarEmail } from '@/lib/email/send'
 import { PLANS, PaidTier } from '@/lib/plans'
@@ -202,7 +203,17 @@ export async function handleCaktoEvent(
 
   // Evento que não mexe no acesso (pix gerado, carrinho abandonado) só fica
   // registrado — pode virar automação de recuperação depois.
-  if (!status) return [{ ok: true, detail: `evento ${payload.event} registrado, sem efeito no acesso` }]
+  if (!status) {
+    // Checkout abandonado: e-mail de recuperação com a oferta do teste grátis.
+    if (payload.event === 'checkout_abandonment') {
+      const o = orders[0] as (typeof orders)[number] & { checkoutUrl?: string | null } | undefined
+      const detail = await enviarRecuperacaoCheckout(admin, {
+        email: o?.customer?.email, nome: o?.customer?.name, checkoutUrl: o?.checkoutUrl,
+      })
+      return [{ ok: true, detail }]
+    }
+    return [{ ok: true, detail: `evento ${payload.event} registrado, sem efeito no acesso` }]
+  }
 
   for (const order of orders) {
     // Order bump e upsell não são a assinatura; ignora para não sobrescrever.
