@@ -42,7 +42,10 @@ export function useSubscription() {
       .eq('user_id', user.id)
       .maybeSingle()
 
-    if (error) logSafeError('useSubscription.load', error)
+    // Tabela ainda não migrada (migration_subscriptions.sql não rodada): o app
+    // já cai no plano grátis logo abaixo, então não é erro a reportar a cada tela.
+    const tableMissing = error?.code === '42P01' || error?.code === 'PGRST205'
+    if (error && !tableMissing) logSafeError('useSubscription.load', error)
     setSubscription((data as Subscription | null) ?? { status: 'free', plan: 'free', current_period_end: null, customer_email: user.email ?? null })
     setLoading(false)
   }, [])
