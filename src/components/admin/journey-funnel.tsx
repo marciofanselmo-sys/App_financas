@@ -36,6 +36,22 @@ export function JourneyFunnel({ users, refreshKey }: { users: AdminUser[]; refre
     ]
   }, [users, eventos.data, eventos.fetchedAt, dias])
 
+  // De onde vieram os testes (utm_source do link /teste-gratis) e quantos assinaram.
+  const origens = useMemo(() => {
+    const agora = eventos.fetchedAt
+    const naJanela = new Map(users.filter(u => agora - new Date(u.created_at).getTime() <= dias * DIA && u.role !== 'admin').map(u => [u.id, u]))
+    const porOrigem = new Map<string, { comecaram: number; assinaram: number }>()
+    for (const e of eventos.data ?? []) {
+      if (e.event !== 'teste_inicio' || !naJanela.has(e.user_id)) continue
+      const origem = String((e.props?.utm_source as string | undefined) || 'sem origem').toLowerCase()
+      const linha = porOrigem.get(origem) ?? { comecaram: 0, assinaram: 0 }
+      linha.comecaram++
+      if (pagaPelaCakto(naJanela.get(e.user_id)!)) linha.assinaram++
+      porOrigem.set(origem, linha)
+    }
+    return [...porOrigem.entries()].sort((a, b) => b[1].comecaram - a[1].comecaram)
+  }, [users, eventos.data, eventos.fetchedAt, dias])
+
   const base = etapas[0].n || 1
 
   return (
@@ -66,6 +82,28 @@ export function JourneyFunnel({ users, refreshKey }: { users: AdminUser[]; refre
               </div>
             )
           })}
+          <div className="pt-3">
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Testes por origem</p>
+            {origens.length === 0 ? (
+              <p className="text-xs text-slate-400 mt-1">Nenhum teste começou neste período.</p>
+            ) : (
+              <table className="w-full text-sm mt-1.5">
+                <thead><tr className="text-[11px] uppercase tracking-wider text-slate-400">
+                  <th className="text-left font-semibold py-1">Origem</th><th className="text-right font-semibold">Começaram</th><th className="text-right font-semibold">Assinaram</th>
+                </tr></thead>
+                <tbody>
+                  {origens.map(([o, l]) => (
+                    <tr key={o} className="border-t border-slate-100 dark:border-white/[0.06]">
+                      <td className="py-1.5 capitalize text-slate-600 dark:text-slate-300">{o}</td>
+                      <td className="text-right tabular-nums font-semibold">{l.comecaram}</td>
+                      <td className="text-right tabular-nums">{l.assinaram}{l.comecaram > 0 && <span className="text-slate-400"> · {Math.round((l.assinaram / l.comecaram) * 100)}%</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <p className="text-[11px] text-slate-400 mt-1">A origem vem do final do link (utm_source). “Sem origem” = entrou pelo link sem etiqueta.</p>
+          </div>
           <p className="text-[11px] text-slate-400 pt-1">Medido desde a entrada desta medição; quem se cadastrou antes dela aparece sem os passos.</p>
         </div>
       )}

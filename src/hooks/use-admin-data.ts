@@ -67,7 +67,7 @@ export function useDbSize(refreshKey: number) {
   })
 }
 
-export interface ProductEventRow { user_id: string; event: string; dedupe_key: string; created_at: string }
+export interface ProductEventRow { user_id: string; event: string; dedupe_key: string; created_at: string; props?: Record<string, unknown> | null }
 
 /** Marcos da jornada (product_events). Erro = migration_product_events.sql ainda não rodou. */
 export function useProductEvents(refreshKey: number) {
@@ -75,7 +75,7 @@ export function useProductEvents(refreshKey: number) {
     const desde = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString()
     const { data, error } = await createClient()
       .from('product_events')
-      .select('user_id, event, dedupe_key, created_at')
+      .select('user_id, event, dedupe_key, created_at, props')
       .gte('created_at', desde)
       .limit(20000)
     return { data: (data as ProductEventRow[] | null) ?? null, error: error?.message ?? null }
