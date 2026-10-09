@@ -41,13 +41,14 @@ Documento de produto completo: `docs/PRD.md`
 - **Raio de borda**: `rounded-xl` (12px) como padrão para cards e inputs
 - **Tipografia**: sistema do Next.js (Inter via Tailwind)
 - **Ícones**: Lucide React exclusivamente
-- **Cores de valores financeiros** (padrão obrigatório em qualquer card/tabela que exiba esses valores — referência canônica: `src/components/dashboard/summary-cards.tsx`):
+- **Cores de valores financeiros** (padrão obrigatório em qualquer card/tabela que exiba esses valores — referência canônica: `src/components/ui/overview-blocks.tsx` (`Kpi`)):
   - **Entradas/Receitas**: verde `green-600`
   - **Saídas/Despesas**: vermelho `red-500`
-  - **Saldo**: azul quando positivo (`blue-600` / `dark:blue-400`; no dashboard o card inteiro fica `bg-blue-600`), vermelho `red-500` quando negativo
+  - **Saldo**: azul quando positivo (`blue-600` / `dark:blue-400`), vermelho `red-500` quando negativo
   - **Transferências**: cor neutra padrão de texto (`slate-700` / `dark:slate-200`) — nunca verde, vermelho ou azul
 - **Login/Register**: layout split-screen — painel de marca (52% esquerda, gradiente azul) + formulário (direita, branco/slate)
 - **Sidebar**: fixa no desktop; nav inferior no mobile
+- **Guia completo das telas** (estrutura de página, KPIs sempre em card branco, listas por categoria, gráficos com um eixo só, relatórios que complementam a tela, celular): **`docs/IDENTIDADE-VISUAL.md`** — ler antes de criar ou refazer qualquer tela.
 
 > Tentativa de redesign dark premium (navy + dourado) para as páginas de auth foi feita e revertida em 2026-07-01 — o gradiente azul original (`from-blue-600 via-blue-700 to-indigo-900`) permanece como identidade oficial do painel de marca.
 
