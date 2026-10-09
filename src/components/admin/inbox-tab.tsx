@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { OverviewSection } from '@/components/ui/overview-blocks'
 import { INBOX_EVENTO } from '@/hooks/use-inbox-unread'
 import type { EmailCompleto, EmailResumo } from '@/lib/email/inbox'
-import { Mail, MailOpen, Paperclip, Reply, Download, ArrowLeft, Loader2, RefreshCw } from 'lucide-react'
+import { Mail, MailOpen, Paperclip, Download, ArrowLeft, Loader2, RefreshCw } from 'lucide-react'
 import { format, isToday } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { AvisoMigration, Carregando, Erro } from './admin-ui'
@@ -160,10 +160,6 @@ export function InboxTab({ refreshKey }: { refreshKey: number }) {
                   <p>{format(new Date(aberto.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</p>
                 </div>
                 <div className="flex flex-wrap gap-2 pt-1">
-                  <a href={`mailto:${enderecoDe(aberto.reply_to[0] ?? aberto.from)}?subject=${encodeURIComponent(aberto.subject.startsWith('Re:') ? aberto.subject : `Re: ${aberto.subject}`)}`}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
-                    <Reply className="h-3.5 w-3.5" /> Responder
-                  </a>
                   <button type="button" onClick={() => marcarNaoLido(aberto.id)}
                     className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5">
                     <Mail className="h-3.5 w-3.5" /> Marcar como não lido
