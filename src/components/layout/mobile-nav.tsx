@@ -12,6 +12,7 @@ import {
   Tag, Zap, Crown, Shield, Settings, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import { useIsAdmin } from '@/hooks/use-is-admin'
+import { useInboxUnread } from '@/hooks/use-inbox-unread'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { NobliLogo } from '@/components/brand/nobli-logo'
 import { usePlan } from '@/hooks/use-subscription'
@@ -56,7 +57,7 @@ const SETTINGS_ITEMS: NavLink[] = [
 ]
 const SECONDARY_HREFS = [...SECTIONS.flatMap(s => s.items), ...EXTRA, ...SETTINGS_ITEMS].map(i => i.href)
 
-function DrawerItem({ href, label, icon: Icon, active, locked, small }: NavLink & { active: boolean; locked: boolean; small?: boolean }) {
+function DrawerItem({ href, label, icon: Icon, active, locked, small, badge }: NavLink & { active: boolean; locked: boolean; small?: boolean; badge?: number }) {
   return (
     <Link
       href={href}
@@ -73,7 +74,12 @@ function DrawerItem({ href, label, icon: Icon, active, locked, small }: NavLink 
     >
       <Icon className={cn(small ? 'h-3.5 w-3.5' : 'h-4 w-4', 'shrink-0', active && 'text-[#2563EB] dark:text-blue-400')} />
       <span className="flex-1">{label}</span>
-      {active && <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB] dark:bg-blue-400 shrink-0" />}
+      {!!badge && (
+        <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#2563EB] text-white text-[10px] font-bold leading-[18px] text-center shrink-0">
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
+      {active && !badge && <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB] dark:bg-blue-400 shrink-0" />}
     </Link>
   )
 }
@@ -83,6 +89,7 @@ export function MobileNav() {
   const router   = useRouter()
   const [open, setOpen] = useState(false)
   const { isAdmin } = useIsAdmin()
+  const emailsNovos = useInboxUnread(isAdmin)
   const [settingsOpen, setSettingsOpen] = useState(pathname.startsWith('/settings'))
   const [userEmail, setUserEmail] = useState('')
   const [userName, setUserName] = useState('')
@@ -164,7 +171,8 @@ export function MobileNav() {
               ))}
               <div className="space-y-0.5">
                 {extra.map(item => (
-                  <DrawerItem key={item.href} {...item} active={pathname === item.href} locked={false} />
+                  <DrawerItem key={item.href} {...item} active={pathname === item.href} locked={false}
+                    badge={item.href === '/admin' ? emailsNovos : undefined} />
                 ))}
               </div>
             </nav>
@@ -275,6 +283,9 @@ export function MobileNav() {
           )}>
             <MoreHorizontal className="h-4 w-4" />
           </div>
+          {emailsNovos > 0 && (
+            <span aria-label={`${emailsNovos} e-mails novos`} className="absolute top-1.5 right-[calc(50%-20px)] h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white dark:ring-[#0B1A2E]" />
+          )}
           Mais
         </button>
       </nav>

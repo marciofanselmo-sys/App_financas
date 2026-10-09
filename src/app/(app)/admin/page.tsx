@@ -12,6 +12,8 @@ import { BusinessTab } from '@/components/admin/business-tab'
 import { UsageTab } from '@/components/admin/usage-tab'
 import { LimitsTab } from '@/components/admin/limits-tab'
 import { ErrorsTab } from '@/components/admin/errors-tab'
+import { InboxTab } from '@/components/admin/inbox-tab'
+import { useInboxUnread } from '@/hooks/use-inbox-unread'
 import { agruparErros, ABERTOS, type AppError, type RegistroStatus } from '@/lib/admin/errors'
 import { VERCEL_PLANO } from '@/lib/admin/limits'
 import { format, subDays, startOfDay } from 'date-fns'
@@ -36,6 +38,7 @@ const ABAS = [
   { id: 'limites',   label: 'Limites' },
   { id: 'erros',     label: 'Erros' },
   { id: 'sugestoes', label: 'Sugestões' },
+  { id: 'emails',    label: 'E-mails' },
 ] as const
 type Aba = typeof ABAS[number]['id']
 
@@ -106,6 +109,8 @@ function AdminPainel() {
   const [statusErros, setStatusErros] = useState<RegistroStatus[]>([])
   const [statusUnavailable, setStatusUnavailable] = useState(false)
   const [sugestoesNovas, setSugestoesNovas] = useState(0)
+  const [ehAdmin, setEhAdmin] = useState(false)
+  const emailsNovos = useInboxUnread(ehAdmin)
   const [authorized, setAuthorized] = useState<boolean | null>(null)
   const [views, setViews]           = useState<PageView[]>([])
   const [errors, setErrors]         = useState<AppError[]>([])
@@ -145,6 +150,7 @@ function AdminPainel() {
       return
     }
     setAuthorized(true)
+    setEhAdmin(true)
 
     // Cleanup: deleta registros com mais de 30 dias
     await supabase
@@ -370,7 +376,7 @@ function AdminPainel() {
       {/* Submenu: cada aba tem endereço próprio (/admin?aba=erros) */}
       <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 dark:border-white/10 -mx-4 px-4 sm:mx-0 sm:px-0" aria-label="Seções do painel">
         {ABAS.map(a => {
-          const badge = a.id === 'erros' ? errosAbertos : a.id === 'sugestoes' ? sugestoesNovas : a.id === 'limites' && VERCEL_PLANO === 'hobby' ? '!' : 0
+          const badge = a.id === 'erros' ? errosAbertos : a.id === 'sugestoes' ? sugestoesNovas : a.id === 'emails' ? emailsNovos : a.id === 'limites' && VERCEL_PLANO === 'hobby' ? '!' : 0
           const ativa = aba === a.id
           return (
             <button key={a.id} type="button" onClick={() => irPara(a.id)} aria-current={ativa ? 'page' : undefined}
@@ -382,6 +388,7 @@ function AdminPainel() {
                 <span className={`text-[10px] font-bold rounded-full px-1.5 py-px ${a.id === 'erros'
                   ? 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300'
                   : a.id === 'limites' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300'
+                  : a.id === 'emails' ? 'bg-blue-600 text-white'
                   : 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300'}`}>{badge}</span>
               )}
             </button>
@@ -511,6 +518,8 @@ function AdminPainel() {
       )}
 
       {aba === 'sugestoes' && <SuggestionsPanel key={refreshKey} enabled={authorized === true} />}
+
+      {aba === 'emails' && <InboxTab refreshKey={refreshKey} />}
 
 
       {/* Aviso legal */}

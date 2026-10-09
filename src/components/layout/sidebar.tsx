@@ -19,6 +19,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { useIsAdmin } from '@/hooks/use-is-admin'
+import { useInboxUnread } from '@/hooks/use-inbox-unread'
 import { NobliLogo } from '@/components/brand/nobli-logo'
 import { BRAND } from '@/lib/brand'
 import { usePlan } from '@/hooks/use-subscription'
@@ -59,8 +60,9 @@ const SETTINGS_ITEMS = [
 ]
 
 // ── Componente de item de nav ──────────────────────────────────────────────────
-function NavItem({ href, label, icon: Icon, active, locked }: {
+function NavItem({ href, label, icon: Icon, active, locked, badge, badgeTitle }: {
   href: string; label: string; icon: React.ElementType; active: boolean; locked?: boolean
+  badge?: number; badgeTitle?: string
 }) {
   return (
     <Link
@@ -76,7 +78,12 @@ function NavItem({ href, label, icon: Icon, active, locked }: {
     >
       <Icon className={cn('h-4 w-4 shrink-0', active ? 'text-[#2563EB] dark:text-blue-400' : '')} />
       <span className="flex-1">{label}</span>
-      {active && <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB] dark:bg-blue-400 shrink-0" />}
+      {!!badge && (
+        <span title={badgeTitle} className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#2563EB] text-white text-[10px] font-bold leading-[18px] text-center shrink-0">
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
+      {active && !badge && <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB] dark:bg-blue-400 shrink-0" />}
     </Link>
   )
 }
@@ -128,6 +135,7 @@ export function Sidebar() {
   const [settingsOpen, setSettingsOpen] = useState(isInSettings)
   const [userEmail, setUserEmail] = useState('')
   const { isAdmin } = useIsAdmin()
+  const emailsNovos = useInboxUnread(isAdmin)
   const [userName, setUserName]   = useState('')
   const { boards } = useTransactionBoards()
   // Tela fora do plano: continua clicável (abre a explicação do plano), só
@@ -272,6 +280,8 @@ export function Sidebar() {
             label="Admin"
             icon={Shield}
             active={pathname === '/admin'}
+            badge={emailsNovos}
+            badgeTitle={`${emailsNovos} e-mail${emailsNovos !== 1 ? 's' : ''} novo${emailsNovos !== 1 ? 's' : ''} em contato@`}
           />
         )}
 
