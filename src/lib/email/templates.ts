@@ -99,11 +99,6 @@ const passos = (tituloLista: string, itens: [string, string][]) => `
   </tr>`).join('')}
 </table>`
 
-const PASSOS_INICIO: [string, string][] = [
-  ['Cadastre sua conta ou cartão', 'A que você mais usa no dia a dia.'],
-  ['Suba o extrato em 1 clique', 'Sem senha de banco: baixe o OFX, CSV ou PDF e as regras categorizam seus gastos.'],
-  ['Veja seu mês e o 50/30/20', 'Para onde foi o dinheiro, o fim das parcelas e quanto sobra para guardar.'],
-]
 
 const p = (texto: string) =>
   `<p style="margin:0 0 14px;font-size:16px;line-height:26px;color:${TEXTO};">${texto}</p>`
@@ -116,103 +111,112 @@ const olaCorpo = (nome?: string) =>
 const dataBR = (iso?: string | null) =>
   iso ? iso.slice(0, 10).split('-').reverse().join('/') : ''
 
-// ── 0. Criou conta no plano grátis ──────────────────────────────────────────
-/**
- * Boas-vindas de quem se cadastrou. A pessoa já está dentro do app quando
- * recebe — o link aqui serve para confirmar o endereço, não para liberar o
- * acesso. Por isso o texto começa pelo primeiro passo, e não pelo botão.
- */
-export function emailBoasVindasCadastro(params: { nome?: string; link?: string }): Email {
-  const confirmacao = params.link
-    ? caixa('✉️ Confirme seu e-mail',
-        p('Leva um clique e garante que você recupere a conta se esquecer a senha.') +
-        botao(params.link, 'Confirmar meu e-mail'))
-    : ''
+// ── Regras de texto (padrão v2, 09/10/2026) ─────────────────────────────────
+// Teste = "5 dias grátis, com até 2 dias extras" (nunca "7 dias"); fim do
+// teste sempre com "sem cobrança"; preço anual completo; nada de "controle
+// total"/"piloto automático". Emoji: um no título e um por etiqueta de caixa;
+// no assunto, só nos de boas-vindas, teste e oferta (senha e cobrança sem).
 
+const PRECO_ANUAL = 'R$ 169 por ano (equivale a R$ 14,08/mês)'
+const OUTROS_PLANOS = `<p style="margin:0 0 14px;font-size:14px;line-height:22px;color:#475569;">Ou escolha outro plano: Mensal R$ 21 · Trimestral R$ 49. <a href="${SITE}/settings/assinatura" style="color:${AZUL_BOTAO};">Ver todos os planos</a></p>`
+const linha = (texto: string) => `<p style="margin:0 0 6px;font-size:15px;line-height:23px;color:#334155;">${texto}</p>`
+
+const PASSOS_INICIO: [string, string][] = [
+  ['Escolha a conta que você mais usa', 'Conta corrente ou cartão — é por ela que o seu mês começa a aparecer.'],
+  ['Importe o extrato do mês passado', 'Arquivo OFX, CSV ou PDF do seu banco. Você não precisa informar senha de banco.'],
+  ['Veja para onde foi o seu dinheiro', 'Quanto entrou, quanto saiu e quais gastos mais pesaram no mês.'],
+]
+
+const confirmarEmail = (link?: string) => link
+  ? caixa('✉️ Confirme seu e-mail',
+      p('Assim você consegue recuperar o acesso se um dia esquecer a senha.') +
+      botao(link, 'Confirmar meu e-mail'))
+  : ''
+
+// ── 1. Criou conta no plano grátis ──────────────────────────────────────────
+export function emailBoasVindasCadastro(params: { nome?: string; link?: string }): Email {
   return {
-    subject: 'Bem-vindo ao NOBLI',
+    subject: 'Sua conta no NOBLI está pronta 👋',
     html: moldura(
       olaCorpo(params.nome) +
-      p('Sua conta está pronta e você já pode usar o NOBLI.') +
-      botao(`${SITE}/dashboard`, 'Abrir o NOBLI') +
-      passos('3 passos rápidos para começar hoje:', PASSOS_INICIO) +
-      confirmacao,
-      { titulo: 'Bem-vindo ao NOBLI 👋', sub: 'Sua conta está pronta. Vamos organizar o seu dinheiro?', rodape: 'Você recebeu este e-mail porque criou uma conta no NOBLI.' },
+      p('Comece pelo extrato do mês passado: com ele, o NOBLI separa seus gastos por categoria e mostra o que mais pesou no orçamento.') +
+      botao(`${SITE}/transactions`, 'Começar minha organização') +
+      passos('Em 3 passos:', PASSOS_INICIO) +
+      confirmarEmail(params.link),
+      { titulo: 'Vamos organizar seu primeiro mês? 🗂️', sub: 'Leva poucos minutos e você já vê para onde foi o seu dinheiro.', rodape: 'Você recebeu este e-mail porque criou uma conta no NOBLI.' },
     ),
-    text: `${ola(params.nome)}\n\nSua conta no NOBLI está pronta.\n\nPrimeiro passo: cadastre uma conta ou cartão e importe o extrato do seu banco.\n${params.link ? `\nConfirme seu e-mail neste link: ${params.link}\n` : ''}\nDúvidas: ${SUPORTE}`,
+    text: `${ola(params.nome)}\n\nSua conta no NOBLI está pronta. Comece pelo extrato do mês passado: o NOBLI separa seus gastos por categoria e mostra o que mais pesou.\n\nComeçar: ${SITE}/transactions\n${params.link ? `\nConfirme seu e-mail: ${params.link}\n` : ''}\nDúvidas: ${SUPORTE}`,
   }
 }
 
-// ── 0. Esqueceu a senha (ou o convite expirou) ──────────────────────────────
+// ── 2. Esqueceu a senha (ou o convite expirou) ──────────────────────────────
 export function emailRecuperacaoSenha(params: { nome?: string; link: string }): Email {
   return {
     subject: 'Redefinir sua senha do NOBLI',
     html: moldura(
       olaCorpo(params.nome) +
-      p('Recebemos um pedido para entrar na sua conta sem a senha. Use o botão abaixo para definir uma nova.') +
+      p('Recebemos um pedido para redefinir a senha da sua conta. Use o botão abaixo para criar uma nova.') +
       botao(params.link, 'Definir nova senha') +
-      p('O link é de uso único e vale por 1 hora.') +
       p('Se não foi você que pediu, pode ignorar este e-mail — nada muda na sua conta enquanto o link não for usado.'),
-      { titulo: 'Redefinir sua senha 🔑', sub: 'Um link seguro para você voltar a entrar.', rodape: 'Você recebeu este e-mail porque alguém pediu a redefinição de senha desta conta no NOBLI.' },
+      { titulo: 'Redefina sua senha 🔑', sub: 'O link vale por 1 hora e só pode ser usado uma vez.', rodape: 'Você recebeu este e-mail porque alguém pediu a redefinição de senha desta conta no NOBLI.' },
     ),
     text: `${ola(params.nome)}\n\nUse este link para definir uma nova senha do NOBLI (uso único, vale 1 hora):\n${params.link}\n\nSe não foi você que pediu, ignore este e-mail.\n\nDúvidas: ${SUPORTE}`,
   }
 }
 
-// ── 1. Comprou e ainda não tem conta ────────────────────────────────────────
-export function emailBoasVindas(params: { nome?: string; link: string }): Email {
+// ── 3. Comprou e ainda não tem conta ────────────────────────────────────────
+export function emailBoasVindas(params: { nome?: string; link: string; plano?: string }): Email {
+  const plano = params.plano ? ` do plano <strong>${params.plano}</strong>` : ''
   return {
-    subject: 'Seu acesso ao NOBLI está pronto',
+    subject: 'Seu acesso ao NOBLI está pronto 🎉',
     html: moldura(
       olaCorpo(params.nome) +
-      p('Sua assinatura do NOBLI foi confirmada com sucesso. A partir de agora, suas finanças saem do modo manual e entram no piloto automático.') +
+      p(`Sua assinatura${plano} foi confirmada. Para entrar, crie a sua senha:`) +
       caixa('🔐 Seu primeiro acesso',
-        p('Para entrar, crie a sua senha no botão abaixo. O link é de uso único e vale por 24 horas.') +
-        botao(params.link, 'Criar minha senha →') +
-        `<p style="margin:0 0 12px;font-size:13px;color:#475569;"><em>Se o link expirar, use "Esqueci minha senha" na tela de entrada.</em></p>`) +
-      passos('3 passos rápidos para começar hoje:', PASSOS_INICIO),
-      { titulo: 'Parabéns! Seu acesso foi liberado 🚀', sub: 'Você deu o primeiro passo definitivo para ter controle total do seu dinheiro.', rodape: 'Você recebeu este e-mail porque assinou o NOBLI.' },
+        p('O link abaixo é de uso único e vale por 24 horas.') +
+        botao(params.link, 'Criar minha senha') +
+        `<p style="margin:0 0 12px;font-size:13px;color:#475569;">Se o link expirar, use "Esqueci minha senha" na tela de entrada.</p>`) +
+      passos('Depois de entrar:', PASSOS_INICIO),
+      { titulo: 'Seu acesso está liberado 🎉', sub: 'Falta só criar a sua senha.', rodape: 'Você recebeu este e-mail porque assinou o NOBLI.' },
     ),
-    text: `${ola(params.nome)}\n\nSua assinatura do NOBLI está ativa. Crie sua senha neste link (uso único, vale 24 horas):\n${params.link}\n\nDepois de entrar, cadastre suas contas e importe o extrato do seu banco.\n\nDúvidas: ${SUPORTE}`,
+    text: `${ola(params.nome)}\n\nSua assinatura do NOBLI${params.plano ? ` (plano ${params.plano})` : ''} foi confirmada. Crie sua senha neste link (uso único, vale 24 horas):\n${params.link}\n\nDepois de entrar, importe o extrato do mês passado para ver para onde foi o seu dinheiro.\n\nDúvidas: ${SUPORTE}`,
   }
 }
 
-// ── 2. Comprou e já tinha conta ─────────────────────────────────────────────
+// ── 4. Comprou e já tinha conta ─────────────────────────────────────────────
 export function emailPlanoLiberado(params: { nome?: string; plano: string }): Email {
   return {
-    subject: 'Sua assinatura do NOBLI está ativa',
+    subject: 'Sua assinatura do NOBLI está ativa ✅',
     html: moldura(
       olaCorpo(params.nome) +
-      p(`Recebemos seu pagamento e liberamos o plano <strong>${params.plano}</strong> na sua conta.`) +
-      p('É só entrar com o seu e-mail e a senha de sempre.') +
+      p(`Recebemos seu pagamento e liberamos o plano <strong>${params.plano}</strong> na sua conta. Tudo o que você já tinha feito continua lá.`) +
+      p('É só entrar com o seu e-mail e a sua senha.') +
       botao(`${SITE}/dashboard`, 'Abrir o NOBLI') +
       // Rede de segurança: este e-mail vai para quem já tem conta, mas nem
-      // toda conta tem senha definida. Sem esta linha, quem caísse nesse caso
-      // ficava sem saída dentro do próprio e-mail de boas-novas.
-      p(`Ainda não definiu uma senha? <a href="${SITE}/auth/recuperar" style="color:#2563eb;">Crie a sua aqui</a>.`),
-      { titulo: 'Sua assinatura está ativa 🚀', sub: `Tudo do plano ${params.plano} já está liberado na sua conta.`, rodape: 'Você recebeu este e-mail porque assinou o NOBLI.' },
+      // toda conta tem senha definida.
+      p(`Ainda não definiu uma senha? <a href="${SITE}/auth/recuperar" style="color:${AZUL_BOTAO};">Crie a sua aqui</a>.`),
+      { titulo: 'Sua assinatura está ativa ✅', sub: `O plano ${params.plano} já está liberado na sua conta.`, rodape: 'Você recebeu este e-mail porque assinou o NOBLI.' },
     ),
-    text: `${ola(params.nome)}\n\nSeu pagamento foi confirmado e o plano ${params.plano} está liberado. Entre em ${SITE}/dashboard com o seu e-mail e senha.\n\nAinda não definiu uma senha? Crie a sua em ${SITE}/auth/recuperar\n\nDúvidas: ${SUPORTE}`,
+    text: `${ola(params.nome)}\n\nSeu pagamento foi confirmado e o plano ${params.plano} está liberado. Tudo o que você já tinha feito continua lá.\n\nEntrar: ${SITE}/dashboard\nAinda não definiu uma senha? ${SITE}/auth/recuperar\n\nDúvidas: ${SUPORTE}`,
   }
 }
 
-// ── 3. Renovação não foi aprovada ───────────────────────────────────────────
+// ── 5. Renovação não foi aprovada ───────────────────────────────────────────
 export function emailPagamentoAtrasado(params: { nome?: string }): Email {
   return {
-    subject: 'Não conseguimos renovar sua assinatura do NOBLI',
+    subject: 'Não conseguimos concluir a renovação do NOBLI',
     html: moldura(
       olaCorpo(params.nome) +
-      p('A cobrança da renovação não foi aprovada. Costuma ser cartão vencido, limite ou uma recusa do banco.') +
-      caixa('⚠️ O que acontece agora',
-        p('<strong>Seu acesso continua liberado por enquanto</strong>, e nenhum dado seu foi alterado. Só pedimos que atualize o pagamento para não perder os recursos do plano.')) +
+      p('O pagamento da renovação da sua assinatura não foi concluído.') +
+      p('<strong>Seu acesso continua liberado por enquanto</strong> e nenhum dado seu foi alterado. Para não perder os recursos do plano, confira a forma de pagamento.') +
       botao(`${SITE}/settings/assinatura`, 'Ver minha assinatura'),
-      { titulo: 'Não conseguimos renovar sua assinatura', sub: 'Seu acesso continua liberado por enquanto.' },
+      { titulo: '⚠️ O pagamento da renovação não foi concluído', sub: 'Seu acesso continua liberado por enquanto.' },
     ),
-    text: `${ola(params.nome)}\n\nA renovação da sua assinatura do NOBLI não foi aprovada. Seu acesso continua por enquanto — atualize o pagamento em ${SITE}/settings/assinatura.\n\nDúvidas: ${SUPORTE}`,
+    text: `${ola(params.nome)}\n\nO pagamento da renovação da sua assinatura do NOBLI não foi concluído. Seu acesso continua liberado por enquanto — confira a forma de pagamento em ${SITE}/settings/assinatura.\n\nDúvidas: ${SUPORTE}`,
   }
 }
 
-// ── 4. Assinatura encerrada (cancelamento, reembolso ou chargeback) ─────────
+// ── 6. Assinatura encerrada (cancelamento, reembolso ou chargeback) ─────────
 export function emailAssinaturaEncerrada(params: { nome?: string; motivo: 'cancelamento' | 'reembolso' }): Email {
   const abertura = params.motivo === 'reembolso'
     ? 'Seu reembolso foi processado e a assinatura do NOBLI foi encerrada.'
@@ -222,17 +226,17 @@ export function emailAssinaturaEncerrada(params: { nome?: string; motivo: 'cance
     html: moldura(
       olaCorpo(params.nome) +
       p(abertura) +
-      p('<strong>Nenhum dado seu foi apagado.</strong> Suas contas, lançamentos, categorias e histórico continuam aí. A conta volta para o plano grátis: os recursos pagos deixam de abrir, e o resto continua funcionando.') +
-      p(`Se quiser levar tudo com você, dá para exportar seus dados a qualquer momento em <a href="${SITE}/account" style="color:${AZUL_BOTAO};">Minha conta</a>.`) +
+      p('Suas contas, lançamentos, categorias e histórico continuam guardados. A conta volta para o plano Grátis: os recursos pagos ficam só para consulta e o resto continua funcionando.') +
+      p(`Se quiser levar tudo com você, exporte seus dados em <a href="${SITE}/account" style="color:${AZUL_BOTAO};">Minha conta</a>.`) +
       botao(`${SITE}/settings/assinatura`, 'Assinar de novo') +
-      p('Se puder responder este e-mail contando o que faltou, ajuda muito a melhorar o produto.'),
-      { titulo: 'Sua assinatura foi encerrada', sub: 'Nenhum dado seu foi apagado.' },
+      p('Se puder, responda este e-mail contando o que faltou. Isso ajuda muito a melhorar o NOBLI.'),
+      { titulo: 'Sua assinatura foi encerrada 📁', sub: 'Seus dados continuam guardados.' },
     ),
-    text: `${ola(params.nome)}\n\n${abertura}\n\nNenhum dado foi apagado — a conta volta para o plano grátis. Você pode exportar tudo em ${SITE}/account ou assinar de novo em ${SITE}/settings/assinatura.\n\nDúvidas: ${SUPORTE}`,
+    text: `${ola(params.nome)}\n\n${abertura}\n\nSeus dados continuam guardados e a conta volta para o plano Grátis. Exportar: ${SITE}/account — Assinar de novo: ${SITE}/settings/assinatura\n\nDúvidas: ${SUPORTE}`,
   }
 }
 
-// ── 5. Renovou ──────────────────────────────────────────────────────────────
+// ── 7. Renovou ──────────────────────────────────────────────────────────────
 export function emailRenovacao(params: { nome?: string; plano: string; proximaCobranca?: string | null }): Email {
   const quando = dataBR(params.proximaCobranca)
   return {
@@ -242,7 +246,7 @@ export function emailRenovacao(params: { nome?: string; plano: string; proximaCo
       p(`Sua assinatura do plano <strong>${params.plano}</strong> foi renovada e segue ativa.`) +
       (quando ? p(`Próxima cobrança em <strong>${quando}</strong>.`) : '') +
       botao(`${SITE}/dashboard`, 'Abrir o NOBLI'),
-      { titulo: 'Assinatura renovada ✅', sub: 'Obrigado por continuar com o NOBLI.', rodape: 'A nota fiscal e os detalhes da cobrança chegam pela Cakto, que processa o pagamento.' },
+      { titulo: 'Assinatura renovada ✅', sub: 'Obrigado por continuar com o NOBLI.' },
     ),
     text: `${ola(params.nome)}\n\nSua assinatura do plano ${params.plano} foi renovada.${quando ? ` Próxima cobrança em ${quando}.` : ''}\n\n${SITE}/dashboard\n\nDúvidas: ${SUPORTE}`,
   }
@@ -282,125 +286,127 @@ export function emailNovaVenda(params: {
   }
 }
 
-// ── Teste grátis de 7 dias (plano de conversão, 07/10/2026) ─────────────────
+// ── Teste grátis: 5 dias + até 2 dias extras (plano de conversão) ──────────
 const SAIR = 'Se não quiser mais receber e-mails como este, responda com SAIR.'
-const precoAnual = 'R$ 14,08/mês'
 
-/** A1 — o teste começou (na criação da conta, ou ao entrar pelo /teste já logado). */
+const horaBR = (d: Date) => d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
+
+/** 9 — o teste começou (na criação da conta, ou ao entrar pelo /teste já logado). */
 export function emailTesteInicio(params: { nome?: string; link?: string }): Email {
-  const confirmacao = params.link
-    ? caixa('✉️ Confirme seu e-mail',
-        p('Leva um clique e garante que você recupere a conta se esquecer a senha.') +
-        botao(params.link, 'Confirmar meu e-mail'))
-    : ''
   return {
-    subject: 'Seu teste de 7 dias do NOBLI começou ⏳',
+    subject: 'Seu teste do NOBLI começou: 5 dias grátis ⏳',
     html: moldura(
       olaCorpo(params.nome) +
-      p('Seu teste do NOBLI começou: você tem <strong>5 dias</strong> para colocar suas finanças em ordem — e pode ganhar até <strong>2 dias extras</strong> completando a sua jornada no app.') +
-      p('O primeiro passo leva 2 minutos: crie a conta que você mais usa e importe o extrato do último mês. Só a importação vale <strong>+8 horas</strong> de teste.') +
-      botao(`${SITE}/dashboard`, 'Começar agora') +
-      passos('3 passos rápidos para começar hoje:', PASSOS_INICIO) +
-      confirmacao,
-      { titulo: 'Seu teste de 7 dias começou ⏳', sub: '5 dias para organizar suas finanças, e até 2 dias extras com a sua jornada.', rodape: 'Você recebeu este e-mail porque começou o teste grátis do NOBLI.' },
+      p('Você tem 5 dias para conhecer o NOBLI completo. Comece pelo extrato do mês passado: com ele, você vê quais gastos mais pesaram no seu orçamento.') +
+      botao(`${SITE}/transactions`, 'Começar minha organização') +
+      caixa('⏱️ Como ganhar mais tempo',
+        p('Cada tarefa da sua jornada no app soma horas ao teste, até <strong>2 dias extras</strong>. A que mais vale é importar o primeiro extrato: <strong>+8 horas</strong>. O relógio no topo do app mostra quanto tempo falta.')) +
+      confirmarEmail(params.link),
+      { titulo: 'Seu teste grátis começou ⏳', sub: '5 dias para conhecer o NOBLI, sem cartão e sem cobrança.', rodape: 'Você recebeu este e-mail porque começou o teste grátis do NOBLI.' },
     ),
-    text: `${ola(params.nome)}\n\nSeu teste do NOBLI começou: 5 dias para colocar suas finanças em ordem, e até 2 dias extras completando a sua jornada no app.\n\nPrimeiro passo: crie a conta que você mais usa e importe o extrato do último mês (+8 horas de teste).\n\nComeçar: ${SITE}/dashboard\n${params.link ? `\nConfirme seu e-mail: ${params.link}\n` : ''}\nDúvidas: ${SUPORTE}`,
+    text: `${ola(params.nome)}\n\nSeu teste do NOBLI começou: 5 dias grátis, sem cartão e sem cobrança. Cada tarefa no app soma horas ao teste, até 2 dias extras — importar o primeiro extrato vale +8 horas.\n\nComeçar: ${SITE}/transactions\n${params.link ? `\nConfirme seu e-mail: ${params.link}\n` : ''}\nDúvidas: ${SUPORTE}`,
   }
 }
 
-/** A2 — dia 2, só para quem ainda não importou nenhum extrato. */
+/** 10 — dia 2, só para quem ainda não importou nenhum extrato. */
 export function emailTesteImportar(params: { nome?: string }): Email {
-  const primeiro = params.nome ? params.nome.split(' ')[0] : ''
   return {
-    subject: 'Falta o passo que mais vale no seu teste',
+    subject: '🔍 Descubra o que mais pesou no seu último mês',
     html: moldura(
       olaCorpo(params.nome) +
-      p('Seu NOBLI ainda está vazio. Importar o extrato do último mês é o passo que mais vale: <strong>+8 horas</strong> de teste e o seu mês organizado numa tela só.') +
-      p('Funciona com OFX, CSV ou PDF do seu banco.') +
-      botao(`${SITE}/transactions`, 'Importar meu extrato'),
-      { titulo: 'Falta o passo que mais vale', sub: 'Importar o extrato vale +8 horas de teste.', rodape: SAIR },
+      p('Com o extrato do mês passado, o NOBLI separa seus gastos por categoria e mostra o que mais pesou: mercado, delivery, assinaturas, parcelas.') +
+      p('Funciona com o arquivo OFX, CSV ou PDF do seu banco. Você não precisa informar senha de banco.') +
+      botao(`${SITE}/transactions`, 'Importar meu extrato') +
+      p('<span style="font-size:14px;color:#475569;">De quebra, importar o primeiro extrato soma 8 horas ao seu teste (os extras chegam a até 2 dias).</span>'),
+      { titulo: '🔍 Seu primeiro extrato pode revelar muito sobre seus gastos', sub: 'Importe o mês passado e veja para onde foi o seu dinheiro.', rodape: SAIR },
     ),
-    text: `${primeiro ? `${primeiro}, seu` : 'Seu'} NOBLI ainda está vazio.\n\nImportar o extrato do último mês vale +8 horas de teste e organiza seu mês numa tela só. Funciona com OFX, CSV ou PDF.\n\nImportar: ${SITE}/transactions\n\n${SAIR}`,
+    text: `${ola(params.nome)}\n\nCom o extrato do mês passado, o NOBLI separa seus gastos por categoria e mostra o que mais pesou. Funciona com OFX, CSV ou PDF, sem senha de banco.\n\nImportar: ${SITE}/transactions\n\nImportar o primeiro extrato soma 8 horas ao seu teste (os extras chegam a até 2 dias).\n\n${SAIR}`,
   }
 }
 
 export interface ResumoTeste { contas: number; lancamentos: number; fixos: number; meta?: string | null }
 
-function frasesResumo(r: ResumoTeste): string | null {
+function itensResumo(r: ResumoTeste): string | null {
   if (r.contas === 0 && r.lancamentos === 0) return null
-  const partes = [`organizou <strong>${r.contas} conta${r.contas === 1 ? '' : 's'} e ${r.lancamentos} lançamento${r.lancamentos === 1 ? '' : 's'}</strong>`]
-  if (r.fixos > 0) partes.push(`confirmou ${r.fixos} gasto${r.fixos === 1 ? '' : 's'} fixo${r.fixos === 1 ? '' : 's'}`)
-  if (r.meta) partes.push(`criou a meta “${r.meta}”`)
-  return `Até agora você ${partes.join(', ')}.`
+  const itens = [`${r.contas} conta${r.contas === 1 ? '' : 's'} e ${r.lancamentos} lançamento${r.lancamentos === 1 ? '' : 's'} organizados`]
+  if (r.fixos > 0) itens.push(`${r.fixos} gasto${r.fixos === 1 ? '' : 's'} fixo${r.fixos === 1 ? '' : 's'} confirmado${r.fixos === 1 ? '' : 's'}`)
+  if (r.meta) itens.push(`a meta “${r.meta}”`)
+  return itens.map(i => linha(`• ${i}`)).join('')
 }
 
-/** A3 — último dia do teste. `quando` = 'hoje' ou 'amanhã'. */
-export function emailTesteTermina(params: { nome?: string; quando: 'hoje' | 'amanhã'; resumo: ResumoTeste; checkout: string }): Email {
-  const primeiro = params.nome ? params.nome.split(' ')[0] : ''
-  const resumo = frasesResumo(params.resumo)
+const OQUE_MUDA = caixa('🔄 O que muda quando o teste acaba',
+  linha('• Sua conta volta ao plano Grátis, <strong>sem cobrança</strong>.') +
+  linha('• Você continua com 1 conta ativa e suas regras seguem categorizando.') +
+  linha('• Planejamento, metas, gastos fixos e relatórios ficam só para consulta.') +
+  linha('• Nada do que você fez é apagado.') + '<div style="height:10px;"></div>')
+
+/** 11 — último dia do teste. `quando` = 'hoje' ou 'amanhã'; `fim` = hora real do fim. */
+export function emailTesteTermina(params: { nome?: string; quando: 'hoje' | 'amanhã'; fim: Date; resumo: ResumoTeste; checkout: string }): Email {
+  const resumo = itensResumo(params.resumo)
   return {
-    subject: `Seu teste do NOBLI termina ${params.quando}`,
+    subject: `⏰ Seu teste do NOBLI termina ${params.quando}`,
     html: moldura(
       olaCorpo(params.nome) +
-      (resumo ? caixa('📊 O que você já construiu', p(resumo)) : '') +
-      p('Quando o teste acabar, o planejamento, as metas e os relatórios ficam só para consulta. Assine para manter tudo liberado — nada do que você fez se perde.') +
-      botao(params.checkout, `Assinar o Anual · ${precoAnual}`) +
-      `<p style="margin:0 0 12px;font-size:14px;"><a href="${SITE}/settings/assinatura" style="color:${AZUL_BOTAO};">Ver os planos</a></p>`,
-      { titulo: `Seu teste termina ${params.quando}`, sub: 'Assine para manter tudo liberado.', rodape: SAIR },
+      (resumo ? caixa('📊 O que você já organizou', resumo + '<div style="height:10px;"></div>') : '') +
+      OQUE_MUDA +
+      p(`Para manter tudo liberado, assine o plano Anual: <strong>${PRECO_ANUAL}</strong>. Cancele quando quiser.`) +
+      botao(params.checkout, 'Assinar o plano Anual') +
+      OUTROS_PLANOS,
+      { titulo: `⏰ Seu teste termina ${params.quando}, às ${horaBR(params.fim)}`, sub: 'Depois disso sua conta volta ao plano Grátis, sem cobrança.', rodape: SAIR },
     ),
-    text: `${primeiro ? `${primeiro}, ` : ''}seu teste do NOBLI termina ${params.quando}.\n\n${resumo ? resumo.replace(/<[^>]+>/g, '') + '\n\n' : ''}Depois disso, planejamento, metas e relatórios ficam só para consulta. Assine para manter tudo liberado.\n\nAssinar o Anual (${precoAnual}): ${params.checkout}\nVer os planos: ${SITE}/settings/assinatura\n\n${SAIR}`,
+    text: `${ola(params.nome)}\n\nSeu teste do NOBLI termina ${params.quando}, às ${horaBR(params.fim)}. Depois disso a conta volta ao plano Grátis, sem cobrança: 1 conta ativa, regras funcionando, e planejamento, metas, gastos fixos e relatórios só para consulta. Nada é apagado.\n\nPlano Anual: ${PRECO_ANUAL}. Assinar: ${params.checkout}\nOutros planos (Mensal R$ 21 · Trimestral R$ 49): ${SITE}/settings/assinatura\n\n${SAIR}`,
   }
 }
 
-/** A4 — o teste terminou. */
-export function emailTesteTerminou(params: { nome?: string; duracao: string; checkout: string }): Email {
-  const primeiro = params.nome ? params.nome.split(' ')[0] : ''
+/** 12 — o teste terminou. `horasExtras` = bônus ganho na jornada (0 a 48). */
+export function emailTesteTerminou(params: { nome?: string; horasExtras: number; checkout: string }): Email {
+  const extra = params.horasExtras > 0 ? ` + as ${params.horasExtras} horas extras que você ganhou` : ''
   return {
-    subject: 'Seu teste terminou — e nada foi apagado',
+    subject: 'Seu teste do NOBLI terminou',
     html: moldura(
       olaCorpo(params.nome) +
-      p(`Seu teste de ${params.duracao} terminou. Tudo o que você construiu continua no app.`) +
+      p(`Seus 5 dias de teste${extra} terminaram. Tudo o que você construiu continua na sua conta.`) +
       caixa('📌 No plano Grátis',
-        p('Você segue com <strong>1 conta ativa</strong> e suas regras continuam categorizando. O resto fica só para consulta.')) +
-      p('Para continuar de onde parou:') +
-      botao(params.checkout, `Assinar o Anual · ${precoAnual}`) +
-      `<p style="margin:0 0 12px;font-size:14px;"><a href="${SITE}/settings/assinatura" style="color:${AZUL_BOTAO};">Ver os planos</a></p>`,
-      { titulo: 'Seu teste terminou', sub: 'E nada do que você construiu foi apagado.', rodape: SAIR },
+        linha('• <strong>Continua:</strong> 1 conta ativa (você escolhe qual), suas regras categorizando e todos os seus dados visíveis.') +
+        linha('• <strong>Fica só para consulta:</strong> planejamento, metas, gastos fixos e relatórios.') + '<div style="height:10px;"></div>') +
+      p(`Para continuar de onde parou, assine o plano Anual: <strong>${PRECO_ANUAL}</strong>. Cancele quando quiser.`) +
+      botao(params.checkout, 'Assinar o plano Anual') +
+      OUTROS_PLANOS,
+      { titulo: 'Seu teste terminou 📌', sub: 'Você está no plano Grátis. Nada foi apagado e não houve cobrança.', rodape: SAIR },
     ),
-    text: `${primeiro ? `${primeiro}, seu` : 'Seu'} teste de ${params.duracao} terminou.\n\nTudo o que você construiu continua no app. No Grátis: 1 conta ativa e as regras continuam funcionando; o resto fica só para consulta.\n\nAssinar o Anual (${precoAnual}): ${params.checkout}\nVer os planos: ${SITE}/settings/assinatura\n\n${SAIR}`,
+    text: `${ola(params.nome)}\n\nSeus 5 dias de teste${extra} terminaram. Você está no plano Grátis: nada foi apagado e não houve cobrança. Continua: 1 conta ativa e suas regras. Só consulta: planejamento, metas, gastos fixos e relatórios.\n\nPlano Anual: ${PRECO_ANUAL}. Assinar: ${params.checkout}\nOutros planos: ${SITE}/settings/assinatura\n\n${SAIR}`,
   }
 }
 
-/** B — oferta do teste para quem já é Grátis (envio único, pelo Admin). */
+/** 13 — oferta do teste para quem já é Grátis (envio único, pelo Admin). */
 export function emailOfertaTeste(params: { nome?: string }): Email {
   const link = `${SITE}/teste-gratis?utm_source=email&utm_campaign=gratis`
   return {
-    subject: 'Liberamos 7 dias do NOBLI completo para você',
+    subject: '🎁 Teste o NOBLI completo: 5 dias grátis',
     html: moldura(
       olaCorpo(params.nome) +
-      p('Você está no plano Grátis — e agora pode testar o NOBLI completo por <strong>7 dias</strong>, sem cartão: planejamento 50/30/20, metas, gastos fixos e regras automáticas.') +
-      p('É só clicar: o teste começa na hora, com os dados que você já tem.') +
+      p('Você usa o plano Grátis. Agora pode testar o NOBLI completo por <strong>5 dias</strong>: planejamento do mês, metas, gastos fixos e regras automáticas — e ganhar até <strong>2 dias extras</strong> usando o app.') +
+      p('O teste começa na hora, com os dados que você já tem. Não pede cartão e não gera cobrança.') +
       botao(link, 'Começar meu teste grátis'),
-      { titulo: '7 dias do NOBLI completo para você 🎁', sub: 'Sem cartão. Começa na hora, com os dados que você já tem.', rodape: SAIR },
+      { titulo: '🎁 Libere o NOBLI completo por 5 dias', sub: 'Sem cartão e sem cobrança, com os dados que você já tem.', rodape: SAIR },
     ),
-    text: `${ola(params.nome)}\n\nVocê está no plano Grátis — e agora pode testar o NOBLI completo por 7 dias, sem cartão: planejamento 50/30/20, metas, gastos fixos e regras automáticas.\n\nComeçar: ${link}\n\n${SAIR}`,
+    text: `${ola(params.nome)}\n\nVocê usa o plano Grátis. Agora pode testar o NOBLI completo por 5 dias (com até 2 dias extras usando o app), sem cartão e sem cobrança.\n\nComeçar: ${link}\n\n${SAIR}`,
   }
 }
 
-/** C — checkout abandonado na Cakto. */
+/** 14 — checkout abandonado na Cakto. */
 export function emailCheckoutAbandonado(params: { nome?: string; checkout: string }): Email {
   const teste = `${SITE}/teste-gratis?utm_source=email&utm_campaign=checkout_abandonado`
   return {
-    subject: 'Ficou faltando pouco para organizar seu dinheiro',
+    subject: 'Sua assinatura do NOBLI ficou pela metade',
     html: moldura(
       olaCorpo(params.nome) +
-      p('Vimos que você começou a assinar o NOBLI e não terminou. Se ficou alguma dúvida, é só responder este e-mail.') +
-      botao(params.checkout, 'Voltar e concluir minha assinatura') +
+      p('Vimos que você começou a assinar o NOBLI e não concluiu. Se foi algum problema no pagamento ou ficou dúvida sobre os planos, é só responder este e-mail.') +
+      botao(params.checkout, 'Concluir minha assinatura') +
       caixa('🧪 Prefere conhecer antes?',
-        p('Teste o NOBLI completo por 7 dias, sem cartão.') +
-        `<p style="margin:0;font-size:14px;"><a href="${teste}" style="color:${AZUL_BOTAO};font-weight:700;">Testar grátis por 7 dias →</a></p>`),
-      { titulo: 'Ficou faltando pouco', sub: 'Sua assinatura do NOBLI está a um passo.', rodape: SAIR },
+        p(`Teste o NOBLI por 5 dias grátis, sem cartão — e ganhe até 2 dias extras usando o app. <a href="${teste}" style="color:${AZUL_BOTAO};font-weight:700;">Começar o teste grátis</a>`)),
+      { titulo: 'Ficou alguma dúvida? 💬', sub: 'Sua assinatura está a um passo.', rodape: SAIR },
     ),
-    text: `${ola(params.nome)} Vimos que você começou a assinar o NOBLI e não terminou.\n\nSe ficou alguma dúvida, é só responder este e-mail.\n\nConcluir a assinatura: ${params.checkout}\nPrefere conhecer antes? Teste grátis por 7 dias: ${teste}\n\n${SAIR}`,
+    text: `${ola(params.nome)}\n\nVimos que você começou a assinar o NOBLI e não concluiu. Se ficou alguma dúvida, responda este e-mail.\n\nConcluir: ${params.checkout}\nPrefere conhecer antes? 5 dias grátis, sem cartão: ${teste}\n\n${SAIR}`,
   }
 }

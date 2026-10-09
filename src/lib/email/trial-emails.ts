@@ -4,7 +4,7 @@ import {
   emailTesteImportar, emailTesteTermina, emailTesteTerminou, emailOfertaTeste, emailCheckoutAbandonado, ResumoTeste,
 } from '@/lib/email/templates'
 import { checkoutUrl } from '@/lib/checkout-url'
-import { TRIAL_BASE_DAYS, trialEndsAt } from '@/lib/trial-config'
+import { trialEndsAt } from '@/lib/trial-config'
 
 type Admin = ReturnType<typeof createAdminClient>
 const HORA = 60 * 60 * 1000
@@ -75,13 +75,11 @@ export async function enviarSequenciaTeste(admin: Admin, agora = Date.now()) {
     }
     if (ativo && fim - agora <= 36 * HORA && !tem(uid, 'email_teste', 'a3')) {
       const hoje = new Date(fim).toDateString() === new Date(agora).toDateString()
-      const r = await enviarEmail(t.email as string, emailTesteTermina({ nome: n, quando: hoje ? 'hoje' : 'amanhã', resumo: await resumo(admin, uid), checkout }))
+      const r = await enviarEmail(t.email as string, emailTesteTermina({ nome: n, quando: hoje ? 'hoje' : 'amanhã', fim: new Date(fim), resumo: await resumo(admin, uid), checkout }))
       if (!r.error) { await marcar(admin, uid, 'a3'); enviados.push(`a3:${uid}`) }
     }
     if (!ativo && agora - fim <= 72 * HORA && !tem(uid, 'email_teste', 'a4')) {
-      const horas = TRIAL_BASE_DAYS * 24 + Number(t.bonus_hours ?? 0)
-      const duracao = `${Math.floor(horas / 24)} dias${horas % 24 ? ` e ${horas % 24} horas` : ''}`
-      const r = await enviarEmail(t.email as string, emailTesteTerminou({ nome: n, duracao, checkout }))
+      const r = await enviarEmail(t.email as string, emailTesteTerminou({ nome: n, horasExtras: Number(t.bonus_hours ?? 0), checkout }))
       if (!r.error) { await marcar(admin, uid, 'a4'); enviados.push(`a4:${uid}`) }
     }
   }

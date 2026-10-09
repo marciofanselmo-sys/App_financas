@@ -368,7 +368,7 @@ async function avisarPorEmail(params: {
       { user_id: resolved.userId, full_name: nome ?? '', needs_password: true },
       { onConflict: 'user_id' },
     )
-    await enviarEmail(resolved.email, emailBoasVindas({ nome, link }))
+    await enviarEmail(resolved.email, emailBoasVindas({ nome, link, plano }))
     return
   }
 
