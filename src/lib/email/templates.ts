@@ -12,6 +12,12 @@ export interface Email {
   subject: string
   html: string
   text: string
+  /**
+   * Lembrete ou oferta: quem se descadastrou não recebe, e o envio troca
+   * {{SAIR}} pelo link de descadastro da pessoa (send.ts). Avisos de conta e
+   * cobrança não têm isso — chegam sempre.
+   */
+  marketing?: true
 }
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://noblifinance.com.br'
@@ -287,7 +293,9 @@ export function emailNovaVenda(params: {
 }
 
 // ── Teste grátis: 5 dias + até 2 dias extras (plano de conversão) ──────────
-const SAIR = 'Se não quiser mais receber e-mails como este, responda com SAIR.'
+// {{SAIR}} vira o link de descadastro da pessoa no envio (send.ts).
+const SAIR = 'Não quer mais receber lembretes e ofertas do NOBLI? <a href="{{SAIR}}" style="color:#475569;text-decoration:underline;">Cancelar inscrição</a>. Avisos da sua conta e de cobrança continuam chegando.'
+const SAIR_TXT = 'Para não receber mais lembretes e ofertas: {{SAIR}}'
 
 const horaBR = (d: Date) => d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
 
@@ -320,7 +328,8 @@ export function emailTesteImportar(params: { nome?: string }): Email {
       p('<span style="font-size:14px;color:#475569;">De quebra, importar o primeiro extrato soma 8 horas ao seu teste (os extras chegam a até 2 dias).</span>'),
       { titulo: '🔍 Seu primeiro extrato pode revelar muito sobre seus gastos', sub: 'Importe o mês passado e veja para onde foi o seu dinheiro.', rodape: SAIR },
     ),
-    text: `${ola(params.nome)}\n\nCom o extrato do mês passado, o NOBLI separa seus gastos por categoria e mostra o que mais pesou. Funciona com OFX, CSV ou PDF, sem senha de banco.\n\nImportar: ${SITE}/transactions\n\nImportar o primeiro extrato soma 8 horas ao seu teste (os extras chegam a até 2 dias).\n\n${SAIR}`,
+    text: `${ola(params.nome)}\n\nCom o extrato do mês passado, o NOBLI separa seus gastos por categoria e mostra o que mais pesou. Funciona com OFX, CSV ou PDF, sem senha de banco.\n\nImportar: ${SITE}/transactions\n\nImportar o primeiro extrato soma 8 horas ao seu teste (os extras chegam a até 2 dias).\n\n${SAIR_TXT}`,
+    marketing: true,
   }
 }
 
@@ -354,7 +363,8 @@ export function emailTesteTermina(params: { nome?: string; quando: 'hoje' | 'ama
       OUTROS_PLANOS,
       { titulo: `⏰ Seu teste termina ${params.quando}, às ${horaBR(params.fim)}`, sub: 'Depois disso sua conta volta ao plano Grátis, sem cobrança.', rodape: SAIR },
     ),
-    text: `${ola(params.nome)}\n\nSeu teste do NOBLI termina ${params.quando}, às ${horaBR(params.fim)}. Depois disso a conta volta ao plano Grátis, sem cobrança: 1 conta ativa, regras funcionando, e planejamento, metas, gastos fixos e relatórios só para consulta. Nada é apagado.\n\nPlano Anual: ${PRECO_ANUAL}. Assinar: ${params.checkout}\nOutros planos (Mensal R$ 21 · Trimestral R$ 49): ${SITE}/settings/assinatura\n\n${SAIR}`,
+    text: `${ola(params.nome)}\n\nSeu teste do NOBLI termina ${params.quando}, às ${horaBR(params.fim)}. Depois disso a conta volta ao plano Grátis, sem cobrança: 1 conta ativa, regras funcionando, e planejamento, metas, gastos fixos e relatórios só para consulta. Nada é apagado.\n\nPlano Anual: ${PRECO_ANUAL}. Assinar: ${params.checkout}\nOutros planos (Mensal R$ 21 · Trimestral R$ 49): ${SITE}/settings/assinatura\n\n${SAIR_TXT}`,
+    marketing: true,
   }
 }
 
@@ -374,7 +384,8 @@ export function emailTesteTerminou(params: { nome?: string; horasExtras: number;
       OUTROS_PLANOS,
       { titulo: '📌 Seu teste terminou', sub: 'Você está no plano Grátis. Nada foi apagado e não houve cobrança.', rodape: SAIR },
     ),
-    text: `${ola(params.nome)}\n\nSeus 5 dias de teste${extra} terminaram. Você está no plano Grátis: nada foi apagado e não houve cobrança. Continua: 1 conta ativa e suas regras. Só consulta: planejamento, metas, gastos fixos e relatórios.\n\nPlano Anual: ${PRECO_ANUAL}. Assinar: ${params.checkout}\nOutros planos: ${SITE}/settings/assinatura\n\n${SAIR}`,
+    text: `${ola(params.nome)}\n\nSeus 5 dias de teste${extra} terminaram. Você está no plano Grátis: nada foi apagado e não houve cobrança. Continua: 1 conta ativa e suas regras. Só consulta: planejamento, metas, gastos fixos e relatórios.\n\nPlano Anual: ${PRECO_ANUAL}. Assinar: ${params.checkout}\nOutros planos: ${SITE}/settings/assinatura\n\n${SAIR_TXT}`,
+    marketing: true,
   }
 }
 
@@ -390,7 +401,8 @@ export function emailOfertaTeste(params: { nome?: string }): Email {
       botao(link, 'Começar meu teste grátis'),
       { titulo: '🎁 Libere o NOBLI completo por 5 dias', sub: 'Sem cartão e sem cobrança, com os dados que você já tem.', rodape: SAIR },
     ),
-    text: `${ola(params.nome)}\n\nVocê usa o plano Grátis. Agora pode testar o NOBLI completo por 5 dias (com até 2 dias extras usando o app), sem cartão e sem cobrança.\n\nComeçar: ${link}\n\n${SAIR}`,
+    text: `${ola(params.nome)}\n\nVocê usa o plano Grátis. Agora pode testar o NOBLI completo por 5 dias (com até 2 dias extras usando o app), sem cartão e sem cobrança.\n\nComeçar: ${link}\n\n${SAIR_TXT}`,
+    marketing: true,
   }
 }
 
@@ -407,6 +419,7 @@ export function emailCheckoutAbandonado(params: { nome?: string; checkout: strin
         p(`Teste o NOBLI por 5 dias grátis, sem cartão — e ganhe até 2 dias extras usando o app. <a href="${teste}" style="color:${AZUL_BOTAO};font-weight:700;">Começar o teste grátis</a>`)),
       { titulo: '💬 Ficou alguma dúvida?', sub: 'Sua assinatura está a um passo.', rodape: SAIR },
     ),
-    text: `${ola(params.nome)}\n\nVimos que você começou a assinar o NOBLI e não concluiu. Se ficou alguma dúvida, responda este e-mail.\n\nConcluir: ${params.checkout}\nPrefere conhecer antes? 5 dias grátis, sem cartão: ${teste}\n\n${SAIR}`,
+    text: `${ola(params.nome)}\n\nVimos que você começou a assinar o NOBLI e não concluiu. Se ficou alguma dúvida, responda este e-mail.\n\nConcluir: ${params.checkout}\nPrefere conhecer antes? 5 dias grátis, sem cartão: ${teste}\n\n${SAIR_TXT}`,
+    marketing: true,
   }
 }

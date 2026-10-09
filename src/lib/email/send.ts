@@ -1,5 +1,6 @@
 import { Email } from './templates'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { descadastrado, linkSair, linkSairUmClique } from './sair'
 
 /**
  * Envio pela Resend, por HTTP puro — uma chamada só não justifica dependência
@@ -23,9 +24,30 @@ async function registrarEnvio(ok: boolean) {
   } catch { /* sem chave de serviço: segue sem registrar */ }
 }
 
-export async function enviarEmail(para: string, email: Email): Promise<{ error: string | null }> {
+export async function enviarEmail(para: string, email: Email): Promise<{ error: string | null; pulado?: true }> {
   const apiKey = process.env.RESEND_API_KEY
   const from = process.env.RESEND_FROM ?? 'NOBLI <contato@noblifinance.com.br>'
+
+  // Lembrete ou oferta: respeita o descadastro e põe o link da pessoa.
+  let headers: Record<string, string> | undefined
+  if (email.marketing) {
+    try {
+      if (await descadastrado(createAdminClient(), para)) return { error: null, pulado: true }
+    } catch { /* sem chave de serviço: segue */ }
+    const link = linkSair(para)
+    const umClique = linkSairUmClique(para)
+    const suporte = process.env.SUPPORT_EMAIL ?? 'contato@noblifinance.com.br'
+    email = {
+      ...email,
+      html: email.html.replaceAll('{{SAIR}}', link ?? `mailto:${suporte}?subject=SAIR`),
+      text: email.text.replaceAll('{{SAIR}}', link ?? `responda este e-mail com SAIR`),
+    }
+    // Botão "Cancelar inscrição" do Gmail/Outlook (descadastro em um clique).
+    headers = {
+      'List-Unsubscribe': umClique ? `<${umClique}>, <mailto:${suporte}?subject=SAIR>` : `<mailto:${suporte}?subject=SAIR>`,
+      ...(umClique ? { 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } : {}),
+    }
+  }
 
   if (!apiKey) {
     console.warn('[email] RESEND_API_KEY ausente — e-mail não enviado:', email.subject, '→', para)
@@ -43,6 +65,7 @@ export async function enviarEmail(para: string, email: Email): Promise<{ error: 
         html: email.html,
         // Versão em texto: melhora a entrega e atende quem lê e-mail sem HTML.
         text: email.text,
+        ...(headers ? { headers } : {}),
       }),
     })
     if (!res.ok) {

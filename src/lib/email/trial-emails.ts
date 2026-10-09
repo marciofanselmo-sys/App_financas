@@ -117,7 +117,7 @@ export async function enviarOfertaTeste(admin: Admin) {
   for (const u of publico) {
     const r = await enviarEmail(u.email, emailOfertaTeste({ nome: u.nome }))
     if (r.error) falhas.push(r.error)
-    else { ok++; await marcar(admin, u.id, 'oferta') }
+    else if (!r.pulado) { ok++; await marcar(admin, u.id, 'oferta') }
     // A Resend aceita poucas chamadas por segundo.
     await new Promise(res => setTimeout(res, 600))
   }

@@ -42,6 +42,9 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/assinar') ||
     // Porta do teste grátis de 7 dias (leva ao cadastro).
     pathname === '/teste' ||
+    // Descadastro dos e-mails de oferta: quem clica pode nem ter conta.
+    pathname === '/sair' ||
+    pathname.startsWith('/api/email/sair') ||
     // Páginas de marketing servidas pelo projeto de aquisição.
     pathname.startsWith('/lp') ||
     pathname.startsWith('/quiz') ||
