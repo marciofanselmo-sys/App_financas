@@ -97,6 +97,7 @@ export function TransactionTable({
   const [bulkCategory, setBulkCategory] = useState('')
   const [bulkEvent, setBulkEvent] = useState('')
   const [applyingEvent, setApplyingEvent] = useState(false)
+  const [bulkEventOpen, setBulkEventOpen] = useState(false)
   const [applyingBulk, setApplyingBulk] = useState(false)
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
   const [bulkMoveOpen, setBulkMoveOpen] = useState(false)
@@ -325,92 +326,35 @@ export function TransactionTable({
 
   return (
     <>
-      {/* Barra de ação em massa */}
+      {/* Barra de ação em massa — uma linha, presa no topo enquanto rola a lista.
+          Categoria e Evento abrem uma janela para escolher e confirmar. */}
       {selectionEnabled && selected.size > 0 && (
-        <div className="flex flex-wrap items-center gap-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl px-4 py-3 mb-3">
-          <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-            {selected.size} selecionada{selected.size !== 1 ? 's' : ''}
+        <div className="sticky top-2 z-20 mb-3 flex flex-wrap items-center gap-2 bg-white dark:bg-[#111c2d] border border-blue-200 dark:border-blue-800/60 rounded-xl px-3 py-2 shadow-md shadow-blue-600/5">
+          <span className="flex items-center gap-2 pr-2 mr-1 border-r border-slate-200 dark:border-white/[0.1] text-[13px] font-semibold text-blue-700 dark:text-blue-300">
+            <span className="min-w-6 h-6 px-1.5 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center tabular-nums">{selected.size}</span>
+            selecionada{selected.size !== 1 ? 's' : ''}
           </span>
-          <Select value={bulkCategory} onValueChange={v => { if (v) setBulkCategory(v) }}>
-            <SelectTrigger className="w-52 h-9 bg-white dark:bg-slate-800">
-              <SelectValue placeholder="Mudar categoria para..." />
-            </SelectTrigger>
-            <SelectContent>
-              <CategoryOptions
-                list={categoriesForTransactions(categories ?? [], selectedTransactions)}
-                all={categories ?? []}
-                emptyLabel="Nenhuma categoria válida para a seleção"
-              />
-            </SelectContent>
-          </Select>
-          <Button size="sm" onClick={() => setBulkConfirmOpen(true)} disabled={!bulkCategory || applyingBulk} className="gap-1.5">
-            <Tag className="h-3.5 w-3.5" />
-            Aplicar
-          </Button>
+
+          <button type="button" className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-slate-800 text-[13px] font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors" onClick={() => { setBulkCategory(''); setBulkConfirmOpen(true) }}>
+            <Tag className="h-3.5 w-3.5 text-slate-400" /> Categoria
+          </button>
 
           {onBulkEventChange && (
-            <div className="flex items-center gap-2">
-              <Select value={bulkEvent} onValueChange={v => { if (v) setBulkEvent(v) }} items={bulkEventItems}>
-                <SelectTrigger className="w-44 h-9 bg-white dark:bg-slate-800">
-                  <SelectValue placeholder="Marcar evento..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_EVENT}>Tirar o evento</SelectItem>
-                  {openEvents.length === 0 ? (
-                    <SelectItem value="__empty_ev__" disabled>Nenhum evento em aberto</SelectItem>
-                  ) : openEvents.map(ev => (
-                    <SelectItem key={ev.id} value={ev.id}>
-                      <span className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: ev.color }} />
-                        {ev.name}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                size="sm" variant="outline" className="gap-1.5 bg-white dark:bg-slate-800"
-                disabled={!bulkEvent || applyingEvent}
-                onClick={async () => {
-                  setApplyingEvent(true)
-                  await onBulkEventChange(Array.from(selected), bulkEvent === NO_EVENT ? null : bulkEvent)
-                  setApplyingEvent(false)
-                  setBulkEvent('')
-                  setSelected(new Set())
-                }}
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                {applyingEvent ? 'Aplicando...' : 'Aplicar evento'}
-              </Button>
-            </div>
+            <button type="button" className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-slate-800 text-[13px] font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors" onClick={() => { setBulkEvent(''); setBulkEventOpen(true) }}>
+              <Sparkles className="h-3.5 w-3.5 text-slate-400" /> Evento
+            </button>
           )}
 
           {onBulkMove && otherBoards.length > 0 && (
-            <Button
-              size="sm" variant="outline"
-              onClick={() => { setBulkMoveBoardId(''); setBulkMoveOpen(true) }}
-              className="gap-1.5 bg-white dark:bg-slate-800"
-            >
-              <ArrowRightLeft className="h-3.5 w-3.5" />
-              Mover para conta
-            </Button>
-          )}
-
-          {onBulkDelete && (
-            <Button
-              size="sm" variant="outline"
-              onClick={() => setBulkDeleteOpen(true)}
-              className="gap-1.5 bg-white dark:bg-slate-800 text-red-600 hover:text-red-700 border-red-200 hover:bg-red-50 dark:border-red-900/50 dark:hover:bg-red-900/20"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Excluir
-            </Button>
+            <button type="button" className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-slate-800 text-[13px] font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors" onClick={() => { setBulkMoveBoardId(''); setBulkMoveOpen(true) }}>
+              <ArrowRightLeft className="h-3.5 w-3.5 text-slate-400" /> Mover para conta
+            </button>
           )}
 
           {hasMoreActions && (
             <DropdownMenu>
-              <DropdownMenuTrigger className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
-                <MoreHorizontal className="h-3.5 w-3.5" /> Mais ações <ChevronDown className="h-3.5 w-3.5" />
+              <DropdownMenuTrigger className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-slate-800 text-[13px] font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors">
+                <MoreHorizontal className="h-3.5 w-3.5 text-slate-400" /> Mais ações <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="min-w-60 [&_[role=menuitem]]:whitespace-nowrap">
                 {onBulkTypeChange && (
@@ -446,9 +390,20 @@ export function TransactionTable({
             </DropdownMenu>
           )}
 
+          {onBulkDelete && (
+            <button
+              type="button"
+              onClick={() => setBulkDeleteOpen(true)}
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-800 text-[13px] font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Excluir
+            </button>
+          )}
+
           <button
+            type="button"
             onClick={() => setSelected(new Set())}
-            className="text-xs text-blue-500 hover:text-blue-700 dark:hover:text-blue-200 flex items-center gap-1 ml-auto"
+            className="ml-auto inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
           >
             <XIcon className="h-3.5 w-3.5" /> Cancelar seleção
           </button>
@@ -703,21 +658,84 @@ export function TransactionTable({
       <Dialog open={bulkConfirmOpen} onOpenChange={v => { if (!v) setBulkConfirmOpen(false) }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Mudar categoria em massa</DialogTitle>
+            <DialogTitle>Mudar categoria</DialogTitle>
             <DialogDescription>
-              Isso vai mudar a categoria de <strong>{selected.size} transaç{selected.size !== 1 ? 'ões' : 'ão'}</strong> selecionada{selected.size !== 1 ? 's' : ''} para <strong>&ldquo;{bulkCategory}&rdquo;</strong>. Só as transações marcadas com checkbox agora serão alteradas.
+              Escolha a categoria para <strong>{selected.size} transaç{selected.size !== 1 ? 'ões' : 'ão'}</strong> selecionada{selected.size !== 1 ? 's' : ''}. Só as marcadas com checkbox agora serão alteradas.
             </DialogDescription>
           </DialogHeader>
+          <div className="py-2">
+            <Select value={bulkCategory} onValueChange={v => { if (v) setBulkCategory(v) }}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Escolha a categoria…" />
+              </SelectTrigger>
+              <SelectContent>
+                <CategoryOptions
+                  list={categoriesForTransactions(categories ?? [], selectedTransactions)}
+                  all={categories ?? []}
+                  emptyLabel="Nenhuma categoria válida para a seleção"
+                />
+              </SelectContent>
+            </Select>
+          </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setBulkConfirmOpen(false)} disabled={applyingBulk}>
               Cancelar
             </Button>
-            <Button onClick={applyBulkCategory} disabled={applyingBulk}>
-              {applyingBulk ? 'Aplicando...' : `Mudar ${selected.size} transaç${selected.size !== 1 ? 'ões' : 'ão'}`}
+            <Button onClick={applyBulkCategory} disabled={!bulkCategory || applyingBulk}>
+              {applyingBulk ? 'Aplicando...' : `Aplicar em ${selected.size}`}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {onBulkEventChange && (
+        <Dialog open={bulkEventOpen} onOpenChange={v => { if (!v) setBulkEventOpen(false) }}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Marcar evento</DialogTitle>
+              <DialogDescription>
+                Escolha o evento para <strong>{selected.size} transaç{selected.size !== 1 ? 'ões' : 'ão'}</strong> selecionada{selected.size !== 1 ? 's' : ''}, ou tire o evento delas.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-2">
+              <Select value={bulkEvent} onValueChange={v => { if (v) setBulkEvent(v) }} items={bulkEventItems}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Escolha o evento…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_EVENT}>Tirar o evento</SelectItem>
+                  {openEvents.length === 0 ? (
+                    <SelectItem value="__empty_ev__" disabled>Nenhum evento em aberto</SelectItem>
+                  ) : openEvents.map(ev => (
+                    <SelectItem key={ev.id} value={ev.id}>
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: ev.color }} />
+                        {ev.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setBulkEventOpen(false)} disabled={applyingEvent}>Cancelar</Button>
+              <Button
+                disabled={!bulkEvent || applyingEvent}
+                onClick={async () => {
+                  setApplyingEvent(true)
+                  await onBulkEventChange(Array.from(selected), bulkEvent === NO_EVENT ? null : bulkEvent)
+                  setApplyingEvent(false)
+                  setBulkEventOpen(false)
+                  setBulkEvent('')
+                  setSelected(new Set())
+                }}
+              >
+                {applyingEvent ? 'Aplicando...' : `Aplicar em ${selected.size}`}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       <Dialog open={bulkMoveOpen} onOpenChange={v => { if (!v) setBulkMoveOpen(false) }}>
         <DialogContent className="sm:max-w-sm">
