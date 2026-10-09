@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { enviarRecuperacaoCheckout } from '@/lib/email/trial-emails'
 import { CaktoOrderData, CaktoPayload, ordersOf } from './types'
 import { enviarEmail } from '@/lib/email/send'
-import { PLANS, PaidTier } from '@/lib/plans'
+import { PLANS, PaidTier, periodicidade } from '@/lib/plans'
 import {
   emailAssinaturaEncerrada, emailBoasVindas, emailPagamentoAtrasado,
   emailPlanoLiberado, emailRenovacao, emailNovaVenda,
@@ -257,6 +257,7 @@ export async function handleCaktoEvent(
       nome: order.customer?.name ?? undefined,
       plano: rotuloDoPlano(order),
       proximaCobranca: row.current_period_end,
+      order,
       admin,
     })
 
@@ -272,17 +273,33 @@ export async function handleCaktoEvent(
   return results
 }
 
+/** "por mês" / "a cada 3 meses" / "por ano" do plano comprado. */
+function periodicidadeDoPedido(order: CaktoOrderData): string {
+  return periodicidade(planoDaOferta(order).tier)
+}
+
+/** De onde veio a venda: UTMs do checkout (ou o sck da Cakto). */
+function origemDoPedido(order: CaktoOrderData): string | null {
+  const partes = [order.utm_source, order.utm_medium, order.utm_campaign].filter(Boolean)
+  if (partes.length) return partes.join(' / ')
+  return order.sck ?? null
+}
+
 async function avisarEquipe(order: CaktoOrderData, email: string, plano: string) {
   const para = (process.env.SALES_NOTIFY_EMAILS ?? '')
     .split(',').map(e => e.trim()).filter(e => e.includes('@'))
   if (para.length === 0) return
   const aviso = emailNovaVenda({
     plano,
+    periodicidade: periodicidadeDoPedido(order),
     valor: order.amount ?? order.offer?.price ?? null,
     cliente: order.customer?.name ?? null,
     email,
-    metodo: order.paymentMethod ?? null,
+    metodo: order.paymentMethodName ?? order.paymentMethod ?? null,
     data: order.paidAt ?? null,
+    pedido: order.refId ?? null,
+    transacao: order.id ?? null,
+    origem: origemDoPedido(order),
   })
   for (const destino of para) {
     try { await enviarEmail(destino, aviso) } catch { /* nunca derruba o webhook */ }
@@ -341,9 +358,21 @@ async function avisarPorEmail(params: {
   nome?: string
   plano: string
   proximaCobranca: string | null
+  order: CaktoOrderData
   admin: SupabaseClient
 }) {
-  const { evento, status, resolved, nome, plano, proximaCobranca, admin } = params
+  const { evento, status, resolved, nome, plano, proximaCobranca, order, admin } = params
+  // Dados reais da cobrança para os e-mails de compra e renovação.
+  const compra = {
+    plano,
+    periodicidade: periodicidadeDoPedido(order),
+    valor: order.amount ?? order.offer?.price ?? null,
+    metodo: order.paymentMethodName ?? order.paymentMethod ?? null,
+    pagoEm: order.paidAt ?? null,
+    pedido: order.refId ?? null,
+    proximaCobranca,
+  }
+  const sub = (order.subscription ?? {}) as { max_retries?: number; retry_interval?: number }
 
   // Quem nunca entrou no app não tem "senha de sempre". Isso acontece em dois
   // casos: a conta acabou de nascer com a compra, e também quando ela já
@@ -368,7 +397,7 @@ async function avisarPorEmail(params: {
       { user_id: resolved.userId, full_name: nome ?? '', needs_password: true },
       { onConflict: 'user_id' },
     )
-    await enviarEmail(resolved.email, emailBoasVindas({ nome, link, plano }))
+    await enviarEmail(resolved.email, emailBoasVindas({ nome, link, plano, compra }))
     return
   }
 
@@ -378,14 +407,20 @@ async function avisarPorEmail(params: {
     case 'purchase_approved':
     case 'subscription_resumed':
     case 'subscription_late_recovered':
-      await enviarEmail(resolved.email, emailPlanoLiberado({ nome, plano }))
+      await enviarEmail(resolved.email, emailPlanoLiberado({ nome, plano, compra }))
       break
     case 'subscription_renewed':
-      await enviarEmail(resolved.email, emailRenovacao({ nome, plano, proximaCobranca }))
+      await enviarEmail(resolved.email, emailRenovacao({ nome, plano, proximaCobranca, compra }))
       break
     case 'subscription_late':
     case 'subscription_renewal_refused':
-      await enviarEmail(resolved.email, emailPagamentoAtrasado({ nome }))
+      await enviarEmail(resolved.email, emailPagamentoAtrasado({
+        nome, plano,
+        valor: compra.valor,
+        motivo: order.reason ?? null,
+        tentativas: typeof sub.max_retries === 'number' ? sub.max_retries : null,
+        intervaloDias: typeof sub.retry_interval === 'number' ? sub.retry_interval : null,
+      }))
       break
     case 'subscription_canceled':
       await enviarEmail(resolved.email, emailAssinaturaEncerrada({ nome, motivo: 'cancelamento' }))

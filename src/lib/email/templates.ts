@@ -133,6 +133,38 @@ const PASSOS_INICIO: [string, string][] = [
   ['Veja para onde foi o seu dinheiro', 'Quanto entrou, quanto saiu e quais gastos mais pesaram no mês.'],
 ]
 
+/** Dados reais da cobrança, vindos do webhook da Cakto. */
+export interface ResumoCompra {
+  plano: string
+  /** "por mês", "a cada 3 meses", "por ano". */
+  periodicidade?: string | null
+  valor?: number | null
+  metodo?: string | null
+  pagoEm?: string | null
+  pedido?: string | null
+  proximaCobranca?: string | null
+}
+
+const brl = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
+
+const tabelaDados = (linhas: [string, string | null | undefined][]) => `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:2px 0 12px;">${linhas
+  .filter(([, v]) => v)
+  .map(([k, v]) => `<tr><td style="padding:5px 0;font-size:14px;color:#475569;width:150px;vertical-align:top;">${k}</td><td style="padding:5px 0;font-size:15px;color:#0D1E33;font-weight:600;">${v}</td></tr>`)
+  .join('')}</table>`
+
+/** Caixa "Resumo da compra" — só com o que a Cakto informou. */
+function resumoCompra(c: ResumoCompra | undefined, etiqueta = '🧾 Resumo da compra'): string {
+  if (!c) return ''
+  return caixa(etiqueta, tabelaDados([
+    ['Plano', `${c.plano}${c.periodicidade ? ` (cobrado ${c.periodicidade})` : ''}`],
+    ['Valor', c.valor != null ? brl(c.valor) : null],
+    ['Pagamento', c.metodo],
+    ['Data', dataBR(c.pagoEm)],
+    ['Próxima cobrança', dataBR(c.proximaCobranca)],
+    ['Pedido', c.pedido ? `#${c.pedido}` : null],
+  ]))
+}
+
 const confirmarEmail = (link?: string) => link
   ? caixa('✉️ Confirme seu e-mail',
       p('Assim você consegue recuperar o acesso se um dia esquecer a senha.') +
@@ -171,7 +203,7 @@ export function emailRecuperacaoSenha(params: { nome?: string; link: string }): 
 }
 
 // ── 3. Comprou e ainda não tem conta ────────────────────────────────────────
-export function emailBoasVindas(params: { nome?: string; link: string; plano?: string }): Email {
+export function emailBoasVindas(params: { nome?: string; link: string; plano?: string; compra?: ResumoCompra }): Email {
   const plano = params.plano ? ` do plano <strong>${params.plano}</strong>` : ''
   return {
     subject: '🎉 Seu acesso ao NOBLI está pronto',
@@ -182,6 +214,7 @@ export function emailBoasVindas(params: { nome?: string; link: string; plano?: s
         p('O link abaixo é de uso único e vale por 24 horas.') +
         botao(params.link, 'Criar minha senha') +
         `<p style="margin:0 0 12px;font-size:13px;color:#475569;">Se o link expirar, use "Esqueci minha senha" na tela de entrada.</p>`) +
+      resumoCompra(params.compra) +
       passos('Depois de entrar:', PASSOS_INICIO),
       { titulo: '🎉 Seu acesso está liberado', sub: 'Falta só criar a sua senha.', rodape: 'Você recebeu este e-mail porque assinou o NOBLI.' },
     ),
@@ -190,12 +223,13 @@ export function emailBoasVindas(params: { nome?: string; link: string; plano?: s
 }
 
 // ── 4. Comprou e já tinha conta ─────────────────────────────────────────────
-export function emailPlanoLiberado(params: { nome?: string; plano: string }): Email {
+export function emailPlanoLiberado(params: { nome?: string; plano: string; compra?: ResumoCompra }): Email {
   return {
     subject: '✅ Sua assinatura do NOBLI está ativa',
     html: moldura(
       olaCorpo(params.nome) +
       p(`Recebemos seu pagamento e liberamos o plano <strong>${params.plano}</strong> na sua conta. Tudo o que você já tinha feito continua lá.`) +
+      resumoCompra(params.compra) +
       p('É só entrar com o seu e-mail e a sua senha.') +
       botao(`${SITE}/dashboard`, 'Abrir o NOBLI') +
       // Rede de segurança: este e-mail vai para quem já tem conta, mas nem
@@ -208,17 +242,32 @@ export function emailPlanoLiberado(params: { nome?: string; plano: string }): Em
 }
 
 // ── 5. Renovação não foi aprovada ───────────────────────────────────────────
-export function emailPagamentoAtrasado(params: { nome?: string }): Email {
+export function emailPagamentoAtrasado(params: {
+  nome?: string
+  plano?: string
+  valor?: number | null
+  /** Motivo informado pela Cakto; sem ele, não especulamos. */
+  motivo?: string | null
+  /** Quantas vezes a Cakto tenta de novo e de quantos em quantos dias. */
+  tentativas?: number | null
+  intervaloDias?: number | null
+}): Email {
+  const novasTentativas = params.tentativas
+    ? `A cobrança é tentada de novo automaticamente${params.intervaloDias ? ` a cada ${params.intervaloDias === 1 ? 'dia' : `${params.intervaloDias} dias`}` : ''}, até ${params.tentativas} vez${params.tentativas === 1 ? '' : 'es'}. Se a forma de pagamento estiver em dia, não precisa fazer nada.`
+    : null
   return {
     subject: 'Não conseguimos concluir a renovação do NOBLI',
     html: moldura(
       olaCorpo(params.nome) +
-      p('O pagamento da renovação da sua assinatura não foi concluído.') +
-      p('<strong>Seu acesso continua liberado por enquanto</strong> e nenhum dado seu foi alterado. Para não perder os recursos do plano, confira a forma de pagamento.') +
+      p(`O pagamento da renovação da sua assinatura${params.plano ? ` do plano <strong>${params.plano}</strong>` : ''}${params.valor != null ? ` (${brl(params.valor)})` : ''} não foi concluído.`) +
+      (params.motivo ? caixa('💳 Motivo informado pelo pagamento', p(params.motivo)) : '') +
+      p('<strong>Seu acesso continua liberado por enquanto</strong> e nenhum dado seu foi alterado.') +
+      (novasTentativas ? p(novasTentativas) : '') +
+      p('Se o cartão mudou ou precisar de ajuda para atualizar o pagamento, é só responder este e-mail.') +
       botao(`${SITE}/settings/assinatura`, 'Ver minha assinatura'),
       { titulo: '⚠️ O pagamento da renovação não foi concluído', sub: 'Seu acesso continua liberado por enquanto.' },
     ),
-    text: `${ola(params.nome)}\n\nO pagamento da renovação da sua assinatura do NOBLI não foi concluído. Seu acesso continua liberado por enquanto — confira a forma de pagamento em ${SITE}/settings/assinatura.\n\nDúvidas: ${SUPORTE}`,
+    text: `${ola(params.nome)}\n\nO pagamento da renovação da sua assinatura do NOBLI não foi concluído.${params.motivo ? ` Motivo informado: ${params.motivo}.` : ''} Seu acesso continua liberado por enquanto.${novasTentativas ? `\n\n${novasTentativas}` : ''}\n\nSe o cartão mudou, responda este e-mail. Sua assinatura: ${SITE}/settings/assinatura\n\nDúvidas: ${SUPORTE}`,
   }
 }
 
@@ -243,52 +292,73 @@ export function emailAssinaturaEncerrada(params: { nome?: string; motivo: 'cance
 }
 
 // ── 7. Renovou ──────────────────────────────────────────────────────────────
-export function emailRenovacao(params: { nome?: string; plano: string; proximaCobranca?: string | null }): Email {
-  const quando = dataBR(params.proximaCobranca)
+export function emailRenovacao(params: { nome?: string; plano: string; proximaCobranca?: string | null; compra?: ResumoCompra }): Email {
+  const quando = dataBR(params.proximaCobranca ?? params.compra?.proximaCobranca)
+  const compra = params.compra ? { ...params.compra, proximaCobranca: params.proximaCobranca ?? params.compra.proximaCobranca } : undefined
   return {
     subject: 'Assinatura do NOBLI renovada',
     html: moldura(
       olaCorpo(params.nome) +
       p(`Sua assinatura do plano <strong>${params.plano}</strong> foi renovada e segue ativa.`) +
-      (quando ? p(`Próxima cobrança em <strong>${quando}</strong>.`) : '') +
+      (compra ? resumoCompra(compra, '🧾 Resumo da renovação') : (quando ? p(`Próxima cobrança em <strong>${quando}</strong>.`) : '')) +
       botao(`${SITE}/dashboard`, 'Abrir o NOBLI'),
       { titulo: '✅ Assinatura renovada', sub: 'Obrigado por continuar com o NOBLI.' },
     ),
-    text: `${ola(params.nome)}\n\nSua assinatura do plano ${params.plano} foi renovada.${quando ? ` Próxima cobrança em ${quando}.` : ''}\n\n${SITE}/dashboard\n\nDúvidas: ${SUPORTE}`,
+    text: `${ola(params.nome)}\n\nSua assinatura do plano ${params.plano} foi renovada.${compra?.valor != null ? ` Valor: ${brl(compra.valor)}.` : ''}${quando ? ` Próxima cobrança em ${quando}.` : ''}\n\n${SITE}/dashboard\n\nDúvidas: ${SUPORTE}`,
   }
 }
 
 /**
  * Aviso interno de venda nova — vai para a equipe (SALES_NOTIFY_EMAILS), não
- * para o cliente. Só dados da venda; nada de senha nem link de acesso.
+ * para o cliente. Modelo operacional próprio: sem logo, sem bloco de ajuda,
+ * só os dados para conferir a venda na Cakto. Nada de senha nem link de acesso.
  */
 export function emailNovaVenda(params: {
   plano: string
+  periodicidade?: string | null
   valor?: number | null
   cliente?: string | null
   email: string
   metodo?: string | null
   data?: string | null
+  pedido?: string | null
+  transacao?: string | null
+  origem?: string | null
 }): Email {
-  const valor = params.valor != null
-    ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(params.valor)
-    : '—'
-  const linhas: [string, string][] = [
-    ['Plano', params.plano],
+  const valor = params.valor != null ? brl(params.valor) : '—'
+  const quando = params.data ? new Date(params.data) : new Date()
+  const dataHora = `${quando.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} ${quando.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}`
+  const linhas: [string, string | null | undefined][] = [
+    ['Plano', `${params.plano}${params.periodicidade ? ` (${params.periodicidade})` : ''}`],
     ['Valor', valor],
+    ['Pagamento', params.metodo],
+    ['Data', dataHora],
     ['Cliente', params.cliente || '—'],
     ['E-mail', params.email],
-    ['Pagamento', params.metodo || '—'],
-    ['Data', dataBR(params.data) || dataBR(new Date().toISOString())],
+    ['Origem', params.origem || 'direto (sem UTM)'],
+    ['Pedido', params.pedido ? `#${params.pedido}` : null],
+    ['ID da transação', params.transacao],
   ]
-  const tabela = `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:8px 0 4px;">${linhas
-    .map(([k, v]) => `<tr><td style="padding:6px 0;font-size:13px;color:#64748b;width:110px;">${k}</td><td style="padding:6px 0;font-size:14px;color:#0f172a;font-weight:600;">${v}</td></tr>`)
-    .join('')}</table>`
+  const tabela = linhas.filter(([, v]) => v).map(([k, v]) =>
+    `<tr><td style="padding:6px 12px 6px 0;font-size:13px;color:#475569;width:130px;vertical-align:top;border-bottom:1px solid #EEF2F7;">${k}</td><td style="padding:6px 0;font-size:14px;color:#0D1E33;font-weight:600;border-bottom:1px solid #EEF2F7;word-break:break-all;">${v}</td></tr>`).join('')
   return {
-    subject: `Nova venda NOBLI · ${params.plano} · ${valor}`,
-    html: moldura(p('Uma venda acabou de ser aprovada na Cakto.') + caixa('🧾 Dados da venda', tabela) + botao(`${SITE}/admin`, 'Abrir o painel'),
-      { titulo: '🎉 Nova venda', sub: `${params.plano} · ${valor}`, rodape: 'Aviso interno para a equipe do NOBLI.' }),
-    text: `Nova venda NOBLI\n\n${linhas.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\nPainel: ${SITE}/admin`,
+    subject: `💰 Nova venda · ${params.plano} · ${valor}`,
+    html: `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#F7F9FC;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F7F9FC;padding:20px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border:1px solid #E3E8F0;border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+        <tr><td style="padding:20px 24px 8px;">
+          <p style="margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:#475569;">NOBLI · aviso interno</p>
+          <p style="margin:0 0 14px;font-size:20px;font-weight:800;color:#0D1E33;">💰 Nova venda · ${valor}</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${tabela}</table>
+          <p style="margin:16px 0 18px;font-size:14px;"><a href="${SITE}/admin" style="color:#2865E8;font-weight:700;">Abrir o painel →</a></p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`,
+    text: `Nova venda NOBLI\n\n${linhas.filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join('\n')}\n\nPainel: ${SITE}/admin`,
   }
 }
 

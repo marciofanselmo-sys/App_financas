@@ -32,6 +32,12 @@ export interface CaktoOrderData {
   offer_type?: string
   amount?: number | null
   paymentMethod?: string
+  /** "PIX", "Cartão de crédito"… — o nome para mostrar. */
+  paymentMethodName?: string | null
+  /** Motivo da recusa, quando a Cakto informa. */
+  reason?: string | null
+  checkoutUrl?: string | null
+  /** Código curto do pedido, o que aparece para o cliente na Cakto. */
   customer?: CaktoCustomer
   product?: { id?: string; short_id?: string; name?: string; type?: string }
   offer?: { id?: string; name?: string; price?: number; currency?: string } | null
