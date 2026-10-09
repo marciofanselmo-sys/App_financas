@@ -3,8 +3,9 @@
  *
  * A Resend guarda os e-mails que chegam ao domínio; aqui só listamos e
  * abrimos. "Lido" é nosso (tabela inbox_read), porque a Resend não tem.
- * Só roda no servidor: usa RESEND_API_KEY, que precisa ter permissão
- * "Full access" (a de "Sending access" só envia e não lê a caixa).
+ * Só roda no servidor. Usa RESEND_INBOX_API_KEY, uma chave "Full access"
+ * separada: a RESEND_API_KEY do app é "Sending access" (só envia) e fica
+ * assim, para um erro aqui nunca parar os e-mails de cadastro e pagamento.
  */
 const API = 'https://api.resend.com/emails/receiving'
 
@@ -31,15 +32,15 @@ export class InboxError extends Error {
 }
 
 async function chamar<T>(path: string): Promise<T> {
-  const key = process.env.RESEND_API_KEY
-  if (!key) throw new InboxError('RESEND_API_KEY não configurada na Vercel.', 503)
+  const key = process.env.RESEND_INBOX_API_KEY ?? process.env.RESEND_API_KEY
+  if (!key) throw new InboxError('Falta configurar RESEND_INBOX_API_KEY na Vercel.', 503)
   const res = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${key}` }, cache: 'no-store' })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     // Chave só de envio: a Resend responde 401/403 com "restricted_api_key".
     if (res.status === 401 || res.status === 403) {
       throw new InboxError(
-        'A chave da Resend não tem permissão para ler e-mails recebidos. Crie uma chave "Full access" na Resend e troque RESEND_API_KEY na Vercel.',
+        'A chave da Resend não tem permissão para ler e-mails recebidos. Crie uma chave "Full access" na Resend e salve na Vercel como RESEND_INBOX_API_KEY.',
         res.status,
       )
     }
