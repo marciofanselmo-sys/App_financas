@@ -81,3 +81,18 @@ export function useProductEvents(refreshKey: number) {
     return { data: (data as ProductEventRow[] | null) ?? null, error: error?.message ?? null }
   })
 }
+
+export interface LinkCliqueRow { visitante: string | null; utm_source: string | null; utm_campaign: string | null; created_at: string }
+
+/** Cliques nos links do teste. Erro = migration_link_cliques.sql ainda não rodou. */
+export function useLinkCliques(refreshKey: number) {
+  return useAdminFetch<LinkCliqueRow[]>('link_cliques', refreshKey, async () => {
+    const desde = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString()
+    const { data, error } = await createClient()
+      .from('link_cliques')
+      .select('visitante, utm_source, utm_campaign, created_at')
+      .gte('created_at', desde)
+      .limit(50000)
+    return { data: (data as LinkCliqueRow[] | null) ?? null, error: error?.message ?? null }
+  })
+}

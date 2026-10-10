@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { OverviewSection } from '@/components/ui/overview-blocks'
-import { useProductEvents } from '@/hooks/use-admin-data'
+import { useProductEvents, useLinkCliques } from '@/hooks/use-admin-data'
 import type { AdminUser } from '@/lib/admin/types'
 import { pagaPelaCakto } from '@/lib/admin/users'
 import { Filter } from 'lucide-react'
@@ -18,6 +18,7 @@ const JANELAS = [7, 30, 90] as const
  */
 export function JourneyFunnel({ users, refreshKey }: { users: AdminUser[]; refreshKey: number }) {
   const eventos = useProductEvents(refreshKey)
+  const cliques = useLinkCliques(refreshKey)
   const [dias, setDias] = useState<(typeof JANELAS)[number]>(30)
 
   const etapas = useMemo(() => {
@@ -40,17 +41,27 @@ export function JourneyFunnel({ users, refreshKey }: { users: AdminUser[]; refre
   const origens = useMemo(() => {
     const agora = eventos.fetchedAt
     const naJanela = new Map(users.filter(u => agora - new Date(u.created_at).getTime() <= dias * DIA && u.role !== 'admin').map(u => [u.id, u]))
-    const porOrigem = new Map<string, { comecaram: number; assinaram: number }>()
+    const vazia = () => ({ cliques: 0, pessoas: new Set<string>(), comecaram: 0, assinaram: 0 })
+    const porOrigem = new Map<string, ReturnType<typeof vazia>>()
+    // Cliques nos links do teste, pela data do clique.
+    for (const c of cliques.data ?? []) {
+      if (agora - new Date(c.created_at).getTime() > dias * DIA) continue
+      const origem = String(c.utm_source || 'sem origem').toLowerCase()
+      const linha = porOrigem.get(origem) ?? vazia()
+      linha.cliques++
+      if (c.visitante) linha.pessoas.add(c.visitante)
+      porOrigem.set(origem, linha)
+    }
     for (const e of eventos.data ?? []) {
       if (e.event !== 'teste_inicio' || !naJanela.has(e.user_id)) continue
       const origem = String((e.props?.utm_source as string | undefined) || 'sem origem').toLowerCase()
-      const linha = porOrigem.get(origem) ?? { comecaram: 0, assinaram: 0 }
+      const linha = porOrigem.get(origem) ?? vazia()
       linha.comecaram++
       if (pagaPelaCakto(naJanela.get(e.user_id)!)) linha.assinaram++
       porOrigem.set(origem, linha)
     }
-    return [...porOrigem.entries()].sort((a, b) => b[1].comecaram - a[1].comecaram)
-  }, [users, eventos.data, eventos.fetchedAt, dias])
+    return [...porOrigem.entries()].sort((a, b) => (b[1].cliques - a[1].cliques) || (b[1].comecaram - a[1].comecaram))
+  }, [users, eventos.data, eventos.fetchedAt, cliques.data, dias])
 
   const base = etapas[0].n || 1
 
@@ -85,24 +96,30 @@ export function JourneyFunnel({ users, refreshKey }: { users: AdminUser[]; refre
           <div className="pt-3">
             <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Testes por origem</p>
             {origens.length === 0 ? (
-              <p className="text-xs text-slate-400 mt-1">Nenhum teste começou neste período.</p>
+              <p className="text-xs text-slate-400 mt-1">Nenhum clique nem teste neste período.</p>
             ) : (
               <table className="w-full text-sm mt-1.5">
                 <thead><tr className="text-[11px] uppercase tracking-wider text-slate-400">
-                  <th className="text-left font-semibold py-1">Origem</th><th className="text-right font-semibold">Começaram</th><th className="text-right font-semibold">Assinaram</th>
+                  <th className="text-left font-semibold py-1">Origem</th><th className="text-right font-semibold">Cliques</th><th className="text-right font-semibold">Pessoas</th><th className="text-right font-semibold">Começaram</th><th className="text-right font-semibold">Assinaram</th>
                 </tr></thead>
                 <tbody>
                   {origens.map(([o, l]) => (
                     <tr key={o} className="border-t border-slate-100 dark:border-white/[0.06]">
                       <td className="py-1.5 capitalize text-slate-600 dark:text-slate-300">{o}</td>
-                      <td className="text-right tabular-nums font-semibold">{l.comecaram}</td>
+                      <td className="text-right tabular-nums">{l.cliques}</td>
+                      <td className="text-right tabular-nums">{l.pessoas.size}</td>
+                      <td className="text-right tabular-nums font-semibold">{l.comecaram}{l.pessoas.size > 0 && <span className="text-slate-400 font-normal"> · {Math.round((l.comecaram / l.pessoas.size) * 100)}%</span>}</td>
                       <td className="text-right tabular-nums">{l.assinaram}{l.comecaram > 0 && <span className="text-slate-400"> · {Math.round((l.assinaram / l.comecaram) * 100)}%</span>}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             )}
-            <p className="text-[11px] text-slate-400 mt-1">A origem vem do final do link (utm_source). “Sem origem” = entrou pelo link sem etiqueta.</p>
+            <p className="text-[11px] text-slate-400 mt-1">
+              A origem vem do final do link (utm_source; /instagram já marca “instagram”). Cliques = vezes que o link foi aberto (sem robôs de prévia);
+              pessoas = navegadores diferentes; o % de “Começaram” é sobre as pessoas.
+              {cliques.error && ' Cliques ainda não estão sendo contados: rode migration_link_cliques.sql.'}
+            </p>
           </div>
           <p className="text-[11px] text-slate-400 pt-1">Medido desde a entrada desta medição; quem se cadastrou antes dela aparece sem os passos.</p>
         </div>

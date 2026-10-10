@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { iniciarTeste, COOKIE_TESTE } from '@/lib/trial-server'
+import { registrarClique, COOKIE_VISITANTE } from '@/lib/link-cliques'
 import { enviarEmail } from '@/lib/email/send'
 import { emailTesteInicio } from '@/lib/email/templates'
 
@@ -28,6 +29,13 @@ export async function GET(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
+  // Conta o clique (Admin › Testes por origem) antes de qualquer desvio.
+  const visitante = await registrarClique(req, origem, !!user)
+  const marcarVisitante = (res: NextResponse) => {
+    if (visitante) res.cookies.set(COOKIE_VISITANTE, visitante, { path: '/', maxAge: 60 * 60 * 24 * 365, sameSite: 'lax', secure: true, httpOnly: true })
+    return res
+  }
+
   if (user?.email) {
     const r = await iniciarTeste(createAdminClient(), user.id, user.email, origem)
     // Quem já tinha conta (ex.: Grátis que veio pelo e-mail da oferta) também
@@ -35,7 +43,7 @@ export async function GET(req: NextRequest) {
     if (r === 'iniciado') {
       await enviarEmail(user.email, emailTesteInicio({ nome: (user.user_metadata?.full_name as string | undefined) }))
     }
-    return NextResponse.redirect(`${site}/dashboard?teste=${r}`, 302)
+    return marcarVisitante(NextResponse.redirect(`${site}/dashboard?teste=${r}`, 302))
   }
 
   const destino = new URL(`${site}/auth/register`)
@@ -46,5 +54,5 @@ export async function GET(req: NextRequest) {
   res.cookies.set(COOKIE_TESTE, JSON.stringify(origem), {
     path: '/', maxAge: 60 * 60 * 24 * 30, sameSite: 'lax', secure: true, httpOnly: true,
   })
-  return res
+  return marcarVisitante(res)
 }
