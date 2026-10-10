@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { exigirAdmin } from '@/lib/admin/require-admin'
 import { abrirRecebido, InboxError } from '@/lib/email/inbox'
 import { emailResposta } from '@/lib/email/templates'
@@ -7,7 +8,8 @@ import { enviarEmail } from '@/lib/email/send'
 /**
  * Painel /admin → E-mails → Responder. Envia pela Resend, de contato@, para o
  * Reply-To do e-mail (ou o remetente), citando a mensagem original. A
- * resposta não fica guardada aqui: a cópia é a da Resend (aba Emails enviados).
+ * texto da resposta não fica guardado aqui (a cópia é a da Resend, aba Emails
+ * enviados); só anotamos em inbox_replies que o e-mail foi respondido.
  */
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -54,7 +56,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       : undefined
     const { error } = await enviarEmail(para, email, cabecalhos)
     if (error) return NextResponse.json({ error: `Não foi possível enviar: ${error}` }, { status: 502 })
-    return NextResponse.json({ ok: true, para })
+
+    // Já saiu: falha ao anotar não vira erro, só some o "Respondido" da lista.
+    const respondidoEm = new Date().toISOString()
+    const { error: erroNota } = await createAdminClient().from('inbox_replies')
+      .insert({ email_id: id, replied_to: para, replied_at: respondidoEm, replied_by: auth.user.id })
+    if (erroNota) console.warn('[admin/inbox] resposta enviada, mas não anotada:', erroNota.message)
+    return NextResponse.json({ ok: true, para, respondidoEm })
   } catch (e) {
     const status = e instanceof InboxError ? e.status : 500
     return NextResponse.json({ error: e instanceof Error ? e.message : 'falha ao responder' }, { status })

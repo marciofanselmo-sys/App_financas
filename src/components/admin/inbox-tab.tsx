@@ -9,7 +9,7 @@ import { format, isToday } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { AvisoMigration, Carregando, Erro } from './admin-ui'
 
-type Item = EmailResumo & { lido: boolean }
+type Item = EmailResumo & { lido: boolean; respondidoEm: string | null }
 
 /** "Fulano <a@b.com>" → "Fulano"; sem nome, o e-mail. */
 function nomeDe(from: string) {
@@ -47,6 +47,8 @@ export function InboxTab({ refreshKey }: { refreshKey: number }) {
   const [resposta, setResposta] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
   const [enviadoPara, setEnviadoPara] = useState<string | null>(null)
+  const [erroResposta, setErroResposta] = useState<string | null>(null)
+  const [semRespostas, setSemRespostas] = useState(false)
 
   const carregar = useCallback(async () => {
     setCarregando(true)
@@ -54,7 +56,7 @@ export function InboxTab({ refreshKey }: { refreshKey: number }) {
     const res = await fetch('/api/admin/inbox', { cache: 'no-store' })
     const body = await res.json().catch(() => ({}))
     if (!res.ok) setErro(body.error ?? 'Não foi possível ler a caixa de entrada.')
-    else { setEmails(body.emails); setSemMarcacao(!!body.semMarcacao) }
+    else { setEmails(body.emails); setSemMarcacao(!!body.semMarcacao); setSemRespostas(!!body.semRespostas) }
     setCarregando(false)
   }, [])
 
@@ -70,6 +72,7 @@ export function InboxTab({ refreshKey }: { refreshKey: number }) {
     setAberto(body.email)
     setResposta(null)
     setEnviadoPara(null)
+    setErroResposta(null)
     if (!e.lido) {
       setEmails(lista => lista?.map(x => x.id === e.id ? { ...x, lido: true } : x) ?? null)
       window.dispatchEvent(new Event(INBOX_EVENTO))
@@ -89,15 +92,18 @@ export function InboxTab({ refreshKey }: { refreshKey: number }) {
   async function enviarResposta() {
     if (!aberto || !resposta?.trim()) return
     setEnviando(true)
-    setErro(null)
+    setErroResposta(null)
     const res = await fetch(`/api/admin/inbox/${encodeURIComponent(aberto.id)}/responder`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mensagem: resposta }),
     })
     const body = await res.json().catch(() => ({}))
     setEnviando(false)
-    if (!res.ok) { setErro(body.error ?? 'Não foi possível enviar a resposta.'); return }
+    // Erro aparece junto da caixa de resposta, não no topo da página.
+    if (!res.ok) { setErroResposta(body.error ?? 'Não foi possível enviar a resposta.'); return }
     setResposta(null)
     setEnviadoPara(body.para)
+    const id = aberto.id
+    setEmails(lista => lista?.map(x => x.id === id ? { ...x, respondidoEm: body.respondidoEm ?? new Date().toISOString() } : x) ?? null)
   }
 
   const visiveis = useMemo(
@@ -112,6 +118,9 @@ export function InboxTab({ refreshKey }: { refreshKey: number }) {
     <div className="space-y-4">
       {semMarcacao && (
         <AvisoMigration arquivo="migration_admin_inbox.sql" oQue="Dá para ler os e-mails, mas o painel ainda não guarda quais já foram lidos." />
+      )}
+      {semRespostas && (
+        <AvisoMigration arquivo="migration_admin_inbox_replies.sql" oQue="As respostas são enviadas, mas o painel ainda não guarda quais e-mails já foram respondidos." />
       )}
       {erro && <Erro msg={erro} />}
 
@@ -154,6 +163,11 @@ export function InboxTab({ refreshKey }: { refreshKey: number }) {
                         {e.anexos > 0 && <Paperclip className="h-3 w-3 shrink-0 text-slate-400" />}
                         <span className="truncate">{e.subject || '(sem assunto)'}</span>
                       </span>
+                      {e.respondidoEm && (
+                        <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                          <Reply className="h-3 w-3" /> Respondido · {quando(e.respondidoEm)}
+                        </span>
+                      )}
                     </span>
                     {abrindo === e.id && <Loader2 className="h-4 w-4 animate-spin text-slate-400 shrink-0 mt-1" />}
                   </button>
@@ -203,11 +217,18 @@ export function InboxTab({ refreshKey }: { refreshKey: number }) {
                   </p>
                 )}
               </div>
-              {enviadoPara && (
-                <p className="mx-5 mt-4 flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-3 py-2">
-                  <CheckCircle2 className="h-4 w-4 shrink-0" /> Resposta enviada para {enviadoPara}.
-                </p>
-              )}
+              {(() => {
+                const respondidoEm = emails?.find(x => x.id === aberto.id)?.respondidoEm
+                if (!enviadoPara && !respondidoEm) return null
+                return (
+                  <p className="mx-5 mt-4 flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-3 py-2">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    {enviadoPara
+                      ? <>Resposta enviada para {enviadoPara}.</>
+                      : <>Respondido em {format(new Date(respondidoEm!), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}.</>}
+                  </p>
+                )
+              })()}
               {resposta !== null && (
                 <div className="px-5 py-4 border-b border-slate-100 dark:border-white/[0.06] space-y-2">
                   <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -216,6 +237,7 @@ export function InboxTab({ refreshKey }: { refreshKey: number }) {
                   <textarea autoFocus value={resposta} onChange={e => setResposta(e.target.value)} rows={7}
                     placeholder="Escreva a resposta…"
                     className="w-full text-sm rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-slate-100 p-3 focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+                  {erroResposta && <Erro msg={erroResposta} />}
                   <div className="flex items-center gap-2">
                     <button type="button" onClick={enviarResposta} disabled={enviando || !resposta.trim()}
                       className="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
