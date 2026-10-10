@@ -34,7 +34,7 @@ export function OfertaTesteCard() {
         <div className="nobli-chip h-8 w-8 rounded-lg"><Mail className="h-4 w-4" /></div>
         <div>
           <p className="nobli-card-title">Oferta do teste para o Grátis</p>
-          <p className="text-xs text-slate-500">E-mail único “Liberamos 7 dias do NOBLI completo” para quem é Grátis e nunca fez o teste.</p>
+          <p className="text-xs text-slate-500">E-mail único “Teste o NOBLI completo: 5 dias grátis” para quem é Grátis e nunca fez o teste.</p>
         </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
