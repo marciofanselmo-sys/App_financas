@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { OverviewSection } from '@/components/ui/overview-blocks'
 import { INBOX_EVENTO } from '@/hooks/use-inbox-unread'
 import type { EmailCompleto, EmailResumo } from '@/lib/email/inbox'
-import { Mail, MailOpen, Paperclip, Download, ArrowLeft, Loader2, RefreshCw } from 'lucide-react'
+import { Mail, MailOpen, Paperclip, Download, ArrowLeft, Loader2, RefreshCw, Reply, Send, CheckCircle2 } from 'lucide-react'
 import { format, isToday } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { AvisoMigration, Carregando, Erro } from './admin-ui'
@@ -43,6 +43,10 @@ export function InboxTab({ refreshKey }: { refreshKey: number }) {
   const [filtro, setFiltro] = useState<'todos' | 'naoLidos'>('todos')
   const [aberto, setAberto] = useState<EmailCompleto | null>(null)
   const [abrindo, setAbrindo] = useState<string | null>(null)
+  // Resposta: null = fechada; texto = caixa aberta com o rascunho.
+  const [resposta, setResposta] = useState<string | null>(null)
+  const [enviando, setEnviando] = useState(false)
+  const [enviadoPara, setEnviadoPara] = useState<string | null>(null)
 
   const carregar = useCallback(async () => {
     setCarregando(true)
@@ -64,6 +68,8 @@ export function InboxTab({ refreshKey }: { refreshKey: number }) {
     setAbrindo(null)
     if (!res.ok) { setErro(body.error ?? 'Não foi possível abrir o e-mail.'); return }
     setAberto(body.email)
+    setResposta(null)
+    setEnviadoPara(null)
     if (!e.lido) {
       setEmails(lista => lista?.map(x => x.id === e.id ? { ...x, lido: true } : x) ?? null)
       window.dispatchEvent(new Event(INBOX_EVENTO))
@@ -78,6 +84,20 @@ export function InboxTab({ refreshKey }: { refreshKey: number }) {
     setEmails(lista => lista?.map(x => x.id === id ? { ...x, lido: false } : x) ?? null)
     setAberto(null)
     window.dispatchEvent(new Event(INBOX_EVENTO))
+  }
+
+  async function enviarResposta() {
+    if (!aberto || !resposta?.trim()) return
+    setEnviando(true)
+    setErro(null)
+    const res = await fetch(`/api/admin/inbox/${encodeURIComponent(aberto.id)}/responder`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mensagem: resposta }),
+    })
+    const body = await res.json().catch(() => ({}))
+    setEnviando(false)
+    if (!res.ok) { setErro(body.error ?? 'Não foi possível enviar a resposta.'); return }
+    setResposta(null)
+    setEnviadoPara(body.para)
   }
 
   const visiveis = useMemo(
@@ -160,6 +180,10 @@ export function InboxTab({ refreshKey }: { refreshKey: number }) {
                   <p>{format(new Date(aberto.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</p>
                 </div>
                 <div className="flex flex-wrap gap-2 pt-1">
+                  <button type="button" onClick={() => { setResposta(r => r ?? ''); setEnviadoPara(null) }}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
+                    <Reply className="h-3.5 w-3.5" /> Responder
+                  </button>
                   <button type="button" onClick={() => marcarNaoLido(aberto.id)}
                     className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5">
                     <Mail className="h-3.5 w-3.5" /> Marcar como não lido
@@ -179,6 +203,32 @@ export function InboxTab({ refreshKey }: { refreshKey: number }) {
                   </p>
                 )}
               </div>
+              {enviadoPara && (
+                <p className="mx-5 mt-4 flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-3 py-2">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" /> Resposta enviada para {enviadoPara}.
+                </p>
+              )}
+              {resposta !== null && (
+                <div className="px-5 py-4 border-b border-slate-100 dark:border-white/[0.06] space-y-2">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Para <b className="text-slate-700 dark:text-slate-200">{enderecoDe(aberto.reply_to[0] ?? aberto.from)}</b> · sai de contato@noblifinance.com.br com a mensagem original citada embaixo
+                  </p>
+                  <textarea autoFocus value={resposta} onChange={e => setResposta(e.target.value)} rows={7}
+                    placeholder="Escreva a resposta…"
+                    className="w-full text-sm rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-slate-100 p-3 focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={enviarResposta} disabled={enviando || !resposta.trim()}
+                      className="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                      {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Enviar
+                    </button>
+                    <button type="button" onClick={() => setResposta(null)} disabled={enviando}
+                      className="text-sm px-3 py-1.5 rounded-lg text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5">
+                      Cancelar
+                    </button>
+                    <span className="ml-auto text-[11px] text-slate-400">Assinada como “Equipe NOBLI”</span>
+                  </div>
+                </div>
+              )}
               <iframe
                 title="Conteúdo do e-mail"
                 sandbox="allow-popups allow-popups-to-escape-sandbox"

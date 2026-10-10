@@ -24,12 +24,20 @@ async function registrarEnvio(ok: boolean) {
   } catch { /* sem chave de serviço: segue sem registrar */ }
 }
 
-export async function enviarEmail(para: string, email: Email): Promise<{ error: string | null; pulado?: true }> {
+/**
+ * `cabecalhos` extras servem às respostas do Admin: In-Reply-To/References
+ * fazem a resposta cair na mesma conversa no e-mail da pessoa.
+ */
+export async function enviarEmail(
+  para: string,
+  email: Email,
+  cabecalhos?: Record<string, string>,
+): Promise<{ error: string | null; pulado?: true }> {
   const apiKey = process.env.RESEND_API_KEY
   const from = process.env.RESEND_FROM ?? 'NOBLI <contato@noblifinance.com.br>'
 
   // Lembrete ou oferta: respeita o descadastro e põe o link da pessoa.
-  let headers: Record<string, string> | undefined
+  let headers: Record<string, string> | undefined = cabecalhos
   if (email.marketing) {
     try {
       if (await descadastrado(createAdminClient(), para)) return { error: null, pulado: true }
@@ -44,6 +52,7 @@ export async function enviarEmail(para: string, email: Email): Promise<{ error: 
     }
     // Botão "Cancelar inscrição" do Gmail/Outlook (descadastro em um clique).
     headers = {
+      ...cabecalhos,
       'List-Unsubscribe': umClique ? `<${umClique}>, <mailto:${suporte}?subject=SAIR>` : `<mailto:${suporte}?subject=SAIR>`,
       ...(umClique ? { 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } : {}),
     }

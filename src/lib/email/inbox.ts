@@ -25,6 +25,8 @@ export interface EmailCompleto extends EmailResumo {
   text: string | null
   attachments: { id: string; filename: string; content_type: string; size: number }[]
   raw_url: string | null
+  /** Message-ID do e-mail, para a resposta entrar na mesma conversa. */
+  message_id: string | null
 }
 
 export class InboxError extends Error {
@@ -81,5 +83,6 @@ export async function abrirRecebido(id: string): Promise<EmailCompleto> {
     anexos: anexos.length,
     attachments: anexos.map(a => ({ id: a.id, filename: a.filename, content_type: a.content_type, size: a.size })),
     raw_url: raw?.download_url ?? null,
+    message_id: typeof e.message_id === 'string' ? e.message_id : null,
   }
 }

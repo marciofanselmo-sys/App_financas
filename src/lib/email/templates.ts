@@ -493,3 +493,36 @@ export function emailCheckoutAbandonado(params: { nome?: string; checkout: strin
     marketing: true,
   }
 }
+
+// ── Resposta manual (Admin › E-mails) ──────────────────────────────────────
+
+const escapar = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!))
+
+/**
+ * Resposta escrita à mão no painel para quem mandou e-mail ao contato@.
+ * Visual de conversa (sem moldura, sem botão): o texto digitado, a assinatura
+ * e, embaixo, a mensagem original citada — como num cliente de e-mail.
+ */
+export function emailResposta(params: {
+  assunto: string
+  mensagem: string
+  original: { de: string; quando: string; texto: string }
+}): Email {
+  const subject = /^\s*re\s*:/i.test(params.assunto) ? params.assunto : `Re: ${params.assunto || '(sem assunto)'}`
+  const paragrafos = params.mensagem.trim().split(/\n{2,}/)
+    .map(b => `<p style="margin:0 0 14px;font-size:15px;line-height:23px;color:${TEXTO};">${escapar(b).replace(/\n/g, '<br>')}</p>`).join('')
+  const cabecalhoCitacao = `Em ${params.original.quando}, ${params.original.de} escreveu:`
+  const citado = params.original.texto.trim()
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:600px;">
+    ${paragrafos}
+    <p style="margin:18px 0 0;font-size:14px;line-height:21px;color:${SUAVE};"><strong style="color:${NAVY};">Equipe NOBLI</strong><br><a href="${SITE}" style="color:${AZUL_ACAO};">noblifinance.com.br</a></p>
+    ${citado ? `<p style="margin:24px 0 6px;font-size:13px;color:${SUAVE};">${escapar(cabecalhoCitacao)}</p>
+    <blockquote style="margin:0;padding:0 0 0 12px;border-left:3px solid #E3E8F0;font-size:13px;line-height:20px;color:${SUAVE};">${escapar(citado).replace(/\n/g, '<br>')}</blockquote>` : ''}
+  </div>
+</body></html>`
+  const text = `${params.mensagem.trim()}\n\nEquipe NOBLI\n${SITE}${citado
+    ? `\n\n${cabecalhoCitacao}\n${citado.split('\n').map(l => `> ${l}`).join('\n')}` : ''}`
+  return { subject, html, text }
+}
