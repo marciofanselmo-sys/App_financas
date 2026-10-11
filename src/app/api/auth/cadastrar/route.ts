@@ -120,13 +120,17 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Veio do /teste (pela URL ou pelo cookie que o /teste deixou): a conta já
-    // nasce com o teste de 7 dias. Falha aqui não derruba o cadastro.
+    // Toda conta nova nasce no teste grátis (5 dias + até 2 extras), venha de
+    // onde vier — só depois do teste ela cai no Grátis (decidido 11/10/2026).
+    // iniciarTeste já barra quem assina e e-mail que já teve teste. A origem
+    // (UTMs) vem do cookie que o /teste deixou; sem ele, marca por onde entrou.
+    // Falha aqui não derruba o cadastro.
     const cookieTeste = req.cookies.get(COOKIE_TESTE)?.value
     let comTeste = false
-    if (data.user && (teste || cookieTeste)) {
+    if (data.user) {
       let origem: Record<string, string> = {}
       try { origem = cookieTeste ? JSON.parse(cookieTeste) : {} } catch { origem = {} }
+      if (!origem.utm_source) origem = { ...origem, utm_source: teste ? 'link-teste' : 'cadastro-direto' }
       comTeste = (await iniciarTeste(admin, data.user.id, email, origem)) === 'iniciado'
     }
 
