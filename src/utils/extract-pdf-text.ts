@@ -30,7 +30,28 @@ function asPasswordError(err: unknown): Error | null {
   return new Error(e.code === 2 ? 'pdf-password-wrong' : 'pdf-password')
 }
 
+// O Safari não deixa percorrer ReadableStream com `for await`, e o pdf.js usa
+// isso por dentro. Acrescenta o iterador que falta (só se faltar).
+function ensureReadableStreamIterator() {
+  if (typeof ReadableStream === 'undefined') return
+  const proto = ReadableStream.prototype as unknown as Record<symbol, unknown>
+  if (typeof proto[Symbol.asyncIterator] === 'function') return
+  proto[Symbol.asyncIterator] = async function* (this: ReadableStream) {
+    const reader = this.getReader()
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) return
+        yield value
+      }
+    } finally {
+      reader.releaseLock()
+    }
+  }
+}
+
 export async function extractPdfText(buffer: ArrayBuffer, password?: string): Promise<string> {
+  ensureReadableStreamIterator()
   const pdfjsLib = await import('pdfjs-dist')
   // Cópia local do worker (public/pdf.worker.min.mjs) — o CDN é instável nessa versão.
   //
@@ -67,9 +88,16 @@ export async function extractPdfText(buffer: ArrayBuffer, password?: string): Pr
   const parts: string[] = []
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum)
-    const tc = await page.getTextContent()
-    for (const item of tc.items) {
-      if ('str' in item && item.str.trim()) parts.push(item.str.trim())
+    // Lê o fluxo de texto com getReader(), e não com page.getTextContent():
+    // este usa `for await` num ReadableStream, que o Safari do iPhone não
+    // suporta ("undefined is not a function (near '...t of e...')").
+    const reader = page.streamTextContent().getReader()
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      for (const item of value.items) {
+        if ('str' in item && item.str.trim()) parts.push(item.str.trim())
+      }
     }
   }
 
