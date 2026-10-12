@@ -111,9 +111,9 @@ export async function middleware(request: NextRequest) {
 // imagens, então o worker do pdf.js (`/pdf.worker.min.mjs`) e os ícones em
 // subpastas (`/nobli/favicon.ico`) eram redirecionados para /auth/login: o
 // pdf.js pedia o worker, recebia HTML e a importação de PDF quebrava com
-// "Erro ao processar o PDF".
+// "Erro ao processar o PDF". O .gz é o idioma do leitor de notas (/ocr).
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|avif|ico|mjs|js|css|json|txt|xml|map|woff|woff2|ttf|otf|eot|wasm|pdf)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|avif|ico|mjs|js|css|json|txt|xml|map|woff|woff2|ttf|otf|eot|wasm|pdf|gz)$).*)',
   ],
 }

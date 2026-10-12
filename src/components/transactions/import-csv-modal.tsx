@@ -1049,10 +1049,15 @@ function shiftDays(date: string, days: number): string {
       const batch = valid.slice(i, i + BATCH)
       const dates = [...new Set(batch.map(r => r.date))]
 
-      const { rows: existing, error: dedupError } = await selectAllPages<{ id: string; date: string; amount: number; description: string; board_id: string | null }>(
+      // select('*'): diluted_amount só existe depois da migração, e pedir a
+      // coluna pelo nome antes disso faria a checagem falhar.
+      const { rows: existingRaw, error: dedupError } = await selectAllPages<{ id: string; date: string; amount: number; description: string; board_id: string | null; diluted_amount?: number | null }>(
         () => supabase
-          .from('transactions').select('id, date, amount, description, board_id').eq('user_id', user.id).in('date', dates),
+          .from('transactions').select('*').eq('user_id', user.id).in('date', dates),
       )
+      // Compra diluída: vale 0 no banco, mas continua sendo o lançamento do
+      // extrato — compara pelo valor original, senão reimportar duplicaria.
+      const existing = existingRaw.map(e => (e.diluted_amount != null ? { ...e, amount: Number(e.diluted_amount) } : e))
       if (dedupError) {
         // Sem a lista completa do que já existe não dá para saber o que é
         // duplicata. Importar assim mesmo criaria lançamentos repetidos no

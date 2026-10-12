@@ -98,10 +98,12 @@ export function useTransactions(filters?: TransactionFilters) {
       allData.push(...(data as Transaction[]))
       if (data.length < PAGE) break
     }
-    setTransactions(allData)
+    // Compra diluída: vale 0 (os itens é que somam). Filtrada aqui, e não na
+    // consulta, para funcionar antes e depois da migração.
+    setTransactions(filters?.include_diluted ? allData : allData.filter(t => t.diluted_amount == null))
     setLoading(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [janela.desde, janela.loading, filters?.month, filters?.year, filters?.category, filters?.type, filters?.search, filters?.board_id, filters?.tag, filters?.exclude_board_ids?.join(',')])
+  }, [janela.desde, janela.loading, filters?.month, filters?.year, filters?.category, filters?.type, filters?.search, filters?.board_id, filters?.tag, filters?.exclude_board_ids?.join(','), filters?.include_diluted])
 
   useEffect(() => {
     fetchTransactions()

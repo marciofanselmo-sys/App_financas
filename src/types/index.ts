@@ -110,6 +110,11 @@ export interface Transaction {
   group_label?: string | null
   is_recurring?: boolean
   event_id?: string | null
+  // Diluir transação (nota fiscal): a compra original fica com amount 0 e o
+  // valor em diluted_amount; cada item é uma transação comum que aponta para
+  // ela em diluted_from_id. Migração migration_diluir_transacao.sql.
+  diluted_amount?: number | null
+  diluted_from_id?: string | null
   created_at: string
 }
 
@@ -134,6 +139,9 @@ export interface TransactionFilters {
   board_id?: string
   tag?: string
   exclude_board_ids?: string[]
+  // A compra diluída (valor 0, itens à parte) só aparece na tabela da conta,
+  // como cabeçalho dos itens. Nas outras telas ela fica de fora.
+  include_diluted?: boolean
 }
 
 export interface DashboardSummary {

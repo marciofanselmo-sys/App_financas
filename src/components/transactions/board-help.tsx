@@ -80,6 +80,12 @@ export function BoardHelp() {
                 próximos já chegam assim — a não ser que você marque &ldquo;Mudar só esta transação&rdquo;.
               </span>
               <span className="block mt-1">
+                <b className="font-medium text-slate-600 dark:text-slate-300">Diluir transação</b>{' '}separa uma compra
+                (o mercado, por exemplo) em itens, cada um com a sua categoria: tire uma foto da nota fiscal ou
+                preencha à mão. A soma dos itens tem que fechar com o valor da compra. A compra fica como cabeçalho,
+                com o valor riscado, e quem soma são os itens; no ⋮ dela dá para editar os itens ou desfazer.
+              </span>
+              <span className="block mt-1">
                 <b className="font-medium text-slate-600 dark:text-slate-300">Não somar (entre minhas contas)</b>{' '}coloca
                 a etiqueta &ldquo;Entre contas&rdquo; à mão; no mesmo lugar dá para voltar a somar.
               </span>

@@ -20,6 +20,7 @@ import { HistoryWindowNote } from '@/components/plan/history-window-note'
 import { TransactionForm } from '@/components/transactions/transaction-form'
 import { ImportCSVModal } from '@/components/transactions/import-csv-modal'
 import { ExportCSVModal } from '@/components/transactions/export-csv-modal'
+import { DiluteDialog } from '@/components/transactions/dilute-dialog'
 import { BoardHelp } from '@/components/transactions/board-help'
 import { InvestmentBoardHelp } from '@/components/investments/investment-board-help'
 import { BoardIcon } from '@/components/transactions/board-icon'
@@ -113,6 +114,9 @@ function BoardDetailInner() {
   const [exportLocked, setExportLocked] = useState(false)
   const { can: canPlan, loading: planLoading } = usePlan()
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
+  // Compra aberta em "Diluir transação" / "Editar itens".
+  const [diluteTx, setDiluteTx] = useState<Transaction | null>(null)
+  const [diluteError, setDiluteError] = useState<string | null>(null)
   const [expandedPos, setExpandedPos] = useState(false)
   const [expandedProventos, setExpandedProventos] = useState(false)
   const [ruleSyncError, setRuleSyncError] = useState<string | null>(null)
@@ -129,6 +133,8 @@ function BoardDetailInner() {
       tag: activeTag ?? undefined,
       category: categoryFilter === 'all' ? undefined : categoryFilter,
       type: typeFilter === 'all' ? undefined : typeFilter,
+      // A compra diluída aparece aqui como cabeçalho dos itens.
+      include_diluted: true,
     })
 
   // Todas as transações da conta, sem nenhum filtro — é daqui que sai o saldo
@@ -384,6 +390,19 @@ function BoardDetailInner() {
     refetch()
   }
 
+  // Desfazer diluição: apaga os itens e devolve o valor à compra.
+  async function handleUndoDilute(tx: Transaction) {
+    setDiluteError(null)
+    const { error } = await createClient().rpc('desfazer_diluicao', { p_id: tx.id })
+    if (error) {
+      logSafeError('undoDilute', error)
+      setDiluteError(/desfazer_diluicao|PGRST202|42883/.test(`${error.code} ${error.message}`)
+        ? missingMigrationMessage('migration_diluir_transacao.sql')
+        : `Não foi possível desfazer a diluição: ${error.message}`)
+    }
+    refetch()
+  }
+
   async function handleSubmitBatch(items: Omit<Transaction, 'id' | 'user_id' | 'created_at'>[]) {
     let lastError: unknown = null
     for (const item of items) {
@@ -419,6 +438,16 @@ function BoardDetailInner() {
             <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{ruleSyncError}</p>
           </div>
           <button onClick={() => setRuleSyncError(null)} className="text-red-400 hover:text-red-600 transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {diluteError && (
+        <div className="flex items-start gap-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
+          <AlertCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+          <p className="flex-1 text-sm text-red-800 dark:text-red-300">{diluteError}</p>
+          <button onClick={() => setDiluteError(null)} className="text-red-400 hover:text-red-600 transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -782,6 +811,8 @@ function BoardDetailInner() {
             onBulkAddTag={handleBulkAddTag}
             onSetAporte={handleSetAporte}
             balanceImpactOf={balanceImpactOf}
+            onDilute={setDiluteTx}
+            onUndoDilute={handleUndoDilute}
           />
         )}
 
@@ -791,6 +822,13 @@ function BoardDetailInner() {
 
       {/* Conta de investimento tem a própria explicação — não mistura com Contas e Cartões. */}
       {isInvestmentBoard ? <InvestmentBoardHelp /> : <BoardHelp />}
+
+      <DiluteDialog
+        tx={diluteTx}
+        categories={categories}
+        onClose={() => setDiluteTx(null)}
+        onSaved={refetch}
+      />
 
       <TransactionForm
         open={formOpen}

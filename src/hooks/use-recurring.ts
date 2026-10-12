@@ -94,7 +94,8 @@ export function useRecurring(excludeBoardIds?: string[], boardId?: string) {
       if (!data?.length) break
       // Movimentação entre as contas do próprio usuário (pagamento de fatura)
       // se repete todo mês, mas não é gasto: não pode virar "gasto fixo".
-      txs.push(...(data as Transaction[]).filter(t => !isInternalMovement(t)))
+      // A compra diluída vale 0 (os itens somam): não entra na média.
+      txs.push(...(data as Transaction[]).filter(t => !isInternalMovement(t) && t.diluted_amount == null))
       if (data.length < PAGE) break
     }
     if (!txs.length) { setLoading(false); return }

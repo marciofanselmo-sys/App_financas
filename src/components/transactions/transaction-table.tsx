@@ -6,9 +6,9 @@ import { ptBR } from 'date-fns/locale'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { MoreVertical, MoreHorizontal, ChevronDown, Pencil, Trash2, ArrowRightLeft, ArrowLeftRight, RefreshCw, Tag, Sparkles, X as XIcon, CircleSlash, CircleCheck, TrendingUp, TrendingDown, PiggyBank } from 'lucide-react'
+import { MoreVertical, MoreHorizontal, ChevronDown, Pencil, Trash2, ArrowRightLeft, ArrowLeftRight, RefreshCw, Tag, Sparkles, X as XIcon, CircleSlash, CircleCheck, TrendingUp, TrendingDown, PiggyBank, ReceiptText, Undo2, CornerDownRight } from 'lucide-react'
 import { Transaction, TransactionBoard, Category } from '@/types'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
@@ -79,12 +79,16 @@ interface TransactionTableProps {
    * quem tem o histórico inteiro — a página.
    */
   balanceImpactOf?: (ids: string[]) => { before: number; after: number } | null
+  /** Abre "Diluir transação" (ou "Editar itens", na compra já diluída). */
+  onDilute?: (tx: Transaction) => void
+  /** Apaga os itens e devolve o valor à compra original. */
+  onUndoDilute?: (tx: Transaction) => Promise<void>
 }
 
 export function TransactionTable({
   transactions, onEdit, onDelete, onMove, onToggleRecurring, onToggleInternal, boards, currentBoardId,
   categories, onBulkCategoryChange, onBulkEventChange, onBulkMove, onBulkDelete, balanceImpactOf,
-  onBulkTypeChange, onBulkInternal, onBulkRecurring, onBulkAddTag, onSetAporte,
+  onBulkTypeChange, onBulkInternal, onBulkRecurring, onBulkAddTag, onSetAporte, onDilute, onUndoDilute,
 }: TransactionTableProps) {
   const { events } = useEvents()
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -117,6 +121,8 @@ export function TransactionTable({
     run: (tag?: string) => Promise<void>
   }>(null)
   const [moreTag, setMoreTag] = useState('')
+  const [undoTx, setUndoTx] = useState<Transaction | null>(null)
+  const [undoing, setUndoing] = useState(false)
   const [moreRunning, setMoreRunning] = useState(false)
   // Só calcula com um diálogo de massa aberto: o cálculo percorre o histórico
   // inteiro da conta, e não há por que rodar a cada seleção de checkbox.
@@ -133,7 +139,39 @@ export function TransactionTable({
   const aporteBoardOf = (tx: Transaction) =>
     tx.counterpart_board_id ? investmentTargets.find(b => b.id === tx.counterpart_board_id) ?? null : null
   const selectionEnabled = !!onBulkCategoryChange
-  const allSelected = transactions.length > 0 && selected.size === transactions.length
+  // A compra diluída não entra em ação em massa: quem conta são os itens.
+  const selectable = useMemo(() => transactions.filter(t => t.diluted_amount == null), [transactions])
+  const allSelected = selectable.length > 0 && selected.size === selectable.length
+
+  // Compra diluída vira cabeçalho, com os itens logo abaixo. Item cuja compra
+  // não está na lista (filtro de categoria, busca) aparece como linha comum.
+  const display = useMemo(() => {
+    const present = new Set(transactions.map(t => t.id))
+    const kids = new Map<string, Transaction[]>()
+    for (const t of transactions) {
+      if (t.diluted_from_id && present.has(t.diluted_from_id)) {
+        kids.set(t.diluted_from_id, [...(kids.get(t.diluted_from_id) ?? []), t])
+      }
+    }
+    const rows: { tx: Transaction; role: 'normal' | 'grupo' | 'item'; count?: number }[] = []
+    for (const t of transactions) {
+      if (t.diluted_from_id && present.has(t.diluted_from_id)) continue
+      if (t.diluted_amount != null) {
+        const items = (kids.get(t.id) ?? []).sort((a, b) => Number(b.amount) - Number(a.amount))
+        rows.push({ tx: t, role: 'grupo', count: items.length })
+        items.forEach(k => rows.push({ tx: k, role: 'item' }))
+      } else {
+        rows.push({ tx: t, role: 'normal' })
+      }
+    }
+    return rows
+  }, [transactions])
+
+  // Diluir: só despesa comum — parcela, aporte e "entre minhas contas" têm
+  // regras próprias de soma e ficam de fora.
+  const canDilute = (tx: Transaction) => !!onDilute && tx.type === 'despesa' && tx.diluted_amount == null
+    && !tx.diluted_from_id && !tx.counterpart_of_id && !isInternalMovement(tx) && !aporteBoardOf(tx)
+    && !installmentLabel(tx) && Number(tx.amount) > 0
   const selectedTransactions = transactions.filter(t => selected.has(t.id))
   // Normais e especiais em seletores separados, gravando no mesmo estado
   // (bulkCategory) — escolher em um desmarca o outro, igual ao formulário de
@@ -154,7 +192,7 @@ export function TransactionTable({
   }, [transactions])
 
   function toggleAll() {
-    setSelected(allSelected ? new Set() : new Set(transactions.map(t => t.id)))
+    setSelected(allSelected ? new Set() : new Set(selectable.map(t => t.id)))
   }
 
   function toggleOne(id: string) {
@@ -307,6 +345,14 @@ export function TransactionTable({
     setMoving(false)
   }
 
+  async function confirmUndo() {
+    if (!undoTx || !onUndoDilute) return
+    setUndoing(true)
+    await onUndoDilute(undoTx)
+    setUndoing(false)
+    setUndoTx(null)
+  }
+
   async function confirmDelete() {
     if (!deleteId) return
     setDeleting(true)
@@ -436,7 +482,57 @@ export function TransactionTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {transactions.map((tx) => (
+            {display.map(({ tx, role, count }) => role === 'grupo' ? (
+              <TableRow key={tx.id} className="bg-slate-50/80 dark:bg-slate-700/30 hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                {selectionEnabled && <TableCell />}
+                <TableCell className="overflow-hidden">
+                  <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    <ReceiptText className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                    <span className="truncate">{tx.description}</span>
+                    <span className="shrink-0 rounded-full bg-indigo-50 dark:bg-indigo-900/40 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300">
+                      {count} {count === 1 ? 'item' : 'itens'}
+                    </span>
+                  </p>
+                  <p className="lg:hidden text-[11px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
+                    {format(new Date(tx.date + 'T00:00:00'), 'dd/MM', { locale: ptBR })} · compra diluída
+                  </p>
+                </TableCell>
+                <TableCell className="hidden sm:table-cell text-center text-xs text-slate-400 dark:text-slate-500">diluída</TableCell>
+                <TableCell className="text-slate-500 dark:text-slate-400 text-sm hidden lg:table-cell text-center whitespace-nowrap">
+                  {format(new Date(tx.date + 'T00:00:00'), 'dd MMM', { locale: ptBR })}
+                </TableCell>
+                <TableCell className="hidden xl:table-cell" />
+                <TableCell className="hidden xl:table-cell" />
+                <TableCell className="hidden xl:table-cell text-center">
+                  <Badge className="text-xs bg-red-50 text-red-600 hover:bg-red-50" variant="outline">Despesa</Badge>
+                </TableCell>
+                <TableCell className="text-right text-sm whitespace-nowrap pr-4">
+                  {/* Riscado: é o valor da compra, que não soma — quem soma são os itens. */}
+                  <span className="font-semibold text-slate-400 line-through tabular-nums" title="Valor da compra. Quem soma no saldo e nos relatórios são os itens abaixo.">
+                    {formatCurrency(Number(tx.diluted_amount))}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className="inline-flex items-center justify-center h-8 w-8 rounded-md hover:bg-slate-100 transition-colors" aria-label="Ações da compra diluída">
+                      <MoreVertical className="h-4 w-4 text-slate-500" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-auto min-w-56">
+                      {onDilute && (
+                        <DropdownMenuItem onClick={() => onDilute(tx)} className="whitespace-nowrap">
+                          <ReceiptText className="h-4 w-4 mr-2" />Editar itens
+                        </DropdownMenuItem>
+                      )}
+                      {onUndoDilute && (
+                        <DropdownMenuItem onClick={() => setUndoTx(tx)} className="whitespace-nowrap">
+                          <Undo2 className="h-4 w-4 mr-2" />Desfazer diluição
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            ) : (
               <TableRow key={tx.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-700/30">
                 {selectionEnabled && (
                   <TableCell>
@@ -450,7 +546,10 @@ export function TransactionTable({
                   </TableCell>
                 )}
                 <TableCell className="overflow-hidden">
-                  <p className="font-medium text-slate-700 dark:text-slate-200 text-sm truncate">{tx.description}</p>
+                  <p className="font-medium text-slate-700 dark:text-slate-200 text-sm truncate">
+                    {role === 'item' && <CornerDownRight className="inline h-3.5 w-3.5 mr-1.5 -mt-0.5 text-slate-300 dark:text-slate-600" />}
+                    {tx.description}
+                  </p>
                   {/* Tarja de "não soma": fica na conta e no saldo, mas fora de
                       gastos e entradas. Aparece em qualquer tamanho de tela. */}
                   {aporteBoardOf(tx) ? (
@@ -553,11 +652,21 @@ export function TransactionTable({
                     <DropdownMenuTrigger className="inline-flex items-center justify-center h-8 w-8 rounded-md hover:bg-slate-100 transition-colors">
                       <MoreVertical className="h-4 w-4 text-slate-500" />
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
+                    {/* Largura pelo conteúdo: na largura do botão ⋮ cada opção
+                        quebrava em três linhas. */}
+                    <DropdownMenuContent align="end" className="w-auto min-w-56 [&_[data-slot=dropdown-menu-item]]:whitespace-nowrap">
                       <DropdownMenuItem onClick={() => onEdit(tx)}>
                         <Pencil className="h-4 w-4 mr-2" />
                         Editar
                       </DropdownMenuItem>
+                      {canDilute(tx) && (
+                        <DropdownMenuItem onClick={() => onDilute!(tx)}>
+                          <ReceiptText className="h-4 w-4 mr-2" />
+                          Diluir transação
+                          <span className="ml-auto pl-3 text-[10px] font-semibold text-blue-600 dark:text-blue-400">NOVO</span>
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuSeparator />
                       {/* A perna gerada pelo app é a outra ponta de um pagamento:
                           quem decide é o lançamento original, não ela. */}
                       {onToggleInternal && !tx.counterpart_of_id && (
@@ -587,6 +696,8 @@ export function TransactionTable({
                           Mover para conta
                         </DropdownMenuItem>
                       )}
+                      {((onToggleInternal && !tx.counterpart_of_id) || (onMove && otherBoards.length > 0)
+                        || (onSetAporte && tx.type === 'despesa' && !tx.counterpart_of_id && investmentTargets.length > 0)) && <DropdownMenuSeparator />}
                       <DropdownMenuItem
                         onClick={() => setDeleteId(tx.id)}
                         className="text-red-600 focus:text-red-600 focus:bg-red-50"
@@ -602,6 +713,22 @@ export function TransactionTable({
           </TableBody>
         </Table>
       </div>
+
+      <Dialog open={!!undoTx} onOpenChange={o => { if (!o && !undoing) setUndoTx(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Desfazer diluição?</DialogTitle>
+            <DialogDescription>
+              Os itens de &ldquo;{undoTx?.description}&rdquo; são apagados e a compra volta a ser uma linha só,
+              de {undoTx ? formatCurrency(Number(undoTx.diluted_amount)) : ''}, na categoria {undoTx?.category}. O saldo da conta não muda.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setUndoTx(null)} disabled={undoing}>Cancelar</Button>
+            <Button onClick={confirmUndo} disabled={undoing}>{undoing ? 'Desfazendo…' : 'Desfazer'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Move to board dialog */}
       <Dialog open={!!moveTx} onOpenChange={() => setMoveTx(null)}>
