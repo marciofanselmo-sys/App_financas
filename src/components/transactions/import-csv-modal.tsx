@@ -1060,11 +1060,21 @@ function shiftDays(date: string, days: number): string {
       // extrato — compara pelo valor original, senão reimportar duplicaria.
       const existing = existingRaw.map(e => (e.diluted_amount != null ? { ...e, amount: Number(e.diluted_amount) } : e))
       // Nota fiscal lançada antes do extrato ("+ Novo › Nova nota fiscal"): o
-      // lançamento do extrato com o mesmo valor total, na mesma data e conta, é
-      // a mesma compra — junta com a nota em vez de criar outro.
-      const pendingNotas = existingRaw.filter(e => e.nota_pendente && e.diluted_amount != null)
+      // lançamento do extrato com o mesmo valor total, na mesma conta e com até
+      // 3 dias de diferença (o cartão lança depois), é a mesma compra — junta
+      // com a nota em vez de criar outra. Sem a migração a coluna não existe:
+      // a consulta falha e simplesmente não junta nada.
+      const NOTA_DAYS = 3
+      const sortedDates = [...dates].sort()
+      const { data: notaRows } = await supabase.from('transactions').select('*')
+        .eq('user_id', user.id).eq('nota_pendente', true)
+        .gte('date', shiftDays(sortedDates[0], -NOTA_DAYS))
+        .lte('date', shiftDays(sortedDates[sortedDates.length - 1], NOTA_DAYS))
+      const pendingNotas = ((notaRows ?? []) as { id: string; date: string; board_id: string | null; diluted_amount?: number | null }[])
+        .filter(n => n.diluted_amount != null)
       const usedNotas = new Set<string>()
-      const joins: { id: string; description: string }[] = []
+      const joins: { id: string; description: string; date: string }[] = []
+      const dayDiff = (a: string, b: string) => Math.round(Math.abs(new Date(`${a}T12:00:00`).getTime() - new Date(`${b}T12:00:00`).getTime()) / 86_400_000)
       if (dedupError) {
         // Sem a lista completa do que já existe não dá para saber o que é
         // duplicata. Importar assim mesmo criaria lançamentos repetidos no
@@ -1093,12 +1103,15 @@ function shiftDays(date: string, days: number): string {
       const status = batch.map(r => {
         if (existingSet.has(`${r.date}|${r.amount}|${r.description}`)) return 'dup' as const
         if (r.type === 'despesa' && pendingNotas.length > 0) {
-          const same = pendingNotas.filter(n => !usedNotas.has(n.id) && n.board_id === (r.board_id ?? boardId ?? null)
-            && n.date === r.date && Math.round(Number(n.diluted_amount) * 100) === Math.round(r.amount * 100))
-          // Só com uma nota possível; duas iguais no mesmo dia não dá para saber qual.
-          if (same.length === 1) {
-            usedNotas.add(same[0].id)
-            joins.push({ id: same[0].id, description: r.description })
+          const near = pendingNotas.filter(n => !usedNotas.has(n.id) && n.board_id === (r.board_id ?? boardId ?? null)
+            && dayDiff(n.date, r.date) <= NOTA_DAYS && Math.round(Number(n.diluted_amount) * 100) === Math.round(r.amount * 100))
+          // Só com uma nota possível. Havendo várias, vale a da mesma data se
+          // for uma só; senão não dá para saber qual — entra como lançamento novo.
+          const sameDay = near.filter(n => n.date === r.date)
+          const match = near.length === 1 ? near[0] : sameDay.length === 1 ? sameDay[0] : null
+          if (match) {
+            usedNotas.add(match.id)
+            joins.push({ id: match.id, description: r.description, date: r.date })
             return 'join' as const
           }
         }
@@ -1112,13 +1125,17 @@ function shiftDays(date: string, days: number): string {
       })
       const toInsert = batch.filter((_, idx) => status[idx] === 'new')
       const dupBatch = batch.filter((_, idx) => status[idx] === 'dup')
-      // A compra da nota passa a ter a descrição do extrato: daqui em diante a
-      // checagem de duplicata (data|valor|descrição) a reconhece sozinha.
+      // A compra da nota passa a ter a descrição e a data do extrato (os itens
+      // também, para ficarem juntos): daqui em diante a checagem de duplicata
+      // (data|valor|descrição) a reconhece sozinha.
       for (const j of joins) {
         const { error: joinError } = await supabase.from('transactions')
-          .update({ description: j.description, nota_pendente: false }).eq('id', j.id)
-        if (joinError) {
-          if (!firstErrorMessage) firstErrorMessage = `Não foi possível juntar um lançamento à nota fiscal: ${joinError.message}`
+          .update({ description: j.description, date: j.date, nota_pendente: false }).eq('id', j.id)
+        const { error: itemsError } = joinError
+          ? { error: null }
+          : await supabase.from('transactions').update({ date: j.date }).eq('diluted_from_id', j.id)
+        if (joinError || itemsError) {
+          if (!firstErrorMessage) firstErrorMessage = `Não foi possível juntar um lançamento à nota fiscal: ${(joinError ?? itemsError)!.message}`
         } else {
           notasJoined++
         }
