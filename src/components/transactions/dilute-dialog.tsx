@@ -79,7 +79,7 @@ export function DiluteDialog({ tx, newNote, categories, onClose, onSaved }: Prop
   const [store, setStore] = useState('')
   const [noteDate, setNoteDate] = useState(todayISO())
   const [noteTotal, setNoteTotal] = useState('')
-  const [readFields, setReadFields] = useState<{ store?: boolean; date?: boolean; total?: boolean }>({})
+  const [readFields, setReadFields] = useState<{ store?: boolean; date?: boolean; total?: boolean; totalDoubtful?: boolean }>({})
   // Já existe um lançamento com esse valor nesta conta: perguntar antes de criar outro.
   const [existingMatch, setExistingMatch] = useState<Transaction | null>(null)
 
@@ -97,9 +97,15 @@ export function DiluteDialog({ tx, newNote, categories, onClose, onSaved }: Prop
       ?? despesa.find(c => /aliment/i.test(c.name)) ?? despesa.find(c => /^outros$/i.test(c.name)))?.name ?? ''
   }, [tx, categories])
 
-  // Nova nota fiscal: começa limpa, na câmera.
+  // Só ids nas dependências: a página se redesenha sozinha (ao voltar da
+  // galeria/câmera do celular, por exemplo) e passaria objetos novos — o que
+  // zerava a janela e apagava os itens recém-lidos.
+  const newNoteBoard = newNote?.boardId ?? null
+  const txId = tx?.id ?? null
+
+  // Nova nota fiscal: começa limpa, na câmera — só quando a janela abre.
   useEffect(() => {
-    if (!newNote || tx) return
+    if (!newNoteBoard || txId) return
     setError(null)
     setNotice(null)
     setRows([])
@@ -109,7 +115,7 @@ export function DiluteDialog({ tx, newNote, categories, onClose, onSaved }: Prop
     setReadFields({})
     setExistingMatch(null)
     setStep('foto')
-  }, [newNote, tx])
+  }, [newNoteBoard, txId])
 
   // Abre direto na revisão quando a compra já foi diluída ("Editar itens").
   useEffect(() => {
@@ -131,7 +137,9 @@ export function DiluteDialog({ tx, newNote, categories, onClose, onSaved }: Prop
         })))
         setLoadingItems(false)
       })
-  }, [tx])
+  // Abre uma vez por compra; mudar de referência sem mudar de compra não reabre.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [txId])
 
   // Só as categorias que valem para esta compra (tipo e data), mais as que
   // os itens já têm — igual ao formulário de transação.
@@ -184,7 +192,7 @@ export function DiluteDialog({ tx, newNote, categories, onClose, onSaved }: Prop
         setStore(result.store ?? '')
         if (result.date) setNoteDate(result.date)
         setNoteTotal(readTotal != null ? toText(readTotal) : '')
-        setReadFields({ store: !!result.store, date: !!result.date, total: result.total != null })
+        setReadFields({ store: !!result.store, date: !!result.date, total: result.total != null, totalDoubtful: result.total == null || !!result.totalDoubtful })
       }
       if (result.items.length === 0) {
         setNotice('Não conseguimos ler os itens desta foto. Tire outra, mais perto e com luz, ou preencha à mão.')
@@ -321,9 +329,14 @@ export function DiluteDialog({ tx, newNote, categories, onClose, onSaved }: Prop
               <Input type="date" value={noteDate} onChange={e => { setNoteDate(e.target.value); setReadFields(f => ({ ...f, date: false })) }} />
             </label>
             <label className="space-y-1">
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Valor total{fieldTag(readFields.total)}</span>
-              <Input value={noteTotal} inputMode="decimal" placeholder="0,00" className="text-right font-semibold tabular-nums"
-                onChange={e => { setNoteTotal(e.target.value); setReadFields(f => ({ ...f, total: false })) }} />
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                Valor total{readFields.totalDoubtful
+                  ? <span className="ml-1.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">confira na nota</span>
+                  : fieldTag(readFields.total)}
+              </span>
+              <Input value={noteTotal} inputMode="decimal" placeholder="0,00"
+                className={`text-right font-semibold tabular-nums ${readFields.totalDoubtful ? 'border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20' : ''}`}
+                onChange={e => { setNoteTotal(e.target.value); setReadFields(f => ({ ...f, total: false, totalDoubtful: false })) }} />
             </label>
           </div>
         )}

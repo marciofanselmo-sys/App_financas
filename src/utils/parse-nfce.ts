@@ -33,6 +33,8 @@ export interface NfceResult {
   date?: string | null
   /** Valor total (a pagar) da nota. */
   total?: number | null
+  /** O total não se confirmou sozinho (nenhum, ou mais de um, fecha com os itens): conferir na nota. */
+  totalDoubtful?: boolean
 }
 
 // Unidades que aparecem entre a descrição e o preço ("1UN X 6,99", "1,006KG X 24,90").
@@ -548,14 +550,19 @@ export function resolveReadings(readings: NfceReading[], target?: number): NfceR
   // Sem transação (Nova nota fiscal), quem confere os itens é o total da nota:
   // entre os valores lidos como total, o que fecha com os itens; senão o mais repetido.
   let total: number | null = null
+  let totalDoubtful = false
   if (target == null) {
     const all = readings.flatMap(r => r.totals)
     const ranked = [...new Set(all)].sort((a, b) => all.filter(x => x === b).length - all.filter(x => x === a).length)
-    total = ranked.find(t => {
+    const closing = ranked.filter(t => {
       const its = resolve(kept, t)
       return its.length > 0 && its.every(i => !i.doubtful)
         && Math.round(its.reduce((s, i) => s + i.amount, 0) * 100) === Math.round(t * 100)
-    }) ?? ranked[0] ?? null
+    })
+    total = closing[0] ?? ranked[0] ?? null
+    // Dois totais que fecham (o OCR trocou o mesmo dígito no total e num item)
+    // ou nenhum: não dá para confiar sozinho — o usuário confere na nota.
+    totalDoubtful = closing.length !== 1
     target = total ?? undefined
   } else {
     total = target
@@ -582,7 +589,7 @@ export function resolveReadings(readings: NfceReading[], target?: number): NfceR
     }
   }
 
-  return { items, discount, store, date, total }
+  return { items, discount, store, date, total, totalDoubtful }
 }
 
 /**

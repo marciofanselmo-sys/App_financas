@@ -118,6 +118,8 @@ function BoardDetailInner() {
   const [diluteTx, setDiluteTx] = useState<Transaction | null>(null)
   // "+ Novo › Nova nota fiscal": compra criada pela nota, sem transação ainda.
   const [newNoteOpen, setNewNoteOpen] = useState(false)
+  // Mesmo objeto enquanto a janela está aberta (não zera ao redesenhar a página).
+  const newNoteTarget = useMemo(() => (newNoteOpen ? { boardId } : null), [newNoteOpen, boardId])
   const [diluteError, setDiluteError] = useState<string | null>(null)
   const [expandedPos, setExpandedPos] = useState(false)
   const [expandedProventos, setExpandedProventos] = useState(false)
@@ -847,7 +849,7 @@ function BoardDetailInner() {
 
       <DiluteDialog
         tx={diluteTx}
-        newNote={newNoteOpen ? { boardId } : null}
+        newNote={newNoteTarget}
         categories={categories}
         onClose={() => { setDiluteTx(null); setNewNoteOpen(false) }}
         onSaved={refetch}

@@ -66,7 +66,8 @@ function crop(src: Gray, x: number, y: number, w: number, h: number): Gray {
 /** Média numa janela (2r+1)² via imagem integral. */
 function boxMean(src: Gray, r: number): Float32Array {
   const { width: w, height: h, data } = src
-  const integ = new Float64Array((w + 1) * (h + 1))
+  // Uint32: metade da memória do Float64 e cabe a soma até ~16 MP (255 × 16M < 2³²).
+  const integ = new Uint32Array((w + 1) * (h + 1))
   for (let y = 0; y < h; y++) {
     let row = 0
     for (let x = 0; x < w; x++) {
@@ -138,7 +139,8 @@ export function prepareForOcr(src: Gray, binarize = true, targetWidth = 2400): G
 
   // Largura alvo: com a nota real, 2800–3200 px leu todos os valores; 2400 ou
   // menos trocava dígitos. Quem chama tenta mais de um tamanho.
-  // Teto de ~14 MP: o Safari do iPhone não desenha canvas acima de 16,7 MP.
+  // Teto de ~14 MP: abaixo do limite de canvas do Safari do iPhone (16,7 MP)
+  // e da imagem integral em Uint32 (~16 MP). Menos que isso piorou a leitura.
   const scale = Math.min(4, targetWidth / paper.width, Math.sqrt(14_000_000 / (paper.width * paper.height)))
   const g = resize(paper, Math.round(paper.width * scale), Math.round(paper.height * scale))
 
@@ -231,3 +233,4 @@ export function checkFrame(g: Gray, prev: Gray | null): FrameCheck {
   }
   return { inteira, reta, luz, firme }
 }
+

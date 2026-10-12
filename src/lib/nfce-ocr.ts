@@ -56,8 +56,9 @@ export async function imageToGray(source: Blob | HTMLCanvasElement): Promise<Gra
   } else {
     // imageOrientation: foto de celular em pé vem deitada sem isso.
     const bmp = await createImageBitmap(source, { imageOrientation: 'from-image' })
-    // Teto de 12 MP: o suficiente para a nota e sem estourar a memória do celular.
-    const s = Math.min(1, Math.sqrt(12_000_000 / (bmp.width * bmp.height)))
+    // Teto de 8 MP: o suficiente para a nota e sem estourar a memória do
+    // celular (o Safari do iPhone recarrega a página quando passa do limite).
+    const s = Math.min(1, Math.sqrt(8_000_000 / (bmp.width * bmp.height)))
     canvas = document.createElement('canvas')
     canvas.width = Math.round(bmp.width * s)
     canvas.height = Math.round(bmp.height * s)
@@ -66,7 +67,11 @@ export async function imageToGray(source: Blob | HTMLCanvasElement): Promise<Gra
   }
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!
   const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
-  return toGray(data, canvas.width, canvas.height)
+  const gray = toGray(data, canvas.width, canvas.height)
+  // Libera a memória do canvas na hora (no iPhone ela conta até o coletor passar).
+  canvas.width = 0
+  canvas.height = 0
+  return gray
 }
 
 function grayToCanvas(g: Gray): HTMLCanvasElement {
@@ -120,7 +125,11 @@ export async function readReceipt(
     for (let i = 0; i < widths.length; i++) {
       onStage?.('lendo', i + 1)
       const prepared = prepareForOcr(gray, true, widths[i])
-      const { data } = await worker.recognize(grayToCanvas(prepared))
+      const canvas = grayToCanvas(prepared)
+      const { data } = await worker.recognize(canvas)
+      // Libera a memória do canvas na hora (no iPhone ela só volta quando o coletor passa).
+      canvas.width = 0
+      canvas.height = 0
       readings.push(readNfceLines(data.text))
       // Na nota nova também precisa da data; sem ela, lê de novo.
       const partial = resolveReadings(readings, target ?? undefined)
