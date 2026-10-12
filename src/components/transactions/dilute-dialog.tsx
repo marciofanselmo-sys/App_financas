@@ -436,7 +436,13 @@ export function DiluteDialog({ tx, newNote, categories, onClose, onSaved }: Prop
               </div>
             )}
 
-            {/* Soma × valor da compra: o Salvar só libera quando fecha. */}
+            {/* Soma × valor da compra: o Salvar só libera quando fecha. Sem
+                valor total (nota nova ainda vazia), não há o que fechar. */}
+            {total <= 0 ? (
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
+                Informe o <b>valor total</b> da nota. A soma dos itens tem que fechar com ele.
+              </div>
+            ) : (
             <div className={`flex items-center justify-between rounded-xl border px-4 py-3 text-sm ${diff === 0
               ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300'
               : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300'}`}
@@ -447,6 +453,7 @@ export function DiluteDialog({ tx, newNote, categories, onClose, onSaved }: Prop
                   : diff > 0 ? `Faltam ${formatCurrency(diff / 100)}` : `Passou ${formatCurrency(-diff / 100)}`}
               </b>
             </div>
+            )}
 
             {/* Mesma regra da importação: a nota pode ser de um lançamento que já está na conta. */}
             {existingMatch && (
