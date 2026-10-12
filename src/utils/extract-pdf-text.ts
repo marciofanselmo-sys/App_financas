@@ -67,9 +67,22 @@ export async function extractPdfText(buffer: ArrayBuffer, password?: string): Pr
   const parts: string[] = []
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum)
-    const tc = await page.getTextContent()
-    for (const item of tc.items) {
-      if ('str' in item && item.str.trim()) parts.push(item.str.trim())
+    // Não usa page.getTextContent(): internamente ele faz `for await (... of
+    // readableStream)`, e o Safari do iOS não implementa iteração assíncrona de
+    // ReadableStream — lançava "undefined is not a function (near '...of e...')"
+    // em todo import de PDF no iPhone. Lê o stream com getReader(), que todos
+    // os navegadores suportam.
+    const reader = page.streamTextContent().getReader()
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        for (const item of value.items) {
+          if ('str' in item && item.str.trim()) parts.push(item.str.trim())
+        }
+      }
+    } finally {
+      reader.releaseLock()
     }
   }
 
