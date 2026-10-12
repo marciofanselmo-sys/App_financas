@@ -27,6 +27,12 @@ export interface NfceResult {
   items: NfceItem[]
   /** Desconto lido na nota (já repartido entre os itens quando fechou a conta). */
   discount: number | null
+  /** Cabeçalho e rodapé da nota — usados na "Nova nota fiscal", sem transação. */
+  store?: string | null
+  /** Data de emissão, AAAA-MM-DD. */
+  date?: string | null
+  /** Valor total (a pagar) da nota. */
+  total?: number | null
 }
 
 // Unidades que aparecem entre a descrição e o preço ("1UN X 6,99", "1,006KG X 24,90").
@@ -292,7 +298,122 @@ function resolve(lines: ParsedLine[], target?: number): NfceItem[] {
   return lines.map((l, i) => ({ description: l.description, amount: pick[i], doubtful: !l.confirmed }))
 }
 
-export interface NfceReading { lines: ParsedLine[]; discount: number | null; cnpj: string | null }
+export interface NfceReading {
+  lines: ParsedLine[]
+  discount: number | null
+  cnpj: string | null
+  store: string | null
+  /** Datas lidas (emissão, autorização…): a mais repetida entre as leituras vence. */
+  dates: string[]
+  /** Chave de acesso (44 dígitos) conferida pelo dígito verificador. */
+  accessKey: string | null
+  /** Ano e mês (AAMM) do começo da chave, mesmo sem a chave inteira conferida. */
+  keyYm: string | null
+  /** Valores que podem ser o total (linhas de total e de pagamento), do mais provável ao menos. */
+  totals: number[]
+}
+
+const LEGAL_SUFFIX = /\b(LTDA|LIDA|LTD|ME|EPP|EIRELI|S\s?\/?\s?A|SA)\b\.?/gi
+
+/** Nome da loja: a primeira linha do cabeçalho com cara de razão social. */
+function readStore(lines: string[]): string | null {
+  const cnpjAt = lines.findIndex(l => /CN[PF]J/i.test(l))
+  const head = lines.slice(0, cnpjAt > 0 ? cnpjAt : 6)
+  const clean = (l: string) => l.replace(/[^A-Za-zÀ-ÿ&\s]/g, ' ').replace(LEGAL_SUFFIX, ' ').replace(/\s+/g, ' ').trim()
+  const looksLikeName = (l: string) => /LTDA|LIDA|S\/A|EIRELI|SUPERMERC|MERCAD|COMERCI|ATACAD|DISTRIBUI|PADARIA|PANIFICADORA|FARMACIA|DROGARIA|HORTI|ACOUGUE|EMPORIO/i.test(l)
+  const chosen = head.find(looksLikeName) ?? head.find(l => (clean(l).match(/[A-Za-zÀ-ÿ]/g) ?? []).length >= 8)
+  if (!chosen) return null
+  const name = clean(chosen).split(' ').filter(w => w.length > 1 || /[A-Z]/i.test(w))
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+  return name.length >= 4 ? name.slice(0, 80) : null
+}
+
+/**
+ * Datas da nota (emissão e autorização primeiro). Data no futuro ou de mais
+ * de 2 anos atrás é dígito trocado pelo OCR ("2076") e fica de fora.
+ */
+function readDates(lines: string[]): string[] {
+  const now = new Date()
+  const max = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+  const min = new Date(now.getFullYear() - 2, now.getMonth(), now.getDate())
+  const out: string[] = []
+  // Emissão e autorização primeiro (são a data da compra); depois as outras.
+  const ordered = [...lines.filter(l => /EMISS|EMITID|AUTORIZ/i.test(l)), ...lines.filter(l => !/EMISS|EMITID|AUTORIZ/i.test(l))]
+  for (const l of ordered) {
+    for (const m of fixDigits(l).matchAll(/(\d{2})[/.-](\d{2})[/.-](\d{4})/g)) {
+      const [d, mo, y] = [Number(m[1]), Number(m[2]), Number(m[3])]
+      const dt = new Date(y, mo - 1, d)
+      if (mo < 1 || mo > 12 || d < 1 || d > 31 || dt.getMonth() !== mo - 1 || dt > max || dt < min) continue
+      out.push(`${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`)
+    }
+  }
+  return out
+}
+
+/**
+ * Valores que podem ser o total: "VALOR A PAGAR", "VALOR TOTAL", "VALOR PAGO"
+ * e a linha do pagamento ("CREDITO (Mastercard…) 57,94"). O OCR erra um
+ * dígito com facilidade, então todos viram candidatos — quem decide é a soma
+ * dos itens.
+ */
+function readTotals(lines: string[]): number[] {
+  const out: number[] = []
+  for (const re of [/VALOR\s*A\s*PAGAR/i, /VALOR\s*TOTAL|TOTAL\s*R\$/i, /VALOR\s*PAGO/i,
+    /CR[EÉ]DITO|D[EÉ]BITO|DINHEIRO|\bPIX\b|CART[AÃ]O|VALE/i]) {
+    for (const l of lines) {
+      if (!re.test(l) || /TRIBUT|TROCO|DESCONTO/i.test(l)) continue
+      const hits = moneyHits(l)
+      if (hits.length) out.push(hits[hits.length - 1].value)
+    }
+  }
+  return out
+}
+
+/**
+ * Chave de acesso da NFC-e: 44 dígitos (em grupos de 4) com dígito
+ * verificador módulo 11. Posições 3–6 são o ano e o mês da emissão (AAMM).
+ */
+export function readAccessKey(lines: string[]): string | null {
+  for (const l of lines) {
+    const digits = fixDigits(l.replace(/[^\dOoIlSB\s]/g, ' ')).replace(/\D/g, '')
+    for (let i = 0; i + 44 <= digits.length; i++) {
+      const k = digits.slice(i, i + 44)
+      const body = k.slice(0, 43).split('').map(Number)
+      let w = 2, sum = 0
+      for (let j = body.length - 1; j >= 0; j--) { sum += body[j] * w; w = w === 9 ? 2 : w + 1 }
+      const r = sum % 11
+      if ((r < 2 ? 0 : 11 - r) === Number(k[43])) return k
+    }
+  }
+  return null
+}
+
+/**
+ * Ano e mês da chave de acesso a partir da linha dela ("3126 0508 …": UF 31,
+ * 26 = 2026, 05 = maio), quando a chave inteira não fecha o dígito
+ * verificador. Votado entre as leituras — o começo da chave quase sempre sai igual.
+ */
+function readKeyYm(lines: string[]): string | null {
+  for (const l of lines) {
+    const groups = fixDigits(l).match(/\d{4}/g) ?? []
+    if (groups.length < 9) continue
+    const d = groups.join('')
+    const uf = Number(d.slice(0, 2)), mo = Number(d.slice(4, 6))
+    if (uf >= 11 && uf <= 53 && mo >= 1 && mo <= 12) return d.slice(2, 6)
+  }
+  return null
+}
+
+/** O valor mais repetido entre as leituras (empate: o da primeira). */
+function mostCommon<T>(values: (T | null | undefined)[]): T | null {
+  const list = values.filter((v): v is T => v != null)
+  let best: T | null = null, bestN = 0
+  for (const v of list) {
+    const n = list.filter(x => x === v).length
+    if (n > bestN) { best = v; bestN = n }
+  }
+  return best
+}
 
 /**
  * @param text   texto do OCR, uma linha por linha da nota
@@ -340,7 +461,7 @@ export function readNfceLines(text: string): NfceReading {
     const m = l.match(/CN[PF]J[^\dOo]{0,4}([\dOoIlSB.\/\-\s]{14,24})/i)
     if (m && (cnpj = validCnpj(m[1]))) break
   }
-  return { lines: parsed, discount, cnpj }
+  return { lines: parsed, discount, cnpj, store: readStore(lines), dates: readDates(lines), accessKey: readAccessKey(lines), keyYm: readKeyYm(lines), totals: readTotals(lines) }
 }
 
 // Semelhança entre dois nomes (pares de letras em comum, 0 a 1).
@@ -409,6 +530,36 @@ export function resolveReadings(readings: NfceReading[], target?: number): NfceR
     : merged
   const discount = readings.map(r => r.discount).find(d => d != null) ?? null
   const cnpj = readings.map(r => r.cnpj).find(c => c != null) ?? null
+  const store = mostCommon(readings.map(r => r.store)) ?? readings.map(r => r.store).find(s => s) ?? null
+  // A chave de acesso diz o ano e o mês certos; das datas lidas, só valem as
+  // desse mês. Nenhuma bate: o dia mais lido com o mês e o ano da chave.
+  const accessKey = readings.map(r => r.accessKey).find(k => k) ?? null
+  const keyYm = accessKey ? accessKey.slice(2, 6) : mostCommon(readings.map(r => r.keyYm))
+  const allDates = readings.flatMap(r => r.dates)
+  let date = mostCommon(allDates)
+  if (keyYm) {
+    const ym = `20${keyYm.slice(0, 2)}-${keyYm.slice(2, 4)}`
+    const inMonth = allDates.filter(d => d.startsWith(ym))
+    const day = mostCommon(allDates.map(d => d.slice(8, 10)))
+    const keyed = day ? `${ym}-${day}` : null
+    const valid = (d: string | null) => !!d && !Number.isNaN(new Date(`${d}T12:00:00`).getTime()) && new Date(`${d}T12:00:00`).getMonth() + 1 === Number(d.slice(5, 7))
+    date = mostCommon(inMonth) ?? (valid(keyed) ? keyed : null) ?? date
+  }
+  // Sem transação (Nova nota fiscal), quem confere os itens é o total da nota:
+  // entre os valores lidos como total, o que fecha com os itens; senão o mais repetido.
+  let total: number | null = null
+  if (target == null) {
+    const all = readings.flatMap(r => r.totals)
+    const ranked = [...new Set(all)].sort((a, b) => all.filter(x => x === b).length - all.filter(x => x === a).length)
+    total = ranked.find(t => {
+      const its = resolve(kept, t)
+      return its.length > 0 && its.every(i => !i.doubtful)
+        && Math.round(its.reduce((s, i) => s + i.amount, 0) * 100) === Math.round(t * 100)
+    }) ?? ranked[0] ?? null
+    target = total ?? undefined
+  } else {
+    total = target
+  }
   // Com desconto, os itens somam o valor cheio: é isso que confere a leitura.
   const items = resolve(kept, target != null && discount ? round2(target + discount) : target)
   // resolve() devolve os itens com o mesmo nome das linhas: a chave vem por ele.
@@ -431,7 +582,7 @@ export function resolveReadings(readings: NfceReading[], target?: number): NfceR
     }
   }
 
-  return { items, discount }
+  return { items, discount, store, date, total }
 }
 
 /**

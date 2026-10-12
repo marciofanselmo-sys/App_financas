@@ -115,6 +115,9 @@ export interface Transaction {
   // ela em diluted_from_id. Migração migration_diluir_transacao.sql.
   diluted_amount?: number | null
   diluted_from_id?: string | null
+  // Compra criada pela nota fiscal ("+ Novo"), ainda sem o lançamento do
+  // extrato; a importação junta os dois. Migração migration_nota_fiscal.sql.
+  nota_pendente?: boolean | null
   created_at: string
 }
 

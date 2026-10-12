@@ -16,6 +16,7 @@ import { missingMigrationMessage, logSafeError } from '@/lib/supabase-error'
 import { createClient } from '@/lib/supabase/client'
 import { parseAmountBR } from '@/utils/parse-amount'
 import { suggestDoubtfulValue } from '@/utils/parse-nfce'
+import { shiftDaysISO, todayISO } from '@/utils/local-date'
 import { Category, Transaction } from '@/types'
 
 function formatCurrency(value: number) {
@@ -40,7 +41,10 @@ interface Row {
 }
 
 interface Props {
+  /** Compra a diluir (ou já diluída, para "Editar itens"). */
   tx: Transaction | null
+  /** "+ Novo › Nova nota fiscal": cria a compra pela nota, sem transação. */
+  newNote?: { boardId: string } | null
   categories: Category[]
   onClose: () => void
   /** Itens gravados — a página recarrega a lista. */
@@ -63,7 +67,7 @@ const newRow = (r: Partial<Row>): Row => ({ key: ++rowKey, description: '', cate
  * Foto da nota (lida no próprio aparelho) ou preenchimento à mão; a soma dos
  * itens tem que fechar com o valor da compra para salvar.
  */
-export function DiluteDialog({ tx, categories, onClose, onSaved }: Props) {
+export function DiluteDialog({ tx, newNote, categories, onClose, onSaved }: Props) {
   const [step, setStep] = useState<'foto' | 'lendo' | 'revisar'>('foto')
   const [stage, setStage] = useState<{ stage: OcrStage; pass: number }>({ stage: 'carregando', pass: 0 })
   const [rows, setRows] = useState<Row[]>([])
@@ -71,9 +75,41 @@ export function DiluteDialog({ tx, categories, onClose, onSaved }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [loadingItems, setLoadingItems] = useState(false)
+  // Nova nota fiscal: loja, data e valor total vêm da foto e o usuário confere.
+  const [store, setStore] = useState('')
+  const [noteDate, setNoteDate] = useState(todayISO())
+  const [noteTotal, setNoteTotal] = useState('')
+  const [readFields, setReadFields] = useState<{ store?: boolean; date?: boolean; total?: boolean }>({})
+  // Já existe um lançamento com esse valor nesta conta: perguntar antes de criar outro.
+  const [existingMatch, setExistingMatch] = useState<Transaction | null>(null)
 
-  const total = tx ? Number(tx.diluted_amount ?? tx.amount) : 0
+  const isNew = !tx && !!newNote
+  const open = !!tx || isNew
+  const parsedNoteTotal = parseAmountBR(noteTotal)
+  const total = tx ? Number(tx.diluted_amount ?? tx.amount) : Number.isFinite(parsedNoteTotal) && parsedNoteTotal > 0 ? parsedNoteTotal : 0
   const editing = tx?.diluted_amount != null
+  const purchaseDate = tx?.date ?? noteDate
+  // Categoria inicial dos itens: a da compra; na nota nova, a de mercado do usuário.
+  const defaultCategory = useMemo(() => {
+    if (tx) return tx.category
+    const despesa = categories.filter(c => c.type === 'despesa' || c.type === 'ambos')
+    return (despesa.find(c => /supermerc/i.test(c.name)) ?? despesa.find(c => /mercad/i.test(c.name))
+      ?? despesa.find(c => /aliment/i.test(c.name)) ?? despesa.find(c => /^outros$/i.test(c.name)))?.name ?? ''
+  }, [tx, categories])
+
+  // Nova nota fiscal: começa limpa, na câmera.
+  useEffect(() => {
+    if (!newNote || tx) return
+    setError(null)
+    setNotice(null)
+    setRows([])
+    setStore('')
+    setNoteDate(todayISO())
+    setNoteTotal('')
+    setReadFields({})
+    setExistingMatch(null)
+    setStep('foto')
+  }, [newNote, tx])
 
   // Abre direto na revisão quando a compra já foi diluída ("Editar itens").
   useEffect(() => {
@@ -100,19 +136,20 @@ export function DiluteDialog({ tx, categories, onClose, onSaved }: Props) {
   // Só as categorias que valem para esta compra (tipo e data), mais as que
   // os itens já têm — igual ao formulário de transação.
   const usable = useMemo(() => {
-    if (!tx) return []
-    const base = categoriesForDate(categories, tx.date).filter(c => c.type === tx.type || c.type === 'ambos')
+    if (!open) return []
+    const base = categoriesForDate(categories, purchaseDate).filter(c => c.type === 'despesa' || c.type === 'ambos')
     const extra = rows.map(r => categories.find(c => c.name === r.category))
       .filter((c): c is Category => !!c && !base.some(b => b.id === c.id))
     return [...base, ...new Map(extra.map(c => [c.id, c])).values()]
-  }, [categories, tx, rows])
+  }, [categories, open, purchaseDate, rows])
 
   const amounts = rows.map(r => parseAmountBR(r.amount))
   const sum = amounts.reduce((s, v) => s + (Number.isFinite(v) && v > 0 ? v : 0), 0)
   const diff = cents(total) - cents(sum)
   const rowsValid = rows.length > 0 && rows.every((r, i) =>
     r.description.trim() !== '' && r.category !== '' && Number.isFinite(amounts[i]) && amounts[i] > 0)
-  const canSave = rowsValid && diff === 0 && !saving
+  const headerValid = !isNew || (store.trim() !== '' && /^\d{4}-\d{2}-\d{2}$/.test(noteDate) && total > 0)
+  const canSave = rowsValid && headerValid && diff === 0 && !saving
 
   // "Usar R$ X": com um único item duvidoso, o valor dele é o que falta.
   const suggestion = useMemo(() => {
@@ -127,22 +164,31 @@ export function DiluteDialog({ tx, categories, onClose, onSaved }: Props) {
   }
 
   function manual() {
-    if (!tx) return
+    if (!open) return
     setNotice(null)
-    setRows([newRow({ category: tx.category })])
+    setRows([newRow({ category: defaultCategory })])
     setStep('revisar')
   }
 
   async function read(source: HTMLCanvasElement | File) {
-    if (!tx) return
+    if (!open) return
     setStep('lendo')
     setError(null)
     try {
       const gray = await imageToGray(source)
-      const result = await readReceipt(gray, total, (s, pass) => setStage({ stage: s, pass }))
+      const result = await readReceipt(gray, tx ? total : null, (s, pass) => setStage({ stage: s, pass }))
+      if (isNew) {
+        // Cabeçalho da nota: só preenche o que foi lido; o resto o usuário digita.
+        const itemsSum = result.items.reduce((acc, i) => acc + i.amount, 0)
+        const readTotal = result.total ?? (itemsSum > 0 ? Math.round(itemsSum * 100) / 100 : null)
+        setStore(result.store ?? '')
+        if (result.date) setNoteDate(result.date)
+        setNoteTotal(readTotal != null ? toText(readTotal) : '')
+        setReadFields({ store: !!result.store, date: !!result.date, total: result.total != null })
+      }
       if (result.items.length === 0) {
         setNotice('Não conseguimos ler os itens desta foto. Tire outra, mais perto e com luz, ou preencha à mão.')
-        setRows([newRow({ category: tx.category })])
+        setRows([newRow({ category: defaultCategory })])
       } else {
         const doubts = result.items.filter(i => i.doubtful).length
         setNotice(doubts > 0
@@ -154,7 +200,7 @@ export function DiluteDialog({ tx, categories, onClose, onSaved }: Props) {
         setRows(result.items.map(i => {
           const learned = i.key ? known.get(i.key) : undefined
           return newRow({
-            description: learned ?? i.description, category: tx.category, amount: toText(i.amount), doubtful: i.doubtful,
+            description: learned ?? i.description, category: defaultCategory, amount: toText(i.amount), doubtful: i.doubtful,
             productKey: i.key, readName: learned ?? i.description, fromCatalog: !!learned,
           })
         }))
@@ -162,22 +208,56 @@ export function DiluteDialog({ tx, categories, onClose, onSaved }: Props) {
     } catch (e) {
       logSafeError('dilute.ocr', e)
       setNotice('A leitura da nota falhou neste aparelho. Você pode preencher os itens à mão.')
-      setRows([newRow({ category: tx.category })])
+      setRows([newRow({ category: defaultCategory })])
     }
     setStep('revisar')
   }
 
-  async function save() {
-    if (!tx || !canSave) return
-    setSaving(true)
+  /**
+   * Nova nota fiscal: se a conta já tem um lançamento comum com esse valor
+   * (até 3 dias de diferença), a nota provavelmente é dele — mesma regra da
+   * importação. Pergunta antes de criar outra compra.
+   */
+  async function findExisting(): Promise<Transaction | null> {
+    if (!newNote) return null
+    const { data, error: e } = await createClient().from('transactions').select('*')
+      .eq('board_id', newNote.boardId).eq('type', 'despesa').eq('amount', Math.round(total * 100) / 100)
+      .gte('date', shiftDaysISO(noteDate, -3)).lte('date', shiftDaysISO(noteDate, 3))
+    if (e) { logSafeError('note.findExisting', e); return null }
+    const list = (data as Transaction[] | null ?? []).filter(t => t.diluted_amount == null && !t.diluted_from_id)
+    const sameDay = list.filter(t => t.date === noteDate)
+    return list.length === 1 ? list[0] : sameDay.length === 1 ? sameDay[0] : null
+  }
+
+  async function save(mode?: 'existing' | 'new') {
+    if (!canSave) return
     setError(null)
     const itens = rows.map((r, i) => ({ description: r.description.trim(), category: r.category, amount: Math.round(amounts[i] * 100) / 100 }))
-    const { error: e } = await createClient().rpc('diluir_transacao', { p_id: tx.id, p_itens: itens })
+    let target = tx
+    if (isNew && mode === 'existing') target = existingMatch
+    if (isNew && !mode) {
+      setSaving(true)
+      const found = await findExisting()
+      setSaving(false)
+      if (found) { setExistingMatch(found); return }
+    }
+    setSaving(true)
+    const supabase = createClient()
+    let e: { code?: string; message: string } | null
+    if (target) {
+      ({ error: e } = await supabase.rpc('diluir_transacao', { p_id: target.id, p_itens: itens }))
+    } else {
+      // A compra fica na categoria do item de maior valor.
+      const main = [...itens].sort((a, b) => b.amount - a.amount)[0]
+      ;({ error: e } = await supabase.rpc('criar_nota_fiscal', {
+        p_board: newNote!.boardId, p_descricao: store.trim(), p_data: noteDate, p_categoria: main.category, p_itens: itens,
+      }))
+    }
     setSaving(false)
     if (e) {
       logSafeError('dilute.save', e)
-      setError(/diluir_transacao|PGRST202|42883|diluted_/.test(`${e.code} ${e.message}`)
-        ? missingMigrationMessage('migration_diluir_transacao.sql')
+      setError(/diluir_transacao|criar_nota_fiscal|PGRST202|42883|diluted_|nota_pendente/.test(`${e.code} ${e.message}`)
+        ? missingMigrationMessage(isNew ? 'migration_nota_fiscal.sql' : 'migration_diluir_transacao.sql')
         : `Não foi possível salvar os itens: ${e.message}`)
       return
     }
@@ -199,20 +279,25 @@ export function DiluteDialog({ tx, categories, onClose, onSaved }: Props) {
     onClose()
   }
 
-  if (!tx) return null
+  if (!open) return null
+
+  const fieldTag = (on?: boolean) => on
+    ? <span className="ml-1.5 text-[10px] font-semibold text-green-600 dark:text-green-400">lido da nota</span>
+    : null
 
   return (
-    <Dialog open={!!tx} onOpenChange={o => { if (!o && !saving) onClose() }}>
+    <Dialog open={open} onOpenChange={o => { if (!o && !saving) onClose() }}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ReceiptText className="h-5 w-5 text-blue-600" />
-            {editing ? 'Editar itens' : 'Diluir transação'}
+            {isNew ? 'Nova nota fiscal' : editing ? 'Editar itens' : 'Diluir transação'}
           </DialogTitle>
           <DialogDescription>Separe a compra em itens, cada um com a sua categoria.</DialogDescription>
         </DialogHeader>
 
         {/* A compra que está sendo diluída. */}
+        {tx && (
         <div className="flex items-center gap-3 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{tx.description}</p>
@@ -222,6 +307,26 @@ export function DiluteDialog({ tx, categories, onClose, onSaved }: Props) {
           </div>
           <span className="text-base font-bold text-red-500 tabular-nums">{formatCurrency(total)}</span>
         </div>
+        )}
+
+        {/* Nova nota fiscal: loja, data e total da própria nota, editáveis. */}
+        {isNew && step === 'revisar' && (
+          <div className="grid grid-cols-2 sm:grid-cols-[1.4fr_1fr_1fr] gap-2">
+            <label className="col-span-2 sm:col-span-1 space-y-1">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Loja{fieldTag(readFields.store)}</span>
+              <Input value={store} onChange={e => { setStore(e.target.value); setReadFields(f => ({ ...f, store: false })) }} placeholder="Nome do mercado" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Data{fieldTag(readFields.date)}</span>
+              <Input type="date" value={noteDate} onChange={e => { setNoteDate(e.target.value); setReadFields(f => ({ ...f, date: false })) }} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Valor total{fieldTag(readFields.total)}</span>
+              <Input value={noteTotal} inputMode="decimal" placeholder="0,00" className="text-right font-semibold tabular-nums"
+                onChange={e => { setNoteTotal(e.target.value); setReadFields(f => ({ ...f, total: false })) }} />
+            </label>
+          </div>
+        )}
 
         {step === 'foto' && (
           <ReceiptCamera onCapture={read} onGallery={read} onManual={manual} onCancel={onClose} />
@@ -309,7 +414,7 @@ export function DiluteDialog({ tx, categories, onClose, onSaved }: Props) {
                 })}
                 <button
                   type="button"
-                  onClick={() => setRows(prev => [...prev, newRow({ category: tx.category })])}
+                  onClick={() => setRows(prev => [...prev, newRow({ category: defaultCategory })])}
                   className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
                 >
                   <Plus className="h-4 w-4" />Adicionar item
@@ -323,7 +428,7 @@ export function DiluteDialog({ tx, categories, onClose, onSaved }: Props) {
                 <span className="flex-1">Algum item ficou de fora? Faltam <b>{formatCurrency(diff / 100)}</b> para fechar a compra.</span>
                 <button
                   type="button"
-                  onClick={() => setRows(prev => [...prev, newRow({ category: tx.category, amount: toText(diff / 100) })])}
+                  onClick={() => setRows(prev => [...prev, newRow({ category: defaultCategory, amount: toText(diff / 100) })])}
                   className="shrink-0 rounded-md border border-blue-300 bg-white dark:bg-slate-800 px-2.5 py-1 font-semibold"
                 >
                   Adicionar item de {toText(diff / 100)}
@@ -343,6 +448,20 @@ export function DiluteDialog({ tx, categories, onClose, onSaved }: Props) {
               </b>
             </div>
 
+            {/* Mesma regra da importação: a nota pode ser de um lançamento que já está na conta. */}
+            {existingMatch && (
+              <div className="space-y-2 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+                <p>
+                  Esta conta já tem <b>{existingMatch.description}</b> de <b>{formatCurrency(Number(existingMatch.amount))}</b> em{' '}
+                  {format(new Date(existingMatch.date + 'T00:00:00'), 'dd/MM/yyyy', { locale: ptBR })}. É a mesma compra?
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => save('existing')} disabled={saving}>Sim, separar esse lançamento em itens</Button>
+                  <Button size="sm" variant="outline" onClick={() => save('new')} disabled={saving}>Não, criar a nota separada</Button>
+                </div>
+              </div>
+            )}
+
             {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
             <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -355,8 +474,8 @@ export function DiluteDialog({ tx, categories, onClose, onSaved }: Props) {
               </button>
               <div className="ml-auto flex gap-2">
                 <Button variant="outline" onClick={onClose} disabled={saving}>Cancelar</Button>
-                <Button onClick={save} disabled={!canSave}>
-                  {saving ? 'Salvando…' : 'Salvar itens'}
+                <Button onClick={() => save()} disabled={!canSave || !!existingMatch}>
+                  {saving ? 'Salvando…' : isNew ? 'Salvar nota' : 'Salvar itens'}
                 </Button>
               </div>
             </div>

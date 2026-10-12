@@ -85,8 +85,8 @@ function grayToCanvas(g: Gray): HTMLCanvasElement {
 
 export type OcrStage = 'carregando' | 'lendo' | 'conferindo'
 
-const closesAll = (r: NfceResult, target: number) => r.items.length > 0 && r.items.every(i => !i.doubtful)
-  && Math.round(r.items.reduce((s, i) => s + i.amount, 0) * 100) === Math.round(target * 100)
+const closesAll = (r: NfceResult) => r.total != null && r.items.length > 0 && r.items.every(i => !i.doubtful)
+  && Math.round(r.items.reduce((s, i) => s + i.amount, 0) * 100) === Math.round(r.total * 100)
 
 /**
  * Lê a nota em tamanhos diferentes — o OCR erra coisas diferentes em cada um —
@@ -95,7 +95,8 @@ const closesAll = (r: NfceResult, target: number) => r.items.length > 0 && r.ite
  */
 export async function readReceipt(
   gray: Gray,
-  target: number,
+  /** Valor da transação; null na Nova nota fiscal (o total sai da própria nota). */
+  target: number | null,
   onStage?: (stage: OcrStage, pass: number) => void,
 ): Promise<NfceResult> {
   onStage?.('carregando', 0)
@@ -121,10 +122,12 @@ export async function readReceipt(
       const prepared = prepareForOcr(gray, true, widths[i])
       const { data } = await worker.recognize(grayToCanvas(prepared))
       readings.push(readNfceLines(data.text))
-      if (i === 0 && closesAll(resolveReadings(readings, target), target)) break
+      // Na nota nova também precisa da data; sem ela, lê de novo.
+      const partial = resolveReadings(readings, target ?? undefined)
+      if (i === 0 && closesAll(partial) && (target != null || partial.date)) break
     }
     onStage?.('conferindo', readings.length)
-    return resolveReadings(readings, target)
+    return resolveReadings(readings, target ?? undefined)
   } finally {
     await worker.terminate()
   }

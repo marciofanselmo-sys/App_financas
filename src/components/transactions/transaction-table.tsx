@@ -497,7 +497,10 @@ export function TransactionTable({
                     {format(new Date(tx.date + 'T00:00:00'), 'dd/MM', { locale: ptBR })} · compra diluída
                   </p>
                 </TableCell>
-                <TableCell className="hidden sm:table-cell text-center text-xs text-slate-400 dark:text-slate-500">diluída</TableCell>
+                <TableCell className="hidden sm:table-cell text-center text-xs text-slate-400 dark:text-slate-500"
+                  title={tx.nota_pendente ? 'Lançada pela nota fiscal. Quando o extrato chegar com o mesmo valor (até 3 dias de diferença), ele se junta a ela.' : undefined}>
+                  {tx.nota_pendente ? 'nota fiscal' : 'diluída'}
+                </TableCell>
                 <TableCell className="text-slate-500 dark:text-slate-400 text-sm hidden lg:table-cell text-center whitespace-nowrap">
                   {format(new Date(tx.date + 'T00:00:00'), 'dd MMM', { locale: ptBR })}
                 </TableCell>

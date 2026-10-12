@@ -26,7 +26,7 @@ import { InvestmentBoardHelp } from '@/components/investments/investment-board-h
 import { BoardIcon } from '@/components/transactions/board-icon'
 import { formatCurrency, rentColor, CategorySummary, PositionsBreakdown, ProventosBreakdown } from '@/components/investments/rico-position-summary'
 import { Transaction, TransactionType } from '@/types'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -34,7 +34,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import {
   ArrowLeft, Plus, Upload, Download, Search, X, MoreVertical, PiggyBank, ArrowRightLeft,
-  ChevronDown, ChevronUp, RefreshCw, AlertCircle, CheckCircle2,
+  ChevronDown, ChevronUp, RefreshCw, AlertCircle, CheckCircle2, ReceiptText,
 } from 'lucide-react'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
 import { usePlan } from '@/hooks/use-subscription'
@@ -116,6 +116,8 @@ function BoardDetailInner() {
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   // Compra aberta em "Diluir transação" / "Editar itens".
   const [diluteTx, setDiluteTx] = useState<Transaction | null>(null)
+  // "+ Novo › Nova nota fiscal": compra criada pela nota, sem transação ainda.
+  const [newNoteOpen, setNewNoteOpen] = useState(false)
   const [diluteError, setDiluteError] = useState<string | null>(null)
   const [expandedPos, setExpandedPos] = useState(false)
   const [expandedProventos, setExpandedProventos] = useState(false)
@@ -535,10 +537,30 @@ function BoardDetailInner() {
           {/* Regra: lançamento não nasce numa conta de investimento — vem de
               uma conta (C6, Itaú…) marcada como aporte. */}
           {!isInvestmentBoard && (
-            <Button size="sm" onClick={() => setFormOpen(true)} className="gap-2">
-              <Plus className="h-4 w-4" />
-              Nova transação
-            </Button>
+            <DropdownMenu>
+              {/* Mesmo visual do botão "Nova transação" de antes. */}
+              <DropdownMenuTrigger className={buttonVariants({ size: 'sm', className: 'gap-2' })}>
+                <Plus className="h-4 w-4" />
+                Novo
+                <ChevronDown className="h-3.5 w-3.5 opacity-80" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-auto min-w-60">
+                <DropdownMenuItem onClick={() => setFormOpen(true)} className="items-start gap-2.5 py-2">
+                  <Plus className="h-4 w-4 mt-0.5" />
+                  <span>
+                    <span className="block">Nova transação</span>
+                    <span className="block text-xs text-slate-400">Entrada ou saída à mão</span>
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setNewNoteOpen(true)} className="items-start gap-2.5 py-2">
+                  <ReceiptText className="h-4 w-4 mt-0.5" />
+                  <span>
+                    <span className="block">Nova nota fiscal</span>
+                    <span className="block text-xs text-slate-400">Foto da nota, já separada em itens</span>
+                  </span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </div>
@@ -825,8 +847,9 @@ function BoardDetailInner() {
 
       <DiluteDialog
         tx={diluteTx}
+        newNote={newNoteOpen ? { boardId } : null}
         categories={categories}
-        onClose={() => setDiluteTx(null)}
+        onClose={() => { setDiluteTx(null); setNewNoteOpen(false) }}
         onSaved={refetch}
       />
 
