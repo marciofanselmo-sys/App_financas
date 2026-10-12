@@ -484,7 +484,7 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   // mapeamento salvo e pulou a tela de colunas. A prévia avisa e oferece ajuste.
   const [mappingRecognized, setMappingRecognized] = useState(false)
   const [importing, setImporting] = useState(false)
-  const [importResult, setImportResult] = useState<{ success: number; errors: number; duplicates: number; fixed: number; renamed?: number; errorMessage?: string } | null>(null)
+  const [importResult, setImportResult] = useState<{ success: number; errors: number; duplicates: number; fixed: number; renamed?: number; joined?: number; errorMessage?: string } | null>(null)
   const [fileError, setFileError] = useState('')
 
   // Review state
@@ -998,6 +998,7 @@ function shiftDays(date: string, days: number): string {
     const AMOUNT_TOLERANCE = 2
     let installmentsFixed = 0
     let debitsRenamed = 0
+    let notasJoined = 0
     const installmentDescs = [...new Set(
       valid.filter(r => r.installment_total && r.installment_total > 1 && r.installment_current).map(r => r.description)
     )]
@@ -1051,13 +1052,19 @@ function shiftDays(date: string, days: number): string {
 
       // select('*'): diluted_amount só existe depois da migração, e pedir a
       // coluna pelo nome antes disso faria a checagem falhar.
-      const { rows: existingRaw, error: dedupError } = await selectAllPages<{ id: string; date: string; amount: number; description: string; board_id: string | null; diluted_amount?: number | null }>(
+      const { rows: existingRaw, error: dedupError } = await selectAllPages<{ id: string; date: string; amount: number; description: string; board_id: string | null; diluted_amount?: number | null; nota_pendente?: boolean | null }>(
         () => supabase
           .from('transactions').select('*').eq('user_id', user.id).in('date', dates),
       )
       // Compra diluída: vale 0 no banco, mas continua sendo o lançamento do
       // extrato — compara pelo valor original, senão reimportar duplicaria.
       const existing = existingRaw.map(e => (e.diluted_amount != null ? { ...e, amount: Number(e.diluted_amount) } : e))
+      // Nota fiscal lançada antes do extrato ("+ Novo › Nova nota fiscal"): o
+      // lançamento do extrato com o mesmo valor total, na mesma data e conta, é
+      // a mesma compra — junta com a nota em vez de criar outro.
+      const pendingNotas = existingRaw.filter(e => e.nota_pendente && e.diluted_amount != null)
+      const usedNotas = new Set<string>()
+      const joins: { id: string; description: string }[] = []
       if (dedupError) {
         // Sem a lista completa do que já existe não dá para saber o que é
         // duplicata. Importar assim mesmo criaria lançamentos repetidos no
@@ -1085,6 +1092,16 @@ function shiftDays(date: string, days: number): string {
       const renames: { id: string; description: string }[] = []
       const status = batch.map(r => {
         if (existingSet.has(`${r.date}|${r.amount}|${r.description}`)) return 'dup' as const
+        if (r.type === 'despesa' && pendingNotas.length > 0) {
+          const same = pendingNotas.filter(n => !usedNotas.has(n.id) && n.board_id === (r.board_id ?? boardId ?? null)
+            && n.date === r.date && Math.round(Number(n.diluted_amount) * 100) === Math.round(r.amount * 100))
+          // Só com uma nota possível; duas iguais no mesmo dia não dá para saber qual.
+          if (same.length === 1) {
+            usedNotas.add(same[0].id)
+            joins.push({ id: same[0].id, description: r.description })
+            return 'join' as const
+          }
+        }
         if (!r.cardDebit || isGenericCardDebit(r.description)) return 'new' as const
         const ids = genericDebits.get(`${r.date}|${r.amount}`)
         if (ids && ids.length > 0) {
@@ -1095,6 +1112,17 @@ function shiftDays(date: string, days: number): string {
       })
       const toInsert = batch.filter((_, idx) => status[idx] === 'new')
       const dupBatch = batch.filter((_, idx) => status[idx] === 'dup')
+      // A compra da nota passa a ter a descrição do extrato: daqui em diante a
+      // checagem de duplicata (data|valor|descrição) a reconhece sozinha.
+      for (const j of joins) {
+        const { error: joinError } = await supabase.from('transactions')
+          .update({ description: j.description, nota_pendente: false }).eq('id', j.id)
+        if (joinError) {
+          if (!firstErrorMessage) firstErrorMessage = `Não foi possível juntar um lançamento à nota fiscal: ${joinError.message}`
+        } else {
+          notasJoined++
+        }
+      }
       for (const rn of renames) {
         const { error: renameError } = await supabase.from('transactions').update({ description: rn.description }).eq('id', rn.id)
         if (renameError) {
@@ -1329,7 +1357,7 @@ function shiftDays(date: string, days: number): string {
       }
     }
 
-    setImportResult({ success, errors, duplicates, fixed: installmentsFixed, renamed: debitsRenamed, errorMessage: firstErrorMessage })
+    setImportResult({ success, errors, duplicates, fixed: installmentsFixed, renamed: debitsRenamed, joined: notasJoined, errorMessage: firstErrorMessage })
     setImporting(false)
     // Só conta como importação do mês o que realmente entrou.
     if (success > 0) {
@@ -1920,12 +1948,13 @@ function shiftDays(date: string, days: number): string {
                 <CheckCircle className={`h-12 w-12 ${importResult.success > 0 ? 'text-green-500' : 'text-slate-300'}`} />
                 <div>
                   <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">
-                    {importResult.success > 0 || (importResult.renamed ?? 0) > 0 ? 'Importação concluída!' : 'Nenhuma transação importada'}
+                    {importResult.success > 0 || (importResult.renamed ?? 0) > 0 || (importResult.joined ?? 0) > 0 ? 'Importação concluída!' : 'Nenhuma transação importada'}
                   </p>
                   <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                     {importResult.success} transações importadas
                     {importResult.fixed > 0 && ` · ${importResult.fixed} parcela${importResult.fixed !== 1 ? 's' : ''} corrigida${importResult.fixed !== 1 ? 's' : ''}`}
                     {(importResult.renamed ?? 0) > 0 && ` · ${importResult.renamed} débito${importResult.renamed !== 1 ? 's' : ''} no cartão com o nome da loja corrigido${importResult.renamed !== 1 ? 's' : ''}`}
+                    {(importResult.joined ?? 0) > 0 && ` · ${importResult.joined} juntado${importResult.joined !== 1 ? 's' : ''} à nota fiscal já lançada`}
                     {importResult.duplicates > 0 && ` · ${importResult.duplicates} duplicadas ignoradas`}
                     {importResult.errors > 0 && ` · ${importResult.errors} com erro`}
                   </p>

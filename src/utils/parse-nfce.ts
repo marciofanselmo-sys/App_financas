@@ -8,11 +8,19 @@
  * duvidoso, e a tela de revisão pede para o usuário conferir.
  */
 
+import { addAbbreviations, correctWord, knownWords } from './nfce-words'
+
 export interface NfceItem {
   description: string
   amount: number
   /** Valor não conferido (quantidade × unitário não bateu ou não foi lido). */
   doubtful: boolean
+  /**
+   * Identidade do produto para o catálogo de nomes: "gtin:789…" (código de
+   * barras conferido pelo dígito verificador) ou "loja:<cnpj>:<código>"
+   * (código interno do mercado). Sem código confiável, fica vazio.
+   */
+  key?: string
 }
 
 export interface NfceResult {
@@ -26,8 +34,9 @@ export interface NfceResult {
 const UNIT = '(?:UN|UK|UH|UND|UNID|KG|LT|L|ML|G|CX|PC|PCT|FD|DZ|M|M2|M3|PAR|BD|SC)'
 
 // Abreviações comuns nos cupons de mercado. Só troca a palavra inteira.
+// CU: o OCR lê o V de "CV" como U.
 const ABBREV: Record<string, string> = {
-  LING: 'linguiça', LINGUICA: 'linguiça', CV: 'cerveja', CERV: 'cerveja', REFRIG: 'refrigerante', REFRI: 'refrigerante',
+  LING: 'linguiça', LINGUICA: 'linguiça', CV: 'cerveja', CU: 'cerveja', CERV: 'cerveja', REFRIG: 'refrigerante', REFRI: 'refrigerante',
   LTE: 'leite', QJO: 'queijo', PRES: 'presunto', MUSS: 'muçarela', IOG: 'iogurte', MANT: 'manteiga', MARG: 'margarina',
   BISC: 'biscoito', CHOC: 'chocolate', CHOCOL: 'chocolate', ARR: 'arroz', FEIJ: 'feijão', FEIJAO: 'feijão',
   MACARRAO: 'macarrão', OLEO: 'óleo', ACUC: 'açúcar', ACUCAR: 'açúcar', CAFE: 'café', SABON: 'sabonete',
@@ -64,7 +73,9 @@ function moneyHits(line: string): MoneyHit[] {
   return out
 }
 
-/** "LING MISTA FINA" → "Linguiça mista fina". */
+addAbbreviations(ABBREV)
+
+/** "LING MISTA FINA" → "Linguiça mista fina"; "LTUG NISTA" (OCR) também. */
 export function prettifyDescription(raw: string): string {
   const words = raw
     .replace(/[^A-Za-zÀ-ÿ0-9%/.,\- ]/g, ' ')
@@ -72,32 +83,71 @@ export function prettifyDescription(raw: string): string {
     .filter(Boolean)
     .map(w => {
       const key = w.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\.$/, '')
-      return ABBREV[key] ?? w.toLowerCase()
+      return ABBREV[key] ?? correctWord(w) ?? w.toLowerCase()
     })
   const text = words.join(' ').trim()
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : ''
 }
 
-/** Tira o número do item e o código de barras do começo da linha. */
-function stripPrefix(s: string): string {
+/** Tira o número do item e o código do começo da linha; devolve o código lido. */
+function stripPrefix(s: string): { rest: string; code: string | null } {
   const tokens = s.trim().split(/\s+/)
+  const digitsOf = (t: string) => fixDigits(t.replace(/[^\w]/g, '')).replace(/\D/g, '')
   // Código de barras (6+ dígitos) entre os primeiros pedaços: tudo até ele sai,
   // inclusive letras soltas que o OCR inventou antes ("E T8985958547028").
   const barcode = tokens.slice(0, 4).findIndex(t => (t.match(/\d/g) ?? []).length >= 6)
-  if (barcode >= 0) return tokens.slice(barcode + 1).join(' ')
+  if (barcode >= 0) return { rest: tokens.slice(barcode + 1).join(' '), code: digitsOf(tokens[barcode]) }
   // Senão, até três pedaços iniciais que são "quase só números" (item, código curto, lixo).
   let i = 0
+  const numeric: string[] = []
   while (i < tokens.length && i < 3) {
     const t = tokens[i].replace(/[^\w]/g, '')
     const digits = (t.match(/\d/g) ?? []).length
-    if (t === '' || (digits > 0 && digits / t.length >= 0.6) || /^[\W_]+$/.test(tokens[i])) i++
-    else break
+    if (t === '' || (digits > 0 && digits / t.length >= 0.6) || /^[\W_]+$/.test(tokens[i])) {
+      if (digits > 0) numeric.push(digitsOf(tokens[i]))
+      i++
+    } else break
   }
-  return tokens.slice(i).join(' ')
+  // "1 7702 LING…": o primeiro número é o do item; o segundo, o código.
+  const code = numeric.length >= 2 ? numeric[1] : null
+  return { rest: tokens.slice(i).join(' '), code: code && code.length >= 3 ? code : null }
+}
+
+/** Dígito verificador do código de barras (EAN-8, UPC-12, EAN-13, GTIN-14). */
+export function validGtin(code: string): boolean {
+  if (!/^\d+$/.test(code) || ![8, 12, 13, 14].includes(code.length) || /^0+$/.test(code)) return false
+  const digits = code.split('').map(Number)
+  const check = digits.pop()!
+  const sum = digits.reverse().reduce((s, d, i) => s + d * (i % 2 === 0 ? 3 : 1), 0)
+  return (10 - (sum % 10)) % 10 === check
+}
+
+/** CNPJ com dígitos verificadores certos (só dígitos), ou null. */
+export function validCnpj(raw: string): string | null {
+  const c = fixDigits(raw).replace(/\D/g, '')
+  if (c.length !== 14 || /^(\d)\1+$/.test(c)) return null
+  const dv = (base: string) => {
+    const w = base.length === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    const r = base.split('').reduce((s, d, i) => s + Number(d) * w[i], 0) % 11
+    return r < 2 ? 0 : 11 - r
+  }
+  const d1 = dv(c.slice(0, 12)), d2 = dv(c.slice(0, 12) + d1)
+  return c.endsWith(`${d1}${d2}`) ? c : null
+}
+
+/** Chave do produto no catálogo de nomes (ver NfceItem.key). */
+function productKey(code: string | null, cnpj: string | null): string | undefined {
+  if (!code) return undefined
+  if (validGtin(code)) return `gtin:${code}`
+  // Código curto é do sistema do mercado: só vale junto com o CNPJ dele.
+  if (cnpj && code.length >= 3 && code.length <= 7) return `loja:${cnpj}:${code}`
+  return undefined
 }
 
 interface ParsedLine {
   description: string
+  /** Código lido no começo da linha (só dígitos). */
+  code: string | null
   /** Valores possíveis, do mais provável ao menos. */
   candidates: number[]
   /** Quantidade × unitário bateu com o total da linha. */
@@ -157,7 +207,8 @@ function parseItemLine(line: string): ParsedLine | null {
 
   // "BANANA PRATA KG": a unidade solta no fim do nome sai.
   // Também o resto de um "1UN X" mal lido ("tun x") que ficou grudado no nome.
-  const rawDesc = stripPrefix(line.slice(0, descEnd))
+  const prefix = stripPrefix(line.slice(0, descEnd))
+  const rawDesc = prefix.rest
     .replace(/\s+\S?UN\.?\s*[xX%*]?\s*$/i, '')
     .replace(new RegExp(`\\s+${UNIT}\\.?$`, 'i'), '')
   if ((rawDesc.match(/[A-Za-zÀ-ÿ]/g) ?? []).length < 3) return null
@@ -193,7 +244,7 @@ function parseItemLine(line: string): ParsedLine | null {
   let description = prettifyDescription(rawDesc)
   // Produto por peso: o peso ajuda a reconhecer o item depois.
   if (unit === 'KG' && qty != null && qty !== 1) description += ` ${String(qty).replace('.', ',')} kg`
-  return { description, candidates, confirmed, structured: !!q }
+  return { description, code: prefix.code, candidates, confirmed, structured: !!q }
 }
 
 /**
@@ -241,7 +292,7 @@ function resolve(lines: ParsedLine[], target?: number): NfceItem[] {
   return lines.map((l, i) => ({ description: l.description, amount: pick[i], doubtful: !l.confirmed }))
 }
 
-export interface NfceReading { lines: ParsedLine[]; discount: number | null }
+export interface NfceReading { lines: ParsedLine[]; discount: number | null; cnpj: string | null }
 
 /**
  * @param text   texto do OCR, uma linha por linha da nota
@@ -283,7 +334,13 @@ export function readNfceLines(text: string): NfceReading {
     const item = parseItemLine(line)
     if (item) parsed.push(item)
   }
-  return { lines: parsed, discount }
+  // CNPJ do mercado (para os códigos internos dele no catálogo).
+  let cnpj: string | null = null
+  for (const l of lines) {
+    const m = l.match(/CN[PF]J[^\dOo]{0,4}([\dOoIlSB.\/\-\s]{14,24})/i)
+    if (m && (cnpj = validCnpj(m[1]))) break
+  }
+  return { lines: parsed, discount, cnpj }
 }
 
 // Semelhança entre dois nomes (pares de letras em comum, 0 a 1).
@@ -335,18 +392,31 @@ export function resolveReadings(readings: NfceReading[], target?: number): NfceR
       const confirmedTop = c.lines.some(l => l.confirmed && l.candidates[0] === top)
       // Nome: o que mais se parece com as outras leituras do mesmo item — o
       // erro de OCR de uma leitura raramente se repete nas outras.
+      // Antes disso, a leitura com mais palavras de mercado reconhecidas.
       const named = [...c.lines].sort((a, b) =>
-        c.lines.reduce((s, o) => s + similarity(b.description, o.description), 0)
-        - c.lines.reduce((s, o) => s + similarity(a.description, o.description), 0))[0]
-      return { description: named.description, candidates: ranked, confirmed: confirmedTop, structured: c.lines.some(l => l.structured) }
+        (knownWords(b.description) - knownWords(a.description))
+        || (c.lines.reduce((s, o) => s + similarity(b.description, o.description), 0)
+          - c.lines.reduce((s, o) => s + similarity(a.description, o.description), 0)))[0]
+      // Código: o que passa no dígito verificador; senão o mais repetido.
+      const codes = c.lines.map(l => l.code).filter((x): x is string => !!x)
+      const code = codes.find(validGtin)
+        ?? [...new Set(codes)].sort((a, b) => codes.filter(x => x === b).length - codes.filter(x => x === a).length)[0] ?? null
+      return { description: named.description, code, candidates: ranked, confirmed: confirmedTop, structured: c.lines.some(l => l.structured) }
     })
   // Item visto numa leitura só, sem valor conferido, entre várias leituras: ruído.
   const kept = readings.length >= 3
     ? merged.filter((m, i) => m.confirmed || m.structured || clusters[i].lines.length >= 2)
     : merged
   const discount = readings.map(r => r.discount).find(d => d != null) ?? null
+  const cnpj = readings.map(r => r.cnpj).find(c => c != null) ?? null
   // Com desconto, os itens somam o valor cheio: é isso que confere a leitura.
   const items = resolve(kept, target != null && discount ? round2(target + discount) : target)
+  // resolve() devolve os itens com o mesmo nome das linhas: a chave vem por ele.
+  const keyByDesc = new Map(kept.map(l => [l.description, productKey(l.code, cnpj)]))
+  for (const it of items) {
+    const key = keyByDesc.get(it.description)
+    if (key) it.key = key
+  }
 
   // Desconto no fim da nota: reparte proporcionalmente quando é isso que fecha a conta.
   if (discount && target != null && items.length > 0) {

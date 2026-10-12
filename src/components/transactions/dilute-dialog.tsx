@@ -31,6 +31,12 @@ interface Row {
   amount: string
   /** Leitura duvidosa: fica em amarelo até o usuário mexer no valor. */
   doubtful: boolean
+  /** Produto no catálogo de nomes (código de barras ou código do mercado). */
+  productKey?: string
+  /** Nome como veio da leitura — para saber se o usuário corrigiu. */
+  readName?: string
+  /** O nome veio do catálogo (aprendido antes): salvar confirma. */
+  fromCatalog?: boolean
 }
 
 interface Props {
@@ -39,6 +45,14 @@ interface Props {
   onClose: () => void
   /** Itens gravados — a página recarrega a lista. */
   onSaved: () => void
+}
+
+/** Nomes aprendidos para estas chaves de produto (vazio se der erro). */
+async function catalogNames(keys: string[]): Promise<Map<string, string>> {
+  if (keys.length === 0) return new Map()
+  const { data, error } = await createClient().rpc('nomes_nf', { p_chaves: [...new Set(keys)] })
+  if (error) { logSafeError('dilute.catalogNames', error); return new Map() }
+  return new Map((data as { chave: string; nome: string }[] | null ?? []).map(r => [r.chave, r.nome]))
 }
 
 let rowKey = 0
@@ -134,9 +148,16 @@ export function DiluteDialog({ tx, categories, onClose, onSaved }: Props) {
         setNotice(doubts > 0
           ? `Lemos ${result.items.length} ${result.items.length === 1 ? 'item' : 'itens'}. Confira os marcados em amarelo — a leitura do valor ficou em dúvida.`
           : `Lemos ${result.items.length} ${result.items.length === 1 ? 'item' : 'itens'}. Confira os nomes e escolha a categoria de cada um.`)
-        setRows(result.items.map(i => newRow({
-          description: i.description, category: tx.category, amount: toText(i.amount), doubtful: i.doubtful,
-        })))
+        // Nomes já corrigidos antes (por você ou por outros usuários) para o
+        // mesmo produto substituem a leitura.
+        const known = await catalogNames(result.items.map(i => i.key).filter((k): k is string => !!k))
+        setRows(result.items.map(i => {
+          const learned = i.key ? known.get(i.key) : undefined
+          return newRow({
+            description: learned ?? i.description, category: tx.category, amount: toText(i.amount), doubtful: i.doubtful,
+            productKey: i.key, readName: learned ?? i.description, fromCatalog: !!learned,
+          })
+        }))
       }
     } catch (e) {
       logSafeError('dilute.ocr', e)
@@ -159,6 +180,20 @@ export function DiluteDialog({ tx, categories, onClose, onSaved }: Props) {
         ? missingMigrationMessage('migration_diluir_transacao.sql')
         : `Não foi possível salvar os itens: ${e.message}`)
       return
+    }
+    // Ensina o catálogo: nome corrigido pelo usuário, ou nome do catálogo que
+    // ele manteve. Nome lido e não mexido não entra (seria só a leitura crua).
+    const taught = rows
+      .filter(r => r.productKey && r.description.trim().length >= 2 && (r.fromCatalog || r.description.trim() !== r.readName))
+      .map(r => ({ chave: r.productKey!, nome: r.description.trim().slice(0, 80) }))
+    if (taught.length > 0) {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const unique = [...new Map(taught.map(t => [t.chave, { ...t, user_id: user.id, updated_at: new Date().toISOString() }])).values()]
+        const { error: te } = await supabase.from('nf_produtos').upsert(unique, { onConflict: 'chave,user_id' })
+        if (te) logSafeError('dilute.teachNames', te)
+      }
     }
     onSaved()
     onClose()
