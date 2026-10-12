@@ -30,7 +30,35 @@ function asPasswordError(err: unknown): Error | null {
   return new Error(e.code === 2 ? 'pdf-password-wrong' : 'pdf-password')
 }
 
+// O pdf.js (getTextContent) faz `for await (const x of readableStream)`, mas
+// o Safari/iOS não implementa o iterador assíncrono de ReadableStream — dava
+// "TypeError: undefined is not a function (near '...of e...')" ao importar PDF
+// no iPhone. Polyfill mínimo, aplicado só quando o navegador não tem.
+function ensureReadableStreamAsyncIterator() {
+  if (typeof ReadableStream === 'undefined') return
+  const proto = ReadableStream.prototype as unknown as Record<symbol, unknown>
+  if (typeof proto[Symbol.asyncIterator] === 'function') return
+  proto[Symbol.asyncIterator] = function (this: ReadableStream) {
+    const reader = this.getReader()
+    return {
+      async next() {
+        const r = await reader.read()
+        if (r.done) { reader.releaseLock(); return { done: true, value: undefined } }
+        return { done: false, value: r.value }
+      },
+      async return() {
+        // Interrompido antes do fim: descarta o restante do stream.
+        await reader.cancel().catch(() => {})
+        reader.releaseLock()
+        return { done: true, value: undefined }
+      },
+      [Symbol.asyncIterator]() { return this },
+    }
+  }
+}
+
 export async function extractPdfText(buffer: ArrayBuffer, password?: string): Promise<string> {
+  ensureReadableStreamAsyncIterator()
   const pdfjsLib = await import('pdfjs-dist')
   // Cópia local do worker (public/pdf.worker.min.mjs) — o CDN é instável nessa versão.
   //
