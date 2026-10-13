@@ -1,4 +1,5 @@
 import { Transaction, TransactionBoard } from '@/types'
+import type { QuoteMap } from '@/lib/quotes'
 import { todayISO } from '@/utils/local-date'
 import { investmentValueOf } from '@/lib/investment-contributions'
 
@@ -89,6 +90,8 @@ export function computePatrimonyOverview(
   cashTransactions: Transaction[],
   /** Lançamentos de todas as contas — de onde saem os aportes das contas de investimento. */
   allTransactions: Transaction[] = cashTransactions,
+  /** Cotações de hoje: atualizam o valor das contas com ações/FIIs/cripto. */
+  quotes?: QuoteMap | null,
 ): PatrimonyOverview {
   const cashBoards = boards.filter(b => !b.is_investment)
   const investmentBoards = boards.filter(b => b.is_investment)
@@ -120,7 +123,7 @@ export function computePatrimonyOverview(
   // Cada conta de investimento entra com o valor que ela mostra: o extrato,
   // se houver; senão a soma dos aportes. Nunca os dois somados.
   for (const board of investmentBoards) {
-    const v = investmentValueOf(board, allTransactions)
+    const v = investmentValueOf(board, allTransactions, quotes)
     if (v.source !== 'none') {
       investments.push({
         boardId: board.id,

@@ -37,6 +37,11 @@ export function InvestmentsHelp() {
               vale o extrato; conta sem extrato vale a soma dos aportes. Nunca os dois somados. É o mesmo total do
               Dashboard.
             </Item>
+            <Item icon={TrendingUp} title="Preços de hoje (ao vivo).">
+              Ações, FIIs, ETFs e cripto do extrato andam sozinhos: quantidade × preço de hoje (até 30 min de atraso).
+              Renda fixa, Tesouro e saldo ficam no valor do extrato. Comprou ou vendeu? Atualize a posição para o app
+              saber a quantidade nova. O gráfico dia a dia usa a quantidade de hoje com o preço de cada dia.
+            </Item>
             <Item icon={ArrowDownToLine} title="Aportes do mês.">
               Saídas das suas contas marcadas como aporte numa conta de investimento (no extrato, ⋮ → &ldquo;Aporte
               em…&rdquo;, ou pela configuração de Aportes). É comparado com a meta de investir do Planejamento.
@@ -63,7 +68,8 @@ export function InvestmentsHelp() {
             </Item>
             <Item icon={CircleDollarSign} title="Atualizar valor.">
               Para conta sem planilha (cripto, previdência, Tesouro): você informa o valor e a data, e ele entra no
-              patrimônio e na evolução.
+              patrimônio e na evolução. Em cripto, dá para informar a quantidade (ex.: 0,05 BTC) — aí o valor acompanha
+              o preço sozinho.
             </Item>
             <Item icon={Upload} title="Importar posição.">
               Atualiza os ativos, o patrimônio, os rendimentos a receber e acrescenta um ponto na evolução. Antes de

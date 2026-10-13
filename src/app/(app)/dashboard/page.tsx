@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { useQuotes } from '@/hooks/use-quotes'
 import { buildDisplayItems } from '@/lib/recurring-groups'
 import { realMovements, internalTotals, isInternalMovement } from '@/lib/internal-movement'
 import { useSubcategoryNames } from '@/hooks/use-subcategory-names'
@@ -91,13 +92,16 @@ export default function DashboardPage() {
       .reduce((sum, b) => sum + Number(b.opening_balance ?? 0), 0),
     [boards],
   )
+  // Cotações de hoje das contas de investimento (ações, FIIs, cripto).
+  const { quotes } = useQuotes(boards.filter(b => b.is_investment))
   const patrimony = useMemo(
     () => computePatrimonyOverview(
       boards.filter(b => b.show_on_dashboard || b.is_investment),
       allCashTransactions,
       allTransactions,
+      quotes,
     ),
-    [boards, allCashTransactions, allTransactions],
+    [boards, allCashTransactions, allTransactions, quotes],
   )
   const { plan, loading: planLoading, savePlan } = useBudgetPlan(month, year)
   const { defaultInvestmentPct, updatePreferences, loading: prefsLoading } = useUserPreferences()

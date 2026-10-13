@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { TransactionBoard } from '@/types'
+import { RICOPosition, TransactionBoard } from '@/types'
 import { validateImportFile } from '@/lib/import-limits'
 import { parseRICOXLSX, RICOData } from '@/utils/parse-rico'
 import { syncGoalsLinkedToBoard } from '@/lib/goal-sync'
@@ -88,7 +88,9 @@ export function usePositionImport(updateBoard: UpdateBoardFn) {
    * Metas ligadas e na evolução, e a posição anterior vai para o histórico.
    * Sem lista de ativos: a divisão por ativo só vem de uma planilha.
    */
-  async function saveManual(board: TransactionBoard, value: number, date: string): Promise<{ error?: string }> {
+  /** `positions`: quando o valor veio de uma quantidade (ex.: 0,05 BTC), o
+   *  ativo fica guardado para o preço de hoje atualizar o valor sozinho. */
+  async function saveManual(board: TransactionBoard, value: number, date: string, positions: RICOPosition[] = []): Promise<{ error?: string }> {
     const prev = board.last_position_import
     const priorHistory = prev?.history ?? board.position_import_history ?? []
     const history = prev
@@ -101,7 +103,7 @@ export function usePositionImport(updateBoard: UpdateBoardFn) {
         patrimonio: value,
         totalInvestido: value,
         saldoDisponivel: 0,
-        positions: [],
+        positions,
         proventos: [],
         importedAt,
         source: 'manual',

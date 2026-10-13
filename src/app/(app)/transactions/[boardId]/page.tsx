@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect, useCallback} from 'react'
+import { useQuotes } from '@/hooks/use-quotes'
 import { decisionKey } from '@/lib/recurring-groups'
 import { logSafeError, missingMigrationMessage } from '@/lib/supabase-error'
 import { balanceFromTransactions, accountBalance } from '@/lib/dashboard-patrimony'
@@ -82,6 +83,8 @@ function BoardDetailInner() {
 
   const { boards, loading: boardsLoading, updateBoard } = useTransactionBoards()
   const board = boards.find(b => b.id === boardId)
+  // Cotações de hoje, só para conta de investimento com ações/FIIs/cripto.
+  const { quotes: boardQuotes } = useQuotes(board?.is_investment ? [board] : [])
   const { categories } = useCategories()
   const { syncCategoryToRule } = useRules()
   // Conta de investimento é sempre atualizada com o extrato inteiro (não faz
@@ -645,7 +648,7 @@ function BoardDetailInner() {
                 <p className="text-lg font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(aporteSummary.aportado)}</p>
                 {(() => {
                   // Mesma regra do valor usada em Investimentos e no Dashboard.
-                  const iv = investmentValueOf(board, aportesIn)
+                  const iv = investmentValueOf(board, aportesIn, boardQuotes)
                   if (iv.source === 'none') return null
                   const gain = iv.gain
                   return (

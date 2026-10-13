@@ -1,6 +1,7 @@
 'use client'
 
 import { withPlan } from '@/components/plan/with-plan'
+import { useQuotes } from '@/hooks/use-quotes'
 import { useVitrine } from '@/components/plan/vitrine'
 import { PlanGate } from '@/components/plan/plan-gate'
 import Link from 'next/link'
@@ -1388,6 +1389,7 @@ function InvestmentsReport({ year, boardId }: { year: number; boardId: string })
   }, [boards, boardId])
   const ids = investmentBoards.map(b => b.id)
   const { linked, loading: linkedLoading } = useInvestmentContributions(ids)
+  const { quotes } = useQuotes(investmentBoards)
   // Meta de investir de cada mês do ano (Planejamento).
   const { targetsByKey, loading: targetsLoading } = useBudgetPlansRange(12, year, 12)
 
@@ -1426,7 +1428,7 @@ function InvestmentsReport({ year, boardId }: { year: number; boardId: string })
 
   // Valor e resultado de cada conta, pela regra única (investmentValueOf).
   const perBoard = investmentBoards.map(b => {
-    const v = investmentValueOf(b, linked)
+    const v = investmentValueOf(b, linked, quotes)
     const noAno = aportes.filter(t => t.counterpart_board_id === b.id).reduce((acc, t) => acc + Number(t.amount), 0)
     return { board: b, v, noAno }
   })

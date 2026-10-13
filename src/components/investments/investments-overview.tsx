@@ -7,6 +7,8 @@ import { ChartPie, ListOrdered, TrendingUp, Coins, ChevronRight, type LucideIcon
 import { Goal, RICOPosition, TransactionBoard } from '@/types'
 import { formatCurrency, rentColor } from '@/components/investments/rico-position-summary'
 import { buildConsolidatedPatrimonyHistory, computeConsolidatedPatrimonyVariation } from '@/lib/position-history'
+import { QuoteMap, dailySeries, holdingsOfBoard } from '@/lib/quotes'
+import type { HistoryMap, QuoteRange } from '@/hooks/use-quotes'
 import { cn } from '@/lib/utils'
 
 // Cor fixa por classe de ativo — a mesma classe tem sempre a mesma cor.
@@ -89,10 +91,14 @@ const daysAgo = (iso: string) => {
   return d <= 0 ? 'hoje' : d === 1 ? 'ontem' : `há ${d} dias`
 }
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')
+const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+const pctText = (p: number) => `${p >= 0 ? '+' : ''}${p.toFixed(1).replace('.', ',')}%`
 
 // ── 1. Os quatro números do topo ───────────────────────────────────────────
-export function InvestmentsSummary({ boards, total: shownTotal, aportesOnlyCount = 0, contributions, target, income, goal }: {
+export function InvestmentsSummary({ boards, total: shownTotal, aportesOnlyCount = 0, contributions, target, income, goal, liveAt }: {
   boards: TransactionBoard[]
+  /** Hora dos preços de hoje, quando alguma conta anda com a cotação. */
+  liveAt?: string | null
   /** Quantas contas entram no total pela soma dos aportes (sem extrato). */
   aportesOnlyCount?: number
   /** Soma do valor que cada conta mostra (extrato, ou aportes sem extrato). */
@@ -118,7 +124,7 @@ export function InvestmentsSummary({ boards, total: shownTotal, aportesOnlyCount
         <p className="text-[11px] uppercase tracking-wide text-slate-400">Patrimônio investido</p>
         <p className="text-xl font-bold mt-1 tabular-nums text-blue-600 dark:text-blue-400">{formatCurrency(total)}</p>
         <p className="text-[11px] text-slate-400 mt-1">
-          {lastAt ? <>Atualizado em {shortDate(lastAt)} · {daysAgo(lastAt)}</> : aportesOnlyCount > 0 ? 'Pela soma dos aportes' : 'Nenhum valor informado ainda'}
+          {liveAt ? <>Preços de hoje · {hhmm(liveAt)}</> : lastAt ? <>Atualizado em {shortDate(lastAt)} · {daysAgo(lastAt)}</> : aportesOnlyCount > 0 ? 'Pela soma dos aportes' : 'Nenhum valor informado ainda'}
         </p>
         {lastAt && aportesOnlyCount > 0 && (
           <p className="text-[11px] text-slate-400">
@@ -235,37 +241,55 @@ export function AllocationCard({ boards, aportesOnly = [] }: { boards: Transacti
 }
 
 // ── 3. Maiores posições (clique para ver preço médio e quantidade) ─────────
-export function PositionsTable({ boards }: { boards: TransactionBoard[] }) {
+export function PositionsTable({ boards, quotes = {} }: { boards: TransactionBoard[]; quotes?: QuoteMap }) {
   const [open, setOpen] = useState<string | null>(null)
   const multi = withPosition(boards).length > 1
-  const total = withPosition(boards).reduce((s, b) => s + b.last_position_import!.patrimonio, 0)
   const rows = useMemo(() => {
-    const list: { key: string; pos: RICOPosition; board: string }[] = []
+    const list: { key: string; pos: RICOPosition; board: string; value: number; price: number | null; change: number | null }[] = []
     for (const b of withPosition(boards)) {
-      for (const p of b.last_position_import!.positions) list.push({ key: `${b.id}:${p.ticker}`, pos: p, board: b.name })
+      const holdings = new Map(holdingsOfBoard(b).map(h => [h.symbol, h]))
+      for (const p of b.last_position_import!.positions) {
+        // Com preço de hoje: valor = quantidade × preço; variação contra o
+        // preço do extrato. Sem cotação (renda fixa, Tesouro): valor do extrato.
+        const h = holdings.get(p.ticker.trim().toUpperCase())
+        const q = h ? quotes[h.symbol] : undefined
+        const value = h && q ? h.quantity * q.price : p.value
+        list.push({
+          key: `${b.id}:${p.ticker}`, pos: p, board: b.name, value,
+          price: q ? q.price : null,
+          change: h && q && h.priceAtImport > 0 ? (q.price / h.priceAtImport - 1) * 100 : null,
+        })
+      }
     }
-    return list.sort((a, b) => b.pos.value - a.pos.value)
-  }, [boards])
+    return list.sort((a, b) => b.value - a.value)
+  }, [boards, quotes])
   if (rows.length === 0) return null
+  const total = rows.reduce((s, r) => s + r.value, 0)
   const classes = [...new Set(rows.map(r => r.pos.category || 'Outros'))]
+  const live = rows.some(r => r.price != null)
+  const posDate = withPosition(boards).map(b => b.last_position_import!.importedAt).sort()[0]
 
   return (
-    <Card icon={ListOrdered} title="Maiores posições" subtitle="Clique num ativo para ver quantidade e preço médio"
+    <Card icon={ListOrdered} title="Maiores posições"
+      subtitle={live
+        ? `Preço de hoje (até 30 min de atraso) e quanto mudou desde a posição de ${shortDate(posDate)}`
+        : 'Clique num ativo para ver quantidade e preço médio'}
       action={<span className="text-xs text-slate-400 shrink-0">{rows.length} ativo{rows.length === 1 ? '' : 's'}</span>}>
       <div className="mt-3 overflow-x-auto">
-        <table className="w-full text-sm min-w-[520px]">
+        <table className={cn('w-full text-sm', live ? 'min-w-[620px]' : 'min-w-[520px]')}>
           <thead>
             <tr className="text-[11px] text-slate-400 uppercase tracking-wide">
               <th className="text-left font-semibold py-2">Ativo</th>
               <th className="text-left font-semibold">Classe</th>
               <th className="text-right font-semibold">Rentab.</th>
+              {live && <th className="text-right font-semibold">Preço hoje</th>}
               <th className="text-right font-semibold">Valor</th>
               <th className="text-right font-semibold w-36">% da carteira</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
-            {rows.map(({ key, pos, board }) => {
-              const pct = total > 0 ? (pos.value / total) * 100 : 0
+            {rows.map(({ key, pos, board, value, price, change }) => {
+              const pct = total > 0 ? (value / total) * 100 : 0
               const color = classColor(pos.category || 'Outros', classes.indexOf(pos.category || 'Outros'))
               const qty = pos.quantity ? Number(pos.quantity) : NaN
               const gain = !isNaN(qty) && pos.avgPrice !== undefined && pos.lastPrice !== undefined ? (pos.lastPrice - pos.avgPrice) * qty : null
@@ -288,7 +312,19 @@ export function PositionsTable({ boards }: { boards: TransactionBoard[] }) {
                       {multi && <span className="text-slate-400"> · {board}</span>}
                     </td>
                     <td className={cn('text-right text-xs tabular-nums', rentColor(pos.rentabilidade))}>{pos.rentabilidade || '—'}</td>
-                    <td className="text-right tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(pos.value)}</td>
+                    {live && (
+                      <td className="text-right tabular-nums text-xs">
+                        {price != null ? (
+                          <>
+                            <span className="block text-slate-700 dark:text-slate-200">{formatCurrency(price)}</span>
+                            {change != null && (
+                              <span className={cn('block text-[11px]', change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500')}>{pctText(change)}</span>
+                            )}
+                          </>
+                        ) : <span className="text-slate-400">—</span>}
+                      </td>
+                    )}
+                    <td className="text-right tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(value)}</td>
                     <td className="pl-4">
                       <div className="flex items-center gap-2 justify-end">
                         <div className="h-1.5 w-20 bg-slate-100 dark:bg-white/[0.08] rounded-full overflow-hidden">
@@ -300,7 +336,7 @@ export function PositionsTable({ boards }: { boards: TransactionBoard[] }) {
                   </tr>
                   {isOpen && (
                     <tr>
-                      <td colSpan={5} className="pb-3 pl-6 text-xs text-slate-500 dark:text-slate-400">
+                      <td colSpan={live ? 6 : 5} className="pb-3 pl-6 text-xs text-slate-500 dark:text-slate-400">
                         {pos.quantity && <span>{pos.quantity} unidades</span>}
                         {pos.avgPrice !== undefined && pos.lastPrice !== undefined && (
                           <span> · preço médio {formatCurrency(pos.avgPrice)} → atual {formatCurrency(pos.lastPrice)}</span>
@@ -345,6 +381,79 @@ export function EvolutionCard({ boards }: { boards: TransactionBoard[] }) {
       </div>
       {data.length < 3 && (
         <p className="text-[11px] text-slate-400 mt-1">Quanto mais vezes você importar a posição, mais completa fica a linha.</p>
+      )}
+    </Card>
+  )
+}
+
+// ── 4b. Evolução dia a dia (com os preços de cada dia) ─────────────────────
+const RANGE_LABEL: Record<QuoteRange, string> = { '5d': '7 dias', '1mo': '30 dias', '3mo': '3 meses', '1y': '1 ano' }
+
+export function DailyEvolutionCard({ boards, baseTotal, history, quotes, range, onRange, loading }: {
+  boards: TransactionBoard[]
+  /** Soma do valor das contas sem os preços de hoje (extrato ou aportes). */
+  baseTotal: number
+  history: HistoryMap
+  quotes: QuoteMap
+  range: QuoteRange
+  onRange: (r: QuoteRange) => void
+  loading?: boolean
+}) {
+  const data = useMemo(
+    () => dailySeries(boards, baseTotal, history, quotes).map(p => ({
+      ...p,
+      label: new Date(`${p.date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+    })),
+    [boards, baseTotal, history, quotes],
+  )
+  const first = data[0]?.value ?? 0
+  const last = data.at(-1)?.value ?? 0
+  const delta = last - first
+  const up = delta >= 0
+  const color = up ? '#16a34a' : '#ef4444'
+
+  return (
+    <Card icon={TrendingUp} title="Evolução da carteira" subtitle="Dia a dia, com o preço de fechamento de cada dia"
+      action={
+        <div className="flex gap-1 shrink-0">
+          {(Object.keys(RANGE_LABEL) as QuoteRange[]).map(r => (
+            <button key={r} type="button" onClick={() => onRange(r)}
+              className={cn('px-2 py-1 rounded-md text-[11px] font-medium transition-colors',
+                r === range ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-white/[0.06]')}>
+              {RANGE_LABEL[r]}
+            </button>
+          ))}
+        </div>
+      }>
+      {data.length < 2 ? (
+        <p className="text-xs text-slate-400 mt-6 mb-4 text-center">{loading ? 'Buscando os preços…' : 'Sem preços para este período.'}</p>
+      ) : (
+        <>
+          <p className="mt-3 text-xs text-slate-400">
+            Resultado em {RANGE_LABEL[range]}:{' '}
+            <span className={cn('text-base font-bold tabular-nums', up ? 'text-green-600' : 'text-red-500')}>
+              {up ? '+' : '−'}{formatCurrency(Math.abs(delta))}
+            </span>
+            {first > 0 && <span className={cn('font-semibold', up ? 'text-green-600' : 'text-red-500')}> ({pctText((delta / first) * 100)})</span>}
+          </p>
+          <div className="mt-2">
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-white/10" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} minTickGap={24} />
+                <YAxis
+                  tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={52} domain={['auto', 'auto']}
+                  tickFormatter={v => (Math.abs(Number(v)) >= 1000 ? `${(Number(v) / 1000).toFixed(1).replace('.', ',')}k` : String(Math.round(Number(v))))}
+                />
+                <Tooltip formatter={v => formatCurrency(Number(v))} labelFormatter={l => `Dia ${l}`} contentStyle={{ borderRadius: 12, fontSize: 12 }} />
+                <Line type="monotone" dataKey="value" name="Carteira" stroke={color} strokeWidth={2} dot={false} isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-1">
+            Usa a quantidade de hoje de cada ativo. Renda fixa, Tesouro e saldo ficam no valor do extrato.
+          </p>
+        </>
       )}
     </Card>
   )

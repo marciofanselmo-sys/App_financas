@@ -1,3 +1,4 @@
+import { QuoteMap, liveValueOf } from '@/lib/quotes'
 import { Transaction, TransactionBoard } from '@/types'
 import { MonthBucket } from '@/lib/dashboard-charts'
 
@@ -104,6 +105,11 @@ export interface InvestmentValue {
   aportado: number
   /** Valor − aportado; só quando há extrato E aportes (sem extrato não há rendimento). */
   gain: number | null
+  /**
+   * Extrato atualizado pelos preços de hoje (ações, FIIs, cripto). `value` já
+   * vem atualizado; aqui ficam a variação desde o extrato e a hora da cotação.
+   */
+  live?: { delta: number; at: string | null } | null
 }
 
 /**
@@ -119,16 +125,23 @@ export interface InvestmentValue {
 export function investmentValueOf(
   board: TransactionBoard,
   linked: Pick<Transaction, 'id' | 'date' | 'amount' | 'type' | 'counterpart_board_id' | 'description' | 'board_id'>[],
+  /** Cotações de hoje (useQuotes). Sem elas, vale o extrato como está. */
+  quotes?: QuoteMap | null,
 ): InvestmentValue {
   const c = contributionsForBoard(board, linked)
   const pos = board.last_position_import
   if (pos) {
+    // A cotação só atualiza o extrato (nunca soma aportes): extrato + quanto
+    // os ativos cotados variaram desde ele.
+    const live = liveValueOf(pos, quotes)
+    const value = live ? live.value : pos.patrimonio
     return {
-      value: pos.patrimonio,
+      value,
       source: pos.source === 'manual' ? 'manual' : 'position',
       positionDate: pos.importedAt.slice(0, 10),
       aportado: c.aportado,
-      gain: c.configured ? pos.patrimonio - c.aportado : null,
+      gain: c.configured ? value - c.aportado : null,
+      live: live ? { delta: live.delta, at: live.at } : null,
     }
   }
   if (c.configured) {
@@ -140,6 +153,7 @@ export function investmentValueOf(
 /** Texto curto da origem do valor, para mostrar junto do número. */
 export function investmentValueLabel(v: InvestmentValue): string {
   const d = v.positionDate ? new Date(`${v.positionDate}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '') : ''
+  if (v.live) return v.source === 'manual' ? `pela quantidade informada em ${d} × preço de hoje` : `pela posição de ${d} × preços de hoje`
   return v.source === 'position' ? `pelo extrato de ${d}`
     : v.source === 'manual' ? `pelo valor informado em ${d}`
       : v.source === 'aportes' ? 'pela soma dos aportes (sem extrato)'

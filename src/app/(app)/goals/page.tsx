@@ -1,6 +1,7 @@
 'use client'
 
 import { withPlan } from '@/components/plan/with-plan'
+import { useQuotes } from '@/hooks/use-quotes'
 
 import { useState, useEffect } from 'react'
 import { useGoals } from '@/hooks/use-goals'
@@ -153,15 +154,16 @@ function GoalsPage() {
   const { linked, loading: linkedLoading } = useInvestmentContributions(investmentBoards.map(b => b.id))
   // O valor da conta é o mesmo que ela mostra em Investimentos: o extrato, se
   // houver; senão a soma dos aportes. Nunca os dois somados.
+  const { quotes, loading: quotesLoading } = useQuotes(investmentBoards)
   const boardValue = (board: (typeof boards)[number]) => {
-    const v = investmentValueOf(board, linked)
+    const v = investmentValueOf(board, linked, quotes)
     return { value: v.value, has: v.source !== 'none' }
   }
 
   // Meta ligada acompanha a conta: ao abrir a tela, quem estiver diferente do
   // valor atual da conta é atualizado (cobre valores informados antes).
   useEffect(() => {
-    if (loading || linkedLoading || boards.length === 0) return
+    if (loading || linkedLoading || quotesLoading || boards.length === 0) return
     for (const goal of goals) {
       const imp = goal.lastImport
       if (imp?.source !== 'board' || !imp.boardId) continue
@@ -175,7 +177,7 @@ function GoalsPage() {
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, linkedLoading, boards, linked, goals.map(g => `${g.id}:${g.currentAmount}`).join('|')])
+  }, [loading, linkedLoading, quotesLoading, quotes, boards, linked, goals.map(g => `${g.id}:${g.currentAmount}`).join('|')])
 
   async function pullFromBoard(goal: Goal, board: (typeof boards)[number]) {
     // Conta sem valor ainda: liga mesmo assim, em R$ 0 — a meta passa a

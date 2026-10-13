@@ -31,8 +31,10 @@ import { useGoals } from '@/hooks/use-goals'
 import { sumInvestmentContributions } from '@/lib/investment-contributions'
 import { realMovements } from '@/lib/internal-movement'
 import {
-  InvestmentsSummary, AllocationCard, PositionsTable, EvolutionCard, ProventosCard, allocationOf,
+  InvestmentsSummary, AllocationCard, PositionsTable, EvolutionCard, DailyEvolutionCard, ProventosCard, allocationOf,
 } from '@/components/investments/investments-overview'
+import { useQuotes, type QuoteRange } from '@/hooks/use-quotes'
+import { CRYPTO_IDS, symbolsOf } from '@/lib/quotes'
 import { InvestmentsHelp } from '@/components/investments/investments-help'
 
 interface AccountTemplate {
@@ -107,7 +109,14 @@ function InvestmentsPage() {
   // aporte configurado daria um "rendimento" igual ao valor inteiro delas.
   // Valor de cada conta pela regra (investmentValueOf): o extrato, se houver;
   // sem extrato, a soma dos aportes. Nunca os dois somados.
-  const values = useMemo(() => new Map(boards.map(b => [b.id, investmentValueOf(b, linked)])), [boards, linked])
+  // Ações, FIIs e cripto andam com o preço de hoje (o extrato + a variação
+  // desde ele); o resto fica no valor do extrato.
+  const [chartRange, setChartRange] = useState<QuoteRange>('1mo')
+  const { quotes, history, loading: quotesLoading } = useQuotes(boards, chartRange)
+  const hasQuotable = (() => { const s = symbolsOf(boards); return s.b3.length + s.crypto.length > 0 })()
+  const values = useMemo(() => new Map(boards.map(b => [b.id, investmentValueOf(b, linked, quotes)])), [boards, linked, quotes])
+  const baseTotal = boards.reduce((s, b) => s + investmentValueOf(b, linked).value, 0)
+  const liveAt = [...values.values()].map(v => v.live?.at ?? '').filter(Boolean).sort().pop() ?? null
   const aportesOnly = boards
     .filter(b => values.get(b.id)?.source === 'aportes')
     .map(b => ({ name: b.name, value: values.get(b.id)!.value }))
@@ -121,8 +130,16 @@ function InvestmentsPage() {
   const [manualValue, setManualValue] = useState('')
   const [manualDate, setManualDate] = useState('')
   const [manualError, setManualError] = useState('')
+  // Cripto: informar a QUANTIDADE (ex.: 0,05 BTC) — o valor passa a andar
+  // sozinho com o preço de hoje.
+  const [manualMode, setManualMode] = useState<'valor' | 'quantidade'>('valor')
+  const [manualCoin, setManualCoin] = useState('BTC')
+  const [manualQty, setManualQty] = useState('')
+  const [coinPrice, setCoinPrice] = useState<{ coin: string; price: number } | null>(null)
   const todayStr = todayISO()
-  const parsedManual = parseFloat(manualValue.replace(/\./g, '').replace(',', '.'))
+  const parsedQty = parseFloat(manualQty.replace(',', '.'))
+  const qtyValue = coinPrice && coinPrice.coin === manualCoin && parsedQty > 0 ? parsedQty * coinPrice.price : NaN
+  const parsedManual = manualMode === 'quantidade' ? qtyValue : parseFloat(manualValue.replace(/\./g, '').replace(',', '.'))
   const manualPrev = manualFor?.last_position_import ?? null
   const manualMinDate = manualPrev ? manualPrev.importedAt.slice(0, 10) : undefined
 
@@ -131,11 +148,37 @@ function InvestmentsPage() {
     setManualValue('')
     setManualDate(todayStr)
     setManualError('')
+    // Já guardada por quantidade: abre nela, com a moeda e a quantidade de antes.
+    const coinPos = board.last_position_import?.source === 'manual'
+      ? board.last_position_import.positions.find(p => p.ticker in CRYPTO_IDS)
+      : undefined
+    setManualMode(coinPos ? 'quantidade' : 'valor')
+    setManualQty(coinPos?.quantity ? String(coinPos.quantity).replace('.', ',') : '')
+    pickCoin(coinPos?.ticker ?? manualCoin)
+  }
+
+  function pickCoin(coin: string) {
+    setManualCoin(coin)
+    if (coinPrice?.coin === coin) return
+    setCoinPrice(null)
+    fetch(`/api/quotes?crypto=${coin}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(json => {
+        const price = json?.quotes?.[coin]?.price
+        if (price > 0) setCoinPrice({ coin, price })
+      })
+      .catch(() => { /* sem preço: não deixa salvar por quantidade */ })
   }
 
   async function confirmManual() {
     if (!manualFor || !(parsedManual >= 0) || !manualDate) return
-    const { error } = await saveManual(manualFor, parsedManual, manualDate)
+    const positions = manualMode === 'quantidade' && coinPrice
+      ? [{
+          ticker: manualCoin, quantity: String(parsedQty), value: parsedManual, lastPrice: coinPrice.price,
+          category: 'Criptomoedas', subcategory: '', allocation: '100%', rentabilidade: '',
+        }]
+      : []
+    const { error } = await saveManual(manualFor, parsedManual, manualDate, positions)
     if (error) { setManualError(error); return }
     setManualFor(null)
   }
@@ -301,6 +344,7 @@ function InvestmentsPage() {
             // Mesma base do Dashboard: renda prevista do Planejamento, se houver.
             income={(plan?.expected_income ?? 0) > 0 ? plan!.expected_income : monthIncome}
             goal={linkedGoal}
+            liveAt={liveAt}
           />
 
           {notice && (
@@ -337,7 +381,7 @@ function InvestmentsPage() {
           {hasPositions ? (
             <div className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)] items-start">
               <AllocationCard boards={boards} aportesOnly={aportesOnly} />
-              <PositionsTable boards={boards} />
+              <PositionsTable boards={boards} quotes={quotes} />
             </div>
           ) : (boards.some(b => b.last_position_import) || aportesOnly.length > 0) && (
             <div className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)] items-start">
@@ -347,7 +391,14 @@ function InvestmentsPage() {
 
           {hasPositions && (
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] items-start">
-              <EvolutionCard boards={boards} />
+              {hasQuotable ? (
+                <DailyEvolutionCard
+                  boards={boards} baseTotal={baseTotal} history={history} quotes={quotes}
+                  range={chartRange} onRange={setChartRange} loading={quotesLoading}
+                />
+              ) : (
+                <EvolutionCard boards={boards} />
+              )}
               <ProventosCard boards={boards} />
             </div>
           )}
@@ -426,7 +477,14 @@ function InvestmentsPage() {
 
                       {(imp || values.get(board.id)?.source === 'aportes') ? (
                         <>
-                          <p className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500 mt-3">Patrimônio</p>
+                          <p className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500 mt-3 flex items-center gap-1.5">
+                            Patrimônio
+                            {values.get(board.id)?.live && (
+                              <span className="normal-case tracking-normal inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 px-1.5 py-px text-[10px] font-semibold">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> ao vivo
+                              </span>
+                            )}
+                          </p>
                           <p className="text-lg font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(values.get(board.id)?.value ?? 0)}</p>
                           <p className="text-[11px] text-slate-400">{investmentValueLabel(values.get(board.id)!)}</p>
                           {allocTotal > 0 && (
@@ -436,6 +494,11 @@ function InvestmentsPage() {
                           )}
                           {imp && imp.source !== 'manual' && (
                             <p className="text-[11px] text-slate-400 mt-1.5">{imp.positions.length} ativo{imp.positions.length === 1 ? '' : 's'} no extrato</p>
+                          )}
+                          {values.get(board.id)?.live && Date.now() - new Date(imp!.importedAt).getTime() > 30 * 86400000 && (
+                            <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">
+                              Quantidades de {new Date(imp!.importedAt).toLocaleDateString('pt-BR')}. Comprou ou vendeu depois? Atualize a posição.
+                            </p>
                           )}
                           {(() => {
                             const c = contributions.get(board.id)
@@ -707,11 +770,43 @@ function InvestmentsPage() {
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Informe quanto vale esta conta hoje, como aparece no app do banco ou da corretora. O valor entra no seu patrimônio, na evolução e nas metas ligadas a esta conta.
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 dark:bg-white/[0.06] p-1 text-xs font-medium">
+              {(['valor', 'quantidade'] as const).map(m => (
+                <button key={m} type="button" onClick={() => setManualMode(m)}
+                  className={`rounded-md py-1.5 transition-colors ${manualMode === m ? 'bg-white dark:bg-[#111c2d] shadow-sm text-slate-800 dark:text-slate-100' : 'text-slate-500'}`}>
+                  {m === 'valor' ? 'Valor em R$' : 'Quantidade de cripto'}
+                </button>
+              ))}
+            </div>
+            {manualMode === 'quantidade' && (
               <div className="space-y-1.5">
-                <Label htmlFor="manual-value" className="text-xs">Valor atual (R$)</Label>
-                <Input id="manual-value" inputMode="decimal" placeholder="0,00" value={manualValue} onChange={e => setManualValue(e.target.value)} autoFocus />
+                <div className="grid grid-cols-[96px_1fr] gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="manual-coin" className="text-xs">Moeda</Label>
+                    <select id="manual-coin" value={manualCoin} onChange={e => pickCoin(e.target.value)}
+                      className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm dark:bg-input/30">
+                      {Object.keys(CRYPTO_IDS).map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="manual-qty" className="text-xs">Quantidade</Label>
+                    <Input id="manual-qty" inputMode="decimal" placeholder="0,05" value={manualQty} onChange={e => setManualQty(e.target.value)} autoFocus />
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  {coinPrice?.coin === manualCoin
+                    ? <>1 {manualCoin} = {formatCurrency(coinPrice.price)} hoje{parsedQty > 0 && <> · <strong className="text-slate-600 dark:text-slate-300">{formatCurrency(qtyValue)}</strong></>}. O valor desta conta passa a acompanhar o preço sozinho.</>
+                    : 'Buscando o preço de hoje…'}
+                </p>
               </div>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              {manualMode === 'valor' ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="manual-value" className="text-xs">Valor atual (R$)</Label>
+                  <Input id="manual-value" inputMode="decimal" placeholder="0,00" value={manualValue} onChange={e => setManualValue(e.target.value)} autoFocus />
+                </div>
+              ) : <div />}
               <div className="space-y-1.5">
                 <Label htmlFor="manual-date" className="text-xs">Valor de</Label>
                 <Input id="manual-date" type="date" value={manualDate} min={manualMinDate} max={todayStr} onChange={e => setManualDate(e.target.value)} />
@@ -725,7 +820,7 @@ function InvestmentsPage() {
                 </span>
               </div>
             )}
-            {(manualPrev?.positions?.length ?? 0) > 0 && (
+            {(manualPrev?.positions?.length ?? 0) > 0 && manualPrev?.source !== 'manual' && (
               <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2">
                 Esta conta tem a lista de ativos da última planilha. Com um valor informado, a divisão por ativo deixa de aparecer — para tê-la de volta, use &ldquo;Importar posição&rdquo; com a planilha nova.
               </p>
