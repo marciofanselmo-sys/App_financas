@@ -276,14 +276,14 @@ export function PositionsTable({ boards, quotes = {} }: { boards: TransactionBoa
         : 'Clique num ativo para ver quantidade e preço médio'}
       action={<span className="text-xs text-slate-400 shrink-0">{rows.length} ativo{rows.length === 1 ? '' : 's'}</span>}>
       <div className="mt-3 overflow-x-auto">
-        <table className={cn('w-full text-sm', live ? 'min-w-[620px]' : 'min-w-[520px]')}>
+        <table className={cn('w-full text-sm', live ? 'min-w-[680px]' : 'min-w-[560px]')}>
           <thead>
             <tr className="text-[11px] text-slate-400 uppercase tracking-wide">
               <th className="text-left font-semibold py-2">Ativo</th>
-              <th className="text-left font-semibold">Classe</th>
-              <th className="text-right font-semibold">Rentab.</th>
-              {live && <th className="text-right font-semibold">Preço hoje</th>}
-              <th className="text-right font-semibold">Valor</th>
+              <th className="text-left font-semibold pl-3">Classe</th>
+              <th className="text-right font-semibold pl-3">Rentab.</th>
+              {live && <th className="text-right font-semibold pl-3 whitespace-nowrap">Preço hoje</th>}
+              <th className="text-right font-semibold pl-3">Valor</th>
               <th className="text-right font-semibold w-36">% da carteira</th>
             </tr>
           </thead>
@@ -304,16 +304,16 @@ export function PositionsTable({ boards, quotes = {} }: { boards: TransactionBoa
                     <td className="py-2 font-medium text-slate-800 dark:text-slate-100">
                       <span className="flex items-center gap-1.5 min-w-0">
                         <ChevronRight className={cn('h-3.5 w-3.5 text-slate-400 shrink-0 transition-transform', isOpen && 'rotate-90', !hasDetail && 'invisible')} />
-                        <span className="truncate" title={pos.ticker}>{pos.ticker}</span>
+                        <span className="truncate max-w-[160px]" title={pos.ticker}>{pos.ticker}</span>
                       </span>
                     </td>
-                    <td className="text-xs text-slate-500 dark:text-slate-400">
+                    <td className="text-xs text-slate-500 dark:text-slate-400 pl-3">
                       {pos.category || 'Outros'}{pos.subcategory ? ` · ${pos.subcategory.replace(/^Renda Variável /, '')}` : ''}
                       {multi && <span className="text-slate-400"> · {board}</span>}
                     </td>
-                    <td className={cn('text-right text-xs tabular-nums', rentColor(pos.rentabilidade))}>{pos.rentabilidade || '—'}</td>
+                    <td className={cn('text-right text-xs tabular-nums pl-3', rentColor(pos.rentabilidade))}>{pos.rentabilidade || '—'}</td>
                     {live && (
-                      <td className="text-right tabular-nums text-xs">
+                      <td className="text-right tabular-nums text-xs pl-3 whitespace-nowrap">
                         {price != null ? (
                           <>
                             <span className="block text-slate-700 dark:text-slate-200">{formatCurrency(price)}</span>
@@ -324,7 +324,7 @@ export function PositionsTable({ boards, quotes = {} }: { boards: TransactionBoa
                         ) : <span className="text-slate-400">—</span>}
                       </td>
                     )}
-                    <td className="text-right tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(value)}</td>
+                    <td className="text-right tabular-nums text-slate-700 dark:text-slate-200 pl-3 whitespace-nowrap">{formatCurrency(value)}</td>
                     <td className="pl-4">
                       <div className="flex items-center gap-2 justify-end">
                         <div className="h-1.5 w-20 bg-slate-100 dark:bg-white/[0.08] rounded-full overflow-hidden">
