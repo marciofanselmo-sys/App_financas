@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronRight, Info, Upload, Download, Wallet, PiggyBank, TrendingUp, MoreVertical, Ban, type LucideIcon } from 'lucide-react'
+import { ChevronRight, Info, Upload, Download, Wallet, PiggyBank, TrendingUp, MoreVertical, Ban, Activity, ListOrdered, CircleDollarSign, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 function Item({ icon: Icon, iconClass, title, children }: { icon: LucideIcon; iconClass?: string; title: string; children: React.ReactNode }) {
@@ -49,12 +49,26 @@ export function InvestmentBoardHelp() {
               Total aportado = ponto de partida (o que já estava aplicado, se informado) + os aportes. Rendimento =
               patrimônio − total aportado. Fica mais preciso quanto mais recente for a posição.
             </Item>
+            <Item icon={Activity} iconClass="text-emerald-600" title="Ao vivo e desde a posição.">
+              Ações, FIIs, ETFs e cripto andam com o preço de hoje (até 30 min de atraso): quantidade da posição ×
+              preço de hoje. &ldquo;Desde a posição&rdquo; é só o quanto o preço mexeu nesses ativos depois da data da
+              planilha. Renda fixa, Tesouro e saldo ficam no valor do extrato.
+            </Item>
+            <Item icon={ListOrdered} title="Ativos desta conta.">
+              &ldquo;Rentab.&rdquo; vem da planilha e compara com o seu preço médio de compra. &ldquo;Desde&rdquo;
+              compara o preço de hoje com o preço do dia da planilha. O gráfico dia a dia usa a quantidade de hoje com
+              o preço de cada dia.
+            </Item>
           </div>
 
           <div className="space-y-4">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">O que dá para fazer</p>
             <Item icon={Upload} title="Atualizar posição.">
               Importa a planilha de posição da corretora: atualiza ativos, patrimônio e rendimentos a receber.
+            </Item>
+            <Item icon={CircleDollarSign} title="Atualizar valor.">
+              Informa à mão quanto a conta vale hoje. Em cripto, dá para informar a quantidade (ex.: 0,05 BTC) e o
+              valor passa a acompanhar o preço sozinho.
             </Item>
             <Item icon={MoreVertical} title="Menu ⋮ de cada aporte.">
               &ldquo;Mudar aporte para…&rdquo; leva o aporte para outra conta de investimento (sai desta na hora);

@@ -138,3 +138,6 @@ export function dailySeries(
     value: baseTotal + holdings.reduce((s, h) => s + h.quantity * closeOn(h, date) - h.valueAtImport, 0),
   }))
 }
+
+/** Posição com mais de 30 dias: as quantidades podem não ser mais as de hoje. */
+export const isPositionStale = (importedAt: string) => Date.now() - new Date(importedAt).getTime() > 30 * 86400000

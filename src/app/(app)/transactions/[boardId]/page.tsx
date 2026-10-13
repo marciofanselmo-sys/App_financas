@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useMemo, useEffect, useCallback} from 'react'
-import { useQuotes } from '@/hooks/use-quotes'
 import { decisionKey } from '@/lib/recurring-groups'
 import { logSafeError, missingMigrationMessage } from '@/lib/supabase-error'
 import { balanceFromTransactions, accountBalance } from '@/lib/dashboard-patrimony'
@@ -13,7 +12,7 @@ import { useTransactions } from '@/hooks/use-transactions'
 import { useCategories } from '@/hooks/use-categories'
 import { useRules, applyTypeToExisting, setTransactionInternal, setTransactionsInternal, setTransactionsAporte } from '@/hooks/use-rules'
 import { useInvestmentContributions } from '@/hooks/use-investment-contributions'
-import { contributionsForBoard, investmentValueOf, investmentValueLabel } from '@/lib/investment-contributions'
+import { contributionsForBoard } from '@/lib/investment-contributions'
 import { isInternalMovement } from '@/lib/internal-movement'
 import { usePositionImport } from '@/hooks/use-position-import'
 import { TransactionTable } from '@/components/transactions/transaction-table'
@@ -24,8 +23,11 @@ import { ExportCSVModal } from '@/components/transactions/export-csv-modal'
 import { DiluteDialog } from '@/components/transactions/dilute-dialog'
 import { BoardHelp } from '@/components/transactions/board-help'
 import { InvestmentBoardHelp } from '@/components/investments/investment-board-help'
+import { InvestmentAccountOverview } from '@/components/investments/investment-account-overview'
+import { ProventosCard } from '@/components/investments/investments-overview'
+import { ManualValueDialog } from '@/components/investments/manual-value-dialog'
 import { BoardIcon } from '@/components/transactions/board-icon'
-import { formatCurrency, rentColor, CategorySummary, PositionsBreakdown, ProventosBreakdown } from '@/components/investments/rico-position-summary'
+import { formatCurrency, rentColor } from '@/components/investments/rico-position-summary'
 import { Transaction, TransactionType } from '@/types'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -35,7 +37,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import {
   ArrowLeft, Plus, Upload, Download, Search, X, MoreVertical, PiggyBank, ArrowRightLeft,
-  ChevronDown, ChevronUp, RefreshCw, AlertCircle, CheckCircle2, ReceiptText,
+  ChevronDown, RefreshCw, CircleDollarSign, AlertCircle, CheckCircle2, ReceiptText,
 } from 'lucide-react'
 import { PeriodFilter } from '@/components/dashboard/period-filter'
 import { usePlan } from '@/hooks/use-subscription'
@@ -83,8 +85,6 @@ function BoardDetailInner() {
 
   const { boards, loading: boardsLoading, updateBoard } = useTransactionBoards()
   const board = boards.find(b => b.id === boardId)
-  // Cotações de hoje, só para conta de investimento com ações/FIIs/cripto.
-  const { quotes: boardQuotes } = useQuotes(board?.is_investment ? [board] : [])
   const { categories } = useCategories()
   const { syncCategoryToRule } = useRules()
   // Conta de investimento é sempre atualizada com o extrato inteiro (não faz
@@ -101,8 +101,9 @@ function BoardDetailInner() {
   const {
     fileRef: positionFileRef, preview: positionPreview, loading: positionLoading, error: positionImportError,
     open: openPositionImport, handleFile: handlePositionFile, confirm: confirmPositionImport,
-    cancel: cancelPositionImport, dismissError: dismissPositionError,
+    cancel: cancelPositionImport, dismissError: dismissPositionError, saveManual,
   } = usePositionImport(updateBoard)
+  const [manualOpen, setManualOpen] = useState(false)
 
   const now = new Date()
   const [search, setSearch] = useState('')
@@ -124,8 +125,6 @@ function BoardDetailInner() {
   // Mesmo objeto enquanto a janela está aberta (não zera ao redesenhar a página).
   const newNoteTarget = useMemo(() => (newNoteOpen ? { boardId } : null), [newNoteOpen, boardId])
   const [diluteError, setDiluteError] = useState<string | null>(null)
-  const [expandedPos, setExpandedPos] = useState(false)
-  const [expandedProventos, setExpandedProventos] = useState(false)
   const [ruleSyncError, setRuleSyncError] = useState<string | null>(null)
   const [ruleSyncSuccess, setRuleSyncSuccess] = useState<{
     category?: { name: string; applied: number }
@@ -433,6 +432,27 @@ function BoardDetailInner() {
     )
   }
 
+  // Entradas, saídas e saldo do período e dos filtros. Lado a lado também no
+  // celular — empilhados, ocupavam a tela inteira.
+  const statsCards = (
+    <div className="grid grid-cols-3 gap-2 sm:gap-3">
+      <div className="bg-white dark:bg-[#111c2d] rounded-2xl px-2 py-3 sm:p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06] min-w-0">
+        <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Entradas</p>
+        <p className="text-[13px] sm:text-base font-semibold text-green-600 tabular-nums truncate">{formatCurrency(stats.income)}</p>
+      </div>
+      <div className="bg-white dark:bg-[#111c2d] rounded-2xl px-2 py-3 sm:p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06] min-w-0">
+        <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Saídas</p>
+        <p className="text-[13px] sm:text-base font-semibold text-red-500 tabular-nums truncate">{formatCurrency(stats.expenses)}</p>
+      </div>
+      <div className="bg-white dark:bg-[#111c2d] rounded-2xl px-2 py-3 sm:p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06] min-w-0">
+        <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Saldo<span className="hidden sm:inline"> do período</span></p>
+        <p className={`text-[13px] sm:text-base font-semibold tabular-nums truncate ${stats.balance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500'}`}>
+          {formatCurrency(stats.balance)}
+        </p>
+      </div>
+    </div>
+  )
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       {/* Erro ao sincronizar a regra automática — antes só ia pro console do
@@ -530,6 +550,12 @@ function BoardDetailInner() {
               <span className="hidden sm:inline">{board.last_position_import ? 'Atualizar posição' : 'Importar posição'}</span>
             </Button>
           )}
+          {isInvestmentBoard && (
+            <Button variant="outline" size="sm" className="gap-2" disabled={positionLoading} onClick={() => setManualOpen(true)}>
+              <CircleDollarSign className="h-4 w-4" />
+              <span className="hidden sm:inline">Atualizar valor</span>
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -570,70 +596,16 @@ function BoardDetailInner() {
         </div>
       </div>
 
-      {/* Os três refletem o período e os filtros ativos. Lado a lado também
-          no celular — empilhados, ocupavam a tela inteira. */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        <div className="bg-white dark:bg-[#111c2d] rounded-2xl px-2 py-3 sm:p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06] min-w-0">
-          <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Entradas</p>
-          <p className="text-[13px] sm:text-base font-semibold text-green-600 tabular-nums truncate">{formatCurrency(stats.income)}</p>
-        </div>
-        <div className="bg-white dark:bg-[#111c2d] rounded-2xl px-2 py-3 sm:p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06] min-w-0">
-          <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Saídas</p>
-          <p className="text-[13px] sm:text-base font-semibold text-red-500 tabular-nums truncate">{formatCurrency(stats.expenses)}</p>
-        </div>
-        <div className="bg-white dark:bg-[#111c2d] rounded-2xl px-2 py-3 sm:p-4 text-center shadow-sm border border-slate-100 dark:border-white/[0.06] min-w-0">
-          <p className="text-xs text-slate-400 dark:text-slate-500 mb-0.5">Saldo<span className="hidden sm:inline"> do período</span></p>
-          <p className={`text-[13px] sm:text-base font-semibold tabular-nums truncate ${stats.balance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500'}`}>
-            {formatCurrency(stats.balance)}
-          </p>
-        </div>
-      </div>
+      {!isInvestmentBoard && statsCards}
 
-      {/* Posição da carteira — só pra conta de investimento */}
-      {/* Conta de investimento: patrimônio e aportes lado a lado (empilham no celular). */}
+      {/* Conta de investimento: números, evolução dia a dia e ativos com o preço de hoje. */}
+      {isInvestmentBoard && board && (
+        <InvestmentAccountOverview board={board} aportesIn={aportesIn} onUpdatePosition={() => openPositionImport(board)} />
+      )}
+
+      {/* Aportes recebidos e rendimentos a receber lado a lado (empilham no celular). */}
       {isInvestmentBoard && (
-        <div className="grid gap-4 lg:grid-cols-2 items-start">
-        {isInvestmentBoard && board.last_position_import && (
-          <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-4 shadow-sm border border-slate-100 dark:border-white/[0.06]">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="text-xs text-slate-400 dark:text-slate-500">Patrimônio (posição)</p>
-                <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{formatCurrency(board.last_position_import.patrimonio)}</p>
-              </div>
-              <div className="flex items-center gap-1.5">
-                {board.last_position_import.positions.length > 0 && (
-                  <Button variant="ghost" size="sm" className="text-xs gap-1 h-8 text-slate-500" onClick={() => setExpandedPos(v => !v)}>
-                    {expandedPos ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                    {board.last_position_import.positions.length} ativos
-                  </Button>
-                )}
-                {board.last_position_import.proventos && board.last_position_import.proventos.length > 0 && (
-                  <Button variant="ghost" size="sm" className="text-xs gap-1 h-8 text-slate-500" onClick={() => setExpandedProventos(v => !v)}>
-                    {expandedProventos ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                    {board.last_position_import.proventos.length} rendimentos previstos
-                  </Button>
-                )}
-              </div>
-            </div>
-            {board.last_position_import.positions.length > 0 && (
-              <div className="mt-3">
-                <CategorySummary positions={board.last_position_import.positions} />
-              </div>
-            )}
-            {expandedPos && (
-              <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
-                <PositionsBreakdown positions={board.last_position_import.positions} />
-              </div>
-            )}
-            {expandedProventos && board.last_position_import.proventos && (
-              <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">Próximos Rendimentos</p>
-                <ProventosBreakdown proventos={board.last_position_import.proventos} />
-              </div>
-            )}
-          </div>
-        )}
-
+        <div className={`grid gap-4 items-start ${board?.last_position_import ? 'lg:grid-cols-[minmax(0,1fr)_340px]' : ''}`}>
         {isInvestmentBoard && aporteSummary && (
           <div className="bg-white dark:bg-[#111c2d] rounded-2xl p-4 shadow-sm border border-slate-100 dark:border-white/[0.06]">
             <div className="flex items-start justify-between gap-3">
@@ -646,25 +618,6 @@ function BoardDetailInner() {
               <div className="text-right shrink-0">
                 <p className="text-[11px] text-slate-400">Total aportado</p>
                 <p className="text-lg font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(aporteSummary.aportado)}</p>
-                {(() => {
-                  // Mesma regra do valor usada em Investimentos e no Dashboard.
-                  const iv = investmentValueOf(board, aportesIn, boardQuotes)
-                  if (iv.source === 'none') return null
-                  const gain = iv.gain
-                  return (
-                    <>
-                      <p className="text-[11px] text-slate-400 mt-1">
-                        valor atual {formatCurrency(iv.value)} · {investmentValueLabel(iv)}
-                      </p>
-                      {gain != null && (
-                        <p className={`text-[11px] font-semibold tabular-nums ${gain >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                          rendimento {gain >= 0 ? '+' : '−'}{formatCurrency(Math.abs(gain))}
-                          {aporteSummary.aportado > 0 && ` (${gain >= 0 ? '+' : ''}${((gain / aporteSummary.aportado) * 100).toFixed(1).replace('.', ',')}%)`}
-                        </p>
-                      )}
-                    </>
-                  )
-                })()}
               </div>
             </div>
             {aporteSummary.aportes.length === 0 ? (
@@ -720,6 +673,7 @@ function BoardDetailInner() {
             )}
           </div>
         )}
+        {board?.last_position_import && <ProventosCard boards={[board]} />}
         </div>
       )}
 
@@ -727,6 +681,15 @@ function BoardDetailInner() {
           busca e lista vazias não têm o que mostrar. Com extrato importado, voltam. */}
       {!(isInvestmentBoard && allBoardTxs.length === 0) && (
         <>
+        {isInvestmentBoard && (
+          <div className="pt-2 space-y-3">
+            <div>
+              <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Lançamentos do extrato</h2>
+              <p className="text-xs text-slate-400 dark:text-slate-500">Entradas e saídas da conta, como vieram do extrato importado</p>
+            </div>
+            {statsCards}
+          </div>
+        )}
         {/* Filters — no celular: busca ao lado do mês, e tipo e categoria
             lado a lado na linha de baixo */}
         <div className="flex flex-wrap gap-2 sm:gap-3 items-center">
@@ -897,6 +860,7 @@ function BoardDetailInner() {
 
       {isInvestmentBoard && (
         <>
+          <ManualValueDialog board={manualOpen ? board : null} onClose={() => setManualOpen(false)} saveManual={saveManual} saving={positionLoading} />
           <input ref={positionFileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handlePositionFile} />
 
           <Dialog open={!!positionPreview || !!positionImportError} onOpenChange={v => { if (!v) { cancelPositionImport(); dismissPositionError() } }}>

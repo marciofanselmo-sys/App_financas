@@ -197,13 +197,15 @@ export function InvestmentsSummary({ boards, total: shownTotal, aportesOnlyCount
 }
 
 // ── 2. Onde está o dinheiro ────────────────────────────────────────────────
-export function AllocationCard({ boards, aportesOnly = [] }: { boards: TransactionBoard[]; aportesOnly?: { name: string; value: number }[] }) {
+export function AllocationCard({ boards, aportesOnly = [], subtitle = 'Por classe de ativo · todas as contas' }: {
+  boards: TransactionBoard[]; aportesOnly?: { name: string; value: number }[]; subtitle?: string
+}) {
   const items = allocationOf(boards, aportesOnly)
   const total = items.reduce((s, i) => s + i.value, 0)
   if (items.length === 0) return null
   const hasCash = items.some(i => i.name === 'Saldo na corretora')
   return (
-    <Card icon={ChartPie} title="Onde está o dinheiro" subtitle="Por classe de ativo · todas as contas">
+    <Card icon={ChartPie} title="Onde está o dinheiro" subtitle={subtitle}>
       <div className="flex items-center gap-4 mt-4">
         <div className="h-32 w-32 shrink-0 [&_path]:stroke-white dark:[&_path]:stroke-[#111c2d]">
           <ResponsiveContainer width="100%" height="100%">
@@ -359,6 +361,136 @@ export function PositionsTable({ boards, quotes = {} }: { boards: TransactionBoa
   )
 }
 
+// ── 3b. Ativos de UMA conta (tela da conta): tabela completa ───────────────
+export function AccountAssetsTable({ board, quotes = {} }: { board: TransactionBoard; quotes?: QuoteMap }) {
+  const imp = board.last_position_import
+  const rows = useMemo(() => {
+    if (!imp) return []
+    const holdings = new Map(holdingsOfBoard(board).map(h => [h.symbol, h]))
+    return imp.positions.map(p => {
+      const h = holdings.get(p.ticker.trim().toUpperCase())
+      const q = h ? quotes[h.symbol] : undefined
+      return {
+        pos: p,
+        qty: h?.quantity ?? null,
+        priceAt: h?.priceAtImport ?? null,
+        price: q ? q.price : null,
+        delta: h && q ? h.quantity * q.price - h.valueAtImport : 0,
+        change: h && q && h.priceAtImport > 0 ? (q.price / h.priceAtImport - 1) * 100 : null,
+        value: h && q ? h.quantity * q.price : p.value,
+      }
+    }).sort((a, b) => b.value - a.value)
+  }, [board, imp, quotes])
+  if (!imp || rows.length === 0) return null
+  // O que o patrimônio tem a mais que os ativos é saldo sem aplicar.
+  const cash = imp.source === 'manual' ? 0 : Math.max(0, imp.patrimonio - imp.positions.reduce((s, p) => s + p.value, 0))
+  const total = rows.reduce((s, r) => s + r.value, 0) + cash
+  const totalDelta = rows.reduce((s, r) => s + r.delta, 0)
+  const live = rows.some(r => r.price != null)
+  const d = new Date(imp.importedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+  const classes = [...new Set(rows.map(r => r.pos.category || 'Outros'))]
+  const qtyText = (n: number) => n.toLocaleString('pt-BR', { maximumFractionDigits: 8 })
+  const dash = <span className="text-slate-300 dark:text-slate-600">—</span>
+
+  return (
+    <Card icon={ListOrdered} title="Ativos desta conta"
+      subtitle={live
+        ? `Preço de hoje (até 30 min de atraso). "Desde ${d}" = quanto o preço mudou desde a posição; "Rentab." = contra o seu preço médio`
+        : `Posição de ${d}. "Rentab." = contra o seu preço médio`}
+      action={<span className="text-xs text-slate-400 shrink-0">{rows.length + (cash > 0.005 ? 1 : 0)} itens</span>}>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full text-sm min-w-[760px]">
+          <thead>
+            <tr className="text-[11px] text-slate-400 uppercase tracking-wide whitespace-nowrap">
+              <th className="text-left font-semibold py-2">Ativo</th>
+              <th className="text-right font-semibold pl-3">Rentab.</th>
+              <th className="text-right font-semibold pl-3">Qtd.</th>
+              <th className="text-right font-semibold pl-3">Preço {d}</th>
+              {live && <th className="text-right font-semibold pl-3">Preço hoje</th>}
+              {live && <th className="text-right font-semibold pl-3">Desde {d}</th>}
+              <th className="text-right font-semibold pl-3">Valor{live ? ' hoje' : ''}</th>
+              <th className="text-right font-semibold pl-3 w-32">% da conta</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
+            {rows.map(({ pos, qty, priceAt, price, change, value }, i) => {
+              const pct = total > 0 ? (value / total) * 100 : 0
+              const color = classColor(pos.category || 'Outros', classes.indexOf(pos.category || 'Outros'))
+              return (
+                <tr key={`${pos.ticker}-${i}`} className="whitespace-nowrap">
+                  <td className="py-2">
+                    <span className="block font-medium text-slate-800 dark:text-slate-100 truncate max-w-[240px]" title={pos.ticker}>{pos.ticker}</span>
+                    <span className="block text-[11px] text-slate-400">
+                      {pos.category || 'Outros'}{pos.subcategory ? ` · ${pos.subcategory.replace(/^Renda Variável /, '')}` : ''}
+                    </span>
+                  </td>
+                  <td className={cn('text-right text-xs tabular-nums pl-3', rentColor(pos.rentabilidade))}>{pos.rentabilidade || dash}</td>
+                  <td className="text-right text-xs tabular-nums pl-3 text-slate-600 dark:text-slate-300">{qty != null ? qtyText(qty) : pos.quantity || dash}</td>
+                  <td className="text-right text-xs tabular-nums pl-3 text-slate-600 dark:text-slate-300">{priceAt != null ? formatCurrency(priceAt) : pos.lastPrice ? formatCurrency(pos.lastPrice) : dash}</td>
+                  {live && (price != null ? (
+                    <>
+                      <td className="text-right text-xs tabular-nums pl-3 font-semibold text-slate-800 dark:text-slate-100">{formatCurrency(price)}</td>
+                      <td className={cn('text-right text-xs tabular-nums pl-3 font-semibold', (change ?? 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500')}>
+                        {change != null ? pctText(change) : dash}
+                      </td>
+                    </>
+                  ) : (
+                    <td colSpan={2} className="text-right text-[11px] pl-3 text-slate-400">valor do extrato</td>
+                  ))}
+                  <td className="text-right tabular-nums pl-3 font-semibold text-slate-800 dark:text-slate-100">{formatCurrency(value)}</td>
+                  <td className="pl-3">
+                    <div className="flex items-center gap-2 justify-end">
+                      <div className="h-1.5 w-16 bg-slate-100 dark:bg-white/[0.08] rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
+                      </div>
+                      <span className="text-xs tabular-nums text-slate-500 w-11 text-right">{pct.toFixed(1).replace('.', ',')}%</span>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+            {cash > 0.005 && (
+              <tr className="whitespace-nowrap">
+                <td className="py-2">
+                  <span className="block font-medium text-slate-800 dark:text-slate-100">Saldo na corretora</span>
+                  <span className="block text-[11px] text-slate-400">Dinheiro ainda não aplicado</span>
+                </td>
+                <td className="text-right pl-3">{dash}</td>
+                <td className="text-right pl-3">{dash}</td>
+                <td className="text-right pl-3">{dash}</td>
+                {live && <td colSpan={2} className="text-right text-[11px] pl-3 text-slate-400">valor do extrato</td>}
+                <td className="text-right tabular-nums pl-3 font-semibold text-slate-800 dark:text-slate-100">{formatCurrency(cash)}</td>
+                <td className="pl-3">
+                  <div className="flex items-center gap-2 justify-end">
+                    <div className="h-1.5 w-16 bg-slate-100 dark:bg-white/[0.08] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-slate-400" style={{ width: `${total > 0 ? (cash / total) * 100 : 0}%` }} />
+                    </div>
+                    <span className="text-xs tabular-nums text-slate-500 w-11 text-right">{(total > 0 ? (cash / total) * 100 : 0).toFixed(1).replace('.', ',')}%</span>
+                  </div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-slate-200 dark:border-white/[0.1] font-semibold whitespace-nowrap">
+              <td className="py-2 text-slate-800 dark:text-slate-100">Total</td>
+              <td colSpan={3} />
+              {live && <td />}
+              {live && (
+                <td className={cn('text-right text-xs tabular-nums pl-3', totalDelta >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500')}>
+                  {totalDelta >= 0 ? '+' : '−'}{formatCurrency(Math.abs(totalDelta))}
+                </td>
+              )}
+              <td className="text-right tabular-nums pl-3 text-slate-800 dark:text-slate-100">{formatCurrency(total)}</td>
+              <td className="text-right text-xs tabular-nums text-slate-500">100%</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </Card>
+  )
+}
+
 // ── 4. Evolução do patrimônio ──────────────────────────────────────────────
 export function EvolutionCard({ boards }: { boards: TransactionBoard[] }) {
   const data = buildConsolidatedPatrimonyHistory(boards)
@@ -389,7 +521,8 @@ export function EvolutionCard({ boards }: { boards: TransactionBoard[] }) {
 // ── 4b. Evolução dia a dia (com os preços de cada dia) ─────────────────────
 const RANGE_LABEL: Record<QuoteRange, string> = { '5d': '7 dias', '1mo': '30 dias', '3mo': '3 meses', '1y': '1 ano' }
 
-export function DailyEvolutionCard({ boards, baseTotal, history, quotes, range, onRange, loading }: {
+export function DailyEvolutionCard({ boards, baseTotal, history, quotes, range, onRange, loading, title = 'Evolução da carteira' }: {
+  title?: string
   boards: TransactionBoard[]
   /** Soma do valor das contas sem os preços de hoje (extrato ou aportes). */
   baseTotal: number
@@ -413,7 +546,7 @@ export function DailyEvolutionCard({ boards, baseTotal, history, quotes, range, 
   const color = up ? '#16a34a' : '#ef4444'
 
   return (
-    <Card icon={TrendingUp} title="Evolução da carteira" subtitle="Dia a dia, com o preço de fechamento de cada dia"
+    <Card icon={TrendingUp} title={title} subtitle="Dia a dia, com o preço de fechamento de cada dia"
       action={
         <div className="flex gap-1 shrink-0">
           {(Object.keys(RANGE_LABEL) as QuoteRange[]).map(r => (

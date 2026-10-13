@@ -16,7 +16,6 @@ import {
   Plus, Pencil, Trash2, PiggyBank, ChevronRight, AlertTriangle,
   ChevronDown, Upload, RefreshCw, AlertCircle, Pin, PinOff, CircleDollarSign, HandCoins, CheckCircle2, X,
 } from 'lucide-react'
-import { todayISO } from '@/utils/local-date'
 import { useRules } from '@/hooks/use-rules'
 import { useInvestmentContributions } from '@/hooks/use-investment-contributions'
 import { contributionsForBoard, investmentValueOf, investmentValueLabel } from '@/lib/investment-contributions'
@@ -34,7 +33,8 @@ import {
   InvestmentsSummary, AllocationCard, PositionsTable, EvolutionCard, DailyEvolutionCard, ProventosCard, allocationOf,
 } from '@/components/investments/investments-overview'
 import { useQuotes, type QuoteRange } from '@/hooks/use-quotes'
-import { CRYPTO_IDS, symbolsOf } from '@/lib/quotes'
+import { isPositionStale, symbolsOf } from '@/lib/quotes'
+import { ManualValueDialog } from '@/components/investments/manual-value-dialog'
 import { InvestmentsHelp } from '@/components/investments/investments-help'
 
 interface AccountTemplate {
@@ -127,61 +127,7 @@ function InvestmentsPage() {
   // "Atualizar valor": para contas sem planilha (cripto, previdência, Tesouro,
   // outra corretora) — o valor informado vira a posição atual da conta.
   const [manualFor, setManualFor] = useState<TransactionBoard | null>(null)
-  const [manualValue, setManualValue] = useState('')
-  const [manualDate, setManualDate] = useState('')
-  const [manualError, setManualError] = useState('')
-  // Cripto: informar a QUANTIDADE (ex.: 0,05 BTC) — o valor passa a andar
-  // sozinho com o preço de hoje.
-  const [manualMode, setManualMode] = useState<'valor' | 'quantidade'>('valor')
-  const [manualCoin, setManualCoin] = useState('BTC')
-  const [manualQty, setManualQty] = useState('')
-  const [coinPrice, setCoinPrice] = useState<{ coin: string; price: number } | null>(null)
-  const todayStr = todayISO()
-  const parsedQty = parseFloat(manualQty.replace(',', '.'))
-  const qtyValue = coinPrice && coinPrice.coin === manualCoin && parsedQty > 0 ? parsedQty * coinPrice.price : NaN
-  const parsedManual = manualMode === 'quantidade' ? qtyValue : parseFloat(manualValue.replace(/\./g, '').replace(',', '.'))
-  const manualPrev = manualFor?.last_position_import ?? null
-  const manualMinDate = manualPrev ? manualPrev.importedAt.slice(0, 10) : undefined
-
-  function openManual(board: TransactionBoard) {
-    setManualFor(board)
-    setManualValue('')
-    setManualDate(todayStr)
-    setManualError('')
-    // Já guardada por quantidade: abre nela, com a moeda e a quantidade de antes.
-    const coinPos = board.last_position_import?.source === 'manual'
-      ? board.last_position_import.positions.find(p => p.ticker in CRYPTO_IDS)
-      : undefined
-    setManualMode(coinPos ? 'quantidade' : 'valor')
-    setManualQty(coinPos?.quantity ? String(coinPos.quantity).replace('.', ',') : '')
-    pickCoin(coinPos?.ticker ?? manualCoin)
-  }
-
-  function pickCoin(coin: string) {
-    setManualCoin(coin)
-    if (coinPrice?.coin === coin) return
-    setCoinPrice(null)
-    fetch(`/api/quotes?crypto=${coin}`)
-      .then(r => (r.ok ? r.json() : null))
-      .then(json => {
-        const price = json?.quotes?.[coin]?.price
-        if (price > 0) setCoinPrice({ coin, price })
-      })
-      .catch(() => { /* sem preço: não deixa salvar por quantidade */ })
-  }
-
-  async function confirmManual() {
-    if (!manualFor || !(parsedManual >= 0) || !manualDate) return
-    const positions = manualMode === 'quantidade' && coinPrice
-      ? [{
-          ticker: manualCoin, quantity: String(parsedQty), value: parsedManual, lastPrice: coinPrice.price,
-          category: 'Criptomoedas', subcategory: '', allocation: '100%', rentabilidade: '',
-        }]
-      : []
-    const { error } = await saveManual(manualFor, parsedManual, manualDate, positions)
-    if (error) { setManualError(error); return }
-    setManualFor(null)
-  }
+  const openManual = (board: TransactionBoard) => setManualFor(board)
 
   // Fixar conta de investimento = entra SÓ nos totais dos Relatórios.
   // Dashboard e analytics excluem investimentos sempre, fixados ou não
@@ -495,7 +441,7 @@ function InvestmentsPage() {
                           {imp && imp.source !== 'manual' && (
                             <p className="text-[11px] text-slate-400 mt-1.5">{imp.positions.length} ativo{imp.positions.length === 1 ? '' : 's'} no extrato</p>
                           )}
-                          {values.get(board.id)?.live && Date.now() - new Date(imp!.importedAt).getTime() > 30 * 86400000 && (
+                          {values.get(board.id)?.live && isPositionStale(imp!.importedAt) && (
                             <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">
                               Quantidades de {new Date(imp!.importedAt).toLocaleDateString('pt-BR')}. Comprou ou vendeu depois? Atualize a posição.
                             </p>
@@ -763,78 +709,7 @@ function InvestmentsPage() {
       )}
 
       {/* Atualizar valor à mão */}
-      <Dialog open={!!manualFor} onOpenChange={v => { if (!v) setManualFor(null) }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader><DialogTitle>Atualizar valor — {manualFor?.name}</DialogTitle></DialogHeader>
-          <div className="space-y-4 pt-1">
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Informe quanto vale esta conta hoje, como aparece no app do banco ou da corretora. O valor entra no seu patrimônio, na evolução e nas metas ligadas a esta conta.
-            </p>
-            <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 dark:bg-white/[0.06] p-1 text-xs font-medium">
-              {(['valor', 'quantidade'] as const).map(m => (
-                <button key={m} type="button" onClick={() => setManualMode(m)}
-                  className={`rounded-md py-1.5 transition-colors ${manualMode === m ? 'bg-white dark:bg-[#111c2d] shadow-sm text-slate-800 dark:text-slate-100' : 'text-slate-500'}`}>
-                  {m === 'valor' ? 'Valor em R$' : 'Quantidade de cripto'}
-                </button>
-              ))}
-            </div>
-            {manualMode === 'quantidade' && (
-              <div className="space-y-1.5">
-                <div className="grid grid-cols-[96px_1fr] gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="manual-coin" className="text-xs">Moeda</Label>
-                    <select id="manual-coin" value={manualCoin} onChange={e => pickCoin(e.target.value)}
-                      className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm dark:bg-input/30">
-                      {Object.keys(CRYPTO_IDS).map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="manual-qty" className="text-xs">Quantidade</Label>
-                    <Input id="manual-qty" inputMode="decimal" placeholder="0,05" value={manualQty} onChange={e => setManualQty(e.target.value)} autoFocus />
-                  </div>
-                </div>
-                <p className="text-[11px] text-slate-400">
-                  {coinPrice?.coin === manualCoin
-                    ? <>1 {manualCoin} = {formatCurrency(coinPrice.price)} hoje{parsedQty > 0 && <> · <strong className="text-slate-600 dark:text-slate-300">{formatCurrency(qtyValue)}</strong></>}. O valor desta conta passa a acompanhar o preço sozinho.</>
-                    : 'Buscando o preço de hoje…'}
-                </p>
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-3">
-              {manualMode === 'valor' ? (
-                <div className="space-y-1.5">
-                  <Label htmlFor="manual-value" className="text-xs">Valor atual (R$)</Label>
-                  <Input id="manual-value" inputMode="decimal" placeholder="0,00" value={manualValue} onChange={e => setManualValue(e.target.value)} autoFocus />
-                </div>
-              ) : <div />}
-              <div className="space-y-1.5">
-                <Label htmlFor="manual-date" className="text-xs">Valor de</Label>
-                <Input id="manual-date" type="date" value={manualDate} min={manualMinDate} max={todayStr} onChange={e => setManualDate(e.target.value)} />
-              </div>
-            </div>
-            {manualPrev && parsedManual >= 0 && (
-              <div className="rounded-lg bg-slate-50 dark:bg-slate-700/40 px-3 py-2 text-xs text-slate-600 dark:text-slate-300">
-                {formatCurrency(manualPrev.patrimonio)} ({new Date(manualPrev.importedAt).toLocaleDateString('pt-BR')}) → <strong>{formatCurrency(parsedManual)}</strong>
-                <span className={parsedManual - manualPrev.patrimonio >= 0 ? 'text-green-600' : 'text-red-500'}>
-                  {' '}({parsedManual - manualPrev.patrimonio >= 0 ? '+' : '−'}{formatCurrency(Math.abs(parsedManual - manualPrev.patrimonio))})
-                </span>
-              </div>
-            )}
-            {(manualPrev?.positions?.length ?? 0) > 0 && manualPrev?.source !== 'manual' && (
-              <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2">
-                Esta conta tem a lista de ativos da última planilha. Com um valor informado, a divisão por ativo deixa de aparecer — para tê-la de volta, use &ldquo;Importar posição&rdquo; com a planilha nova.
-              </p>
-            )}
-            {manualError && <p className="text-xs text-red-500">{manualError}</p>}
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setManualFor(null)} className="flex-1">Cancelar</Button>
-              <Button onClick={confirmManual} disabled={!(parsedManual >= 0) || !manualDate || positionLoading} className="flex-1">
-                {positionLoading ? 'Salvando...' : 'Salvar valor'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ManualValueDialog board={manualFor} onClose={() => setManualFor(null)} saveManual={saveManual} saving={positionLoading} />
 
       {/* Input escondido + preview pra importar posição da carteira */}
       <input ref={positionFileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handlePositionFile} />
