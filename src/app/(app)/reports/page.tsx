@@ -47,6 +47,8 @@ import { realMovements, internalTotals } from '@/lib/internal-movement'
 import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 import { CategoryIcon, categoryIconKey, guessIconKey } from '@/lib/category-icons'
 import { Kpi, OverviewSection } from '@/components/ui/overview-blocks'
+import { useEvents } from '@/hooks/use-events'
+import { AnnualEventsSection, eventYearStats } from '@/components/reports/annual-events'
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
@@ -146,7 +148,9 @@ function groupByMother(transactions: Transaction[], categories: Category[]): Cat
  * coluna Planejado (Mensal). No celular só cabem Categoria e Valor — o resto
  * vai numa linha pequena embaixo do valor.
  */
-function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, subLabel = 'subcategorias', iconOf }: {
+function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, subLabel = 'subcategorias', iconOf, eventAmounts }: {
+  /** Quanto de cada categoria foi gasto em eventos (Anual) — só uma etiqueta, já está no total. */
+  eventAmounts?: Record<string, number>
   /** Liga o ícone da categoria (no padrão da Análise) e a coluna de uso do limite. */
   iconOf?: (name: string) => string
   title: string
@@ -245,6 +249,11 @@ function CategoryTable({ title, rows, total, valueLabel, months, limits, hint, s
                           {cat.name}
                           {hasSubs && !isOpen && (
                             <span className="ml-1.5 text-[11px] font-normal text-slate-400 dark:text-slate-500">({cat.subs.length})</span>
+                          )}
+                          {(eventAmounts?.[cat.name] ?? 0) > 0.005 && (
+                            <span className="ml-2 whitespace-nowrap rounded-md bg-violet-50 dark:bg-violet-900/20 print:bg-violet-50 px-1.5 py-px text-[10.5px] font-medium text-violet-600 dark:text-violet-400">
+                              {fmt(eventAmounts![cat.name])} em eventos
+                            </span>
                           )}
                         </span>
                       </div>
@@ -659,6 +668,7 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
 
   const { transactions: allTransactions, loading } = useTransactions({ year, ...txFilters })
   const { categories } = useCategories()
+  const { events } = useEvents()
   const { transactions: prevTransactions, loading: prevLoading } = useTransactions({
     year: year - 1,
     ...txFilters,
@@ -716,6 +726,8 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
   const committed = isCurrentYear ? transactions.filter(t => t.date > todayISO && t.type === 'despesa').reduce((acc, t) => acc + Number(t.amount), 0) : 0
 
   const byCategory = useMemo(() => groupByMother(happened, categories), [happened, categories])
+  // Eventos: etiqueta por cima da categoria — o gasto já está em byCategory.
+  const eventsYear = useMemo(() => eventYearStats(happened, events, categories), [happened, events, categories])
   const iconOf = (name: string) => {
     const cat = categories.find(c => !c.parent_id && c.name === name && c.type !== 'receita') ?? categories.find(c => c.name === name)
     return cat ? categoryIconKey(cat, categories) : guessIconKey(name)
@@ -735,6 +747,14 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
       tone: 'warn',
       strong: `${byCategory[0].name} é ${Math.round((byCategory[0].amount / totalExpenses) * 100)}% de tudo que você gastou`,
       text: `no ano — ${fmt(byCategory[0].amount / monthsForAvg)} por mês, em média.`,
+    })
+  }
+  // O evento entra como 3º destaque quando houver (o relatório mostra 3).
+  if (eventsYear.total > 0.005 && totalExpenses > 0) {
+    highlights.push({
+      tone: 'info',
+      strong: `Eventos somaram ${fmt(eventsYear.total)}`,
+      text: `(${Math.round((eventsYear.total / totalExpenses) * 100)}% das despesas).${totalIncome > 0 ? ` Sem eles, o ano fecharia com saldo de ${fmt(totalBalance + eventsYear.total)}.` : ''}`,
     })
   }
   if (committed > 0.005) {
@@ -817,10 +837,12 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
           subtitle={`Toque numa categoria para ver as subcategorias. Média sobre ${monthsForAvg} ${monthsForAvg === 1 ? 'mês' : 'meses'} com movimento.`}
         >
           <div className="mt-3">
-            <CategoryTable title="" hint="" rows={byCategory} total={totalExpenses} valueLabel="Total" months={monthsForAvg} iconOf={iconOf} />
+            <CategoryTable title="" hint="" rows={byCategory} total={totalExpenses} valueLabel="Total" months={monthsForAvg} iconOf={iconOf} eventAmounts={eventsYear.byMother} />
           </div>
         </OverviewSection>
       )}
+
+      <AnnualEventsSection stats={eventsYear.stats} total={eventsYear.total} totalExpenses={totalExpenses} totalIncome={totalIncome} />
 
       {/* Evolução mensal — recolhida na tela, aberta no PDF */}
       <section className="rounded-xl border border-slate-200 dark:border-white/[0.08] print:border-0 bg-slate-50/70 dark:bg-white/[0.03] print:bg-white">
@@ -904,6 +926,7 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
             <li><strong className="text-slate-700 dark:text-slate-200">Receitas, Despesas e Saldo</strong> somam o ano até hoje, sem as movimentações entre suas contas. A setinha compara com o mesmo período do ano anterior.</li>
             <li><strong className="text-slate-700 dark:text-slate-200">Média por mês</strong> divide pelos meses que já tiveram movimento — meses que ainda não chegaram não entram.</li>
             <li><strong className="text-slate-700 dark:text-slate-200">Melhor mês e mês mais apertado</strong> consideram só meses que já terminaram.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Eventos</strong> (viagem, festa, reforma…) são uma etiqueta por cima da categoria: o gasto deles já está nas categorias e no total de despesas, não soma de novo. &ldquo;Saldo sem eventos&rdquo; mostra quanto sobraria só com o dia a dia.</li>
             <li>Nos gráficos e na evolução mensal, os meses à frente mostram só o que já está comprometido (parcelas), marcado como <em>previsto</em>.</li>
             <li>No PDF, a evolução mensal sai completa, mesmo recolhida aqui.</li>
           </ul>
