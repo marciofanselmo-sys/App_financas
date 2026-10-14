@@ -3,7 +3,6 @@
 import { PrimeirosPassosChip } from '@/components/trial/primeiros-passos'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
@@ -14,14 +13,13 @@ import {
   LayoutDashboard, ArrowLeftRight, LogOut, Settings,
   Tag, ChevronDown, Target, RefreshCw, BarChart2, CalendarCheck,
   Zap, CreditCard, FileText, HelpCircle, ChevronRight, Shield,
-  PiggyBank, MessageSquarePlus, ArrowUpRight, Crown,
+  PiggyBank, MessageSquarePlus, Crown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { useIsAdmin } from '@/hooks/use-is-admin'
 import { useInboxUnread } from '@/hooks/use-inbox-unread'
 import { NobliLogo } from '@/components/brand/nobli-logo'
-import { BRAND } from '@/lib/brand'
 import { usePlan } from '@/hooks/use-subscription'
 import { ROUTE_FEATURE } from '@/lib/plans'
 
@@ -287,27 +285,6 @@ export function Sidebar() {
 
         <PrimeirosPassosChip />
 
-        {/* Promo NOBLI — foto orbital da REF 01 com véu deep blue.
-            Só aparece quando a altura comporta o card inteiro (evita clip). */}
-        <div className="relative mx-1 mt-2 overflow-hidden rounded-2xl shadow-[var(--nobli-shadow-s)] hidden [@media(min-height:960px)]:block">
-          <Image
-            src="/nobli/orbit-hero.jpg"
-            alt=""
-            fill
-            className="object-cover object-[62%_30%]"
-            sizes="220px"
-            aria-hidden
-          />
-          <div className="absolute inset-0 bg-gradient-to-br from-[#0B2D6B]/90 via-[#12377e]/75 to-[#2563EB]/55" aria-hidden />
-          <div className="relative p-3.5">
-            <p className="font-heading text-[13px] font-bold text-white leading-snug pr-4">
-              {BRAND.promo}
-            </p>
-            <div className="mt-2.5 flex h-6 w-6 items-center justify-center rounded-full bg-white/20 border border-white/30 backdrop-blur-sm">
-              <ArrowUpRight className="h-3 w-3 text-white" />
-            </div>
-          </div>
-        </div>
       </nav>
 
       {/* Rodapé: Configurações + Tema + Sair + Perfil */}
