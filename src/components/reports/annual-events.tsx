@@ -6,7 +6,11 @@ import { OverviewSection } from '@/components/ui/overview-blocks'
 import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 
 const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
-const pct = (v: number, total: number) => (total > 0 ? `${Math.round((v / total) * 100)}%` : '—')
+const pct = (v: number, total: number) => {
+  if (!(total > 0)) return '—'
+  const p = (v / total) * 100
+  return p > 0 && p < 1 ? 'menos de 1%' : `${Math.round(p)}%`
+}
 const ddmm = (iso: string) => iso.split('-').reverse().slice(0, 2).join('/')
 
 export interface EventYearStat {
