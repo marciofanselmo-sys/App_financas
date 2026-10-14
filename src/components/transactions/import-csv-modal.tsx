@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import Papa from 'papaparse'
 import { validateImportFile, validateImportRowCount } from '@/lib/import-limits'
 import { readXlsxSheetNames, readXlsxSheetRows, rowsToHeaderObjects } from '@/utils/read-xlsx'
@@ -23,6 +23,8 @@ import { reportError } from '@/lib/error-reporter'
 import { loadSavedMapping, saveMapping, guessSignConvention, type CsvMapping, type SignConvention } from '@/lib/csv-mapping-memory'
 import { findCounterpartBoard, findPairedEntry, buildCounterpartLeg, legTypeFor, PAIRING_TOLERANCE_DAYS } from '@/lib/internal-counterpart'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
+import { boardKind } from '@/lib/board-kind'
+import { previousBillPayments } from '@/lib/card-bill-payment'
 import { parseMercadoPagoPDF, isMercadoPagoPDF, countMercadoPagoCandidates } from '@/utils/parse-mercadopago-pdf'
 import { parseInterInvoicePDF, isInterInvoicePDF, countInterInvoiceCandidates } from '@/utils/parse-inter-pdf'
 import { parseItauExtratoPDF, isItauExtratoPDF, countItauCandidates } from '@/utils/parse-itau-extrato-pdf'
@@ -474,7 +476,31 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   // Contas do usuário: usadas para reconhecer, pela descrição, que um
   // pagamento quita outra conta dele (ex: a fatura do cartão).
   const { boards } = useTransactionBoards()
+  const targetBoard = boards.find(b => b.id === boardId)
+  const isCreditCard = !!targetBoard && boardKind(targetBoard) === 'credito'
+
   const [preview, setPreview] = useState<PreviewRow[]>([])
+  // Cartão de crédito: pagamento de fatura cujas compras não estão no app nem
+  // no arquivo (ver card-bill-payment.ts). Fica de fora, salvo se o usuário
+  // marcar "importar mesmo assim".
+  const [prevBill, setPrevBill] = useState<{ rows: PreviewRow[]; idx: number[] }>({ rows: [], idx: [] })
+  const [prevBillKeep, setPrevBillKeep] = useState<Set<number>>(new Set())
+
+  // Na prévia de um cartão: acha o pagamento da fatura anterior ao que está no
+  // app (compra mais antiga do cartão no app + compras do próprio arquivo).
+  useEffect(() => {
+    if (step !== 'preview' || !isCreditCard || !boardId || preview.length === 0) return
+    let cancelled = false
+    createClient()
+      .from('transactions').select('date').eq('board_id', boardId).eq('type', 'despesa')
+      .order('date', { ascending: true }).limit(1)
+      .then(({ data, error }) => {
+        if (cancelled || error) return
+        setPrevBill({ rows: preview, idx: previousBillPayments(preview, data?.[0]?.date ?? null) })
+        setPrevBillKeep(new Set())
+      })
+    return () => { cancelled = true }
+  }, [step, isCreditCard, boardId, preview])
   // Aviso NÃO-bloqueante, exibido na etapa de prévia. Separado de fileError
   // porque fileError só é desenhado na etapa de upload: gravar o aviso lá e
   // pular para a prévia fazia ele sumir antes de aparecer — o usuário nunca
@@ -972,7 +998,7 @@ function shiftDays(date: string, days: number): string {
     // O agrupador antigo (group_label) saiu: a categoria já é o segundo nível
     // (Alimentação › Mercado), e a herança por histórico acima já traz a
     // categoria certa — não há mais uma etiqueta separada para herdar.
-    let valid = preview.filter(r => r.valid).map(r => {
+    let valid = preview.filter((r, i) => r.valid && !prevBillOut.has(i)).map(r => {
       const resolvedCategory = r.category === 'Outros' ? (historyMap.get(r.description.toLowerCase()) ?? r.category) : r.category
       return { ...r, category: resolvedCategory }
     })
@@ -1431,7 +1457,9 @@ function shiftDays(date: string, days: number): string {
     setStep('done')
   }
 
-  const validCount = preview.filter(r => r.valid).length
+  const prevBillIdx = prevBill.rows === preview ? prevBill.idx : []
+  const prevBillOut = new Set(prevBillIdx.filter(i => !prevBillKeep.has(i)))
+  const validCount = preview.filter((r, i) => r.valid && !prevBillOut.has(i)).length
   const invalidCount = preview.filter(r => !r.valid).length
   const othersCount = preview.filter(r => r.valid && r.category === 'Outros').length
   // Lançamentos anteriores à janela do plano: são importados e guardados
@@ -1672,6 +1700,45 @@ function shiftDays(date: string, days: number): string {
                   <span><strong>Atenção:</strong> {importWarning}</span>
                 </div>
               )}
+              {prevBillIdx.length > 0 && (
+                <div className="text-sm text-amber-900 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg border border-amber-200 dark:border-amber-800 space-y-2">
+                  <p className="flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>{prevBillIdx.length === 1 ? 'Este pagamento é de uma fatura anterior' : 'Estes pagamentos são de faturas anteriores'}</strong>{' '}
+                      — as compras {prevBillIdx.length === 1 ? 'dela' : 'delas'} não estão no app nem neste arquivo. Se {prevBillIdx.length === 1 ? 'entrar' : 'entrarem'},
+                      o cartão vai parecer dever menos do que deve e o mês não fecha. Por isso deixamos de fora.
+                    </span>
+                  </p>
+                  <ul className="space-y-1.5 pl-6">
+                    {prevBillIdx.map(i => {
+                      const r = preview[i]
+                      return (
+                        <li key={i} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                          <span className="flex-1 min-w-0 truncate">
+                            {r.date.split('-').reverse().join('/')} · {r.description} · <strong className="tabular-nums">R$ {r.amount.toFixed(2).replace('.', ',')}</strong>
+                          </span>
+                          <label className="inline-flex items-center gap-1.5 cursor-pointer shrink-0">
+                            <input
+                              type="checkbox"
+                              checked={prevBillKeep.has(i)}
+                              onChange={e => setPrevBillKeep(prev => {
+                                const next = new Set(prev)
+                                if (e.target.checked) next.add(i); else next.delete(i)
+                                return next
+                              })}
+                            />
+                            Importar mesmo assim
+                          </label>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                  <p className="text-xs text-amber-800/80 dark:text-amber-300/80 pl-6">
+                    Se depois você importar os meses anteriores, importe este pagamento junto — aí a fatura dele estará no app.
+                  </p>
+                </div>
+              )}
               <div className="flex items-center gap-2 flex-wrap [&>*]:whitespace-normal [&>*]:h-auto [&>*]:text-left">
                 <Badge className="bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-50">
                   ✓ {validCount} prontas para importar
@@ -1704,7 +1771,7 @@ function shiftDays(date: string, days: number): string {
               {/* Celular: lista em cartões (a tabela de 7 colunas não cabe). */}
               <ul className="sm:hidden border dark:border-slate-700 rounded-lg max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700">
                 {preview.map((row, i) => (
-                  <li key={i} className={`px-3 py-2.5 ${!row.valid ? 'bg-red-50/50 dark:bg-red-900/10' : row.category === 'Outros' ? 'bg-amber-50/40 dark:bg-amber-900/10' : ''}`}>
+                  <li key={i} className={`px-3 py-2.5 ${prevBillOut.has(i) ? 'opacity-50 line-through' : ''} ${!row.valid ? 'bg-red-50/50 dark:bg-red-900/10' : row.category === 'Outros' ? 'bg-amber-50/40 dark:bg-amber-900/10' : ''}`}>
                     <div className="flex items-start gap-2">
                       {row.valid
                         ? <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0 mt-0.5" />
@@ -1740,7 +1807,7 @@ function shiftDays(date: string, days: number): string {
                   </thead>
                   <tbody>
                     {preview.map((row, i) => (
-                      <tr key={i} className={`border-t dark:border-slate-700 ${!row.valid ? 'bg-red-50/50 dark:bg-red-900/10' : row.category === 'Outros' ? 'bg-amber-50/40 dark:bg-amber-900/10' : ''}`}>
+                      <tr key={i} title={prevBillOut.has(i) ? 'Pagamento de fatura anterior — fica de fora' : undefined} className={`border-t dark:border-slate-700 ${prevBillOut.has(i) ? 'opacity-50 line-through' : ''} ${!row.valid ? 'bg-red-50/50 dark:bg-red-900/10' : row.category === 'Outros' ? 'bg-amber-50/40 dark:bg-amber-900/10' : ''}`}>
                         <td className="px-3 py-2">
                           {row.valid
                             ? <CheckCircle className="h-3.5 w-3.5 text-green-500" />
