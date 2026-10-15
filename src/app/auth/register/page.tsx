@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { AuthBrandPanel } from '@/components/auth/auth-brand-panel'
 import { createClient } from '@/lib/supabase/client'
+import { clearDemoCookie } from '@/lib/demo'
 import { sugereCorrecao } from '@/lib/email-typo'
 import { AuthFormShell } from '@/components/auth/auth-form-shell'
 import { BRAND } from '@/lib/brand'
@@ -32,6 +33,8 @@ const BENEFITS = [
 
 export default function RegisterPage() {
   const router = useRouter()
+  // Veio da demonstração: a conta nova não pode herdar o modo só leitura.
+  useEffect(() => { clearDemoCookie() }, [])
   const [name, setName]                     = useState('')
   const [email, setEmail]                   = useState('')
   const [password, setPassword]             = useState('')

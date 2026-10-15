@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { clearDemoCookie } from '@/lib/demo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -34,7 +35,12 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
+    // Saiu da demonstração e vai entrar na própria conta: tira o modo demo.
+    clearDemoCookie()
     const params = new URLSearchParams(window.location.search)
+    if (params.get('demo') === 'indisponivel') {
+      setAvisoLink('A demonstração está indisponível agora. Tente de novo em alguns minutos.')
+    }
     if (params.get('confirm') === 'email') setConfirmEmailNotice(true)
 
     // Quem chega por aqui veio de um link de e-mail que não valeu mais. Sem
@@ -107,7 +113,8 @@ export default function LoginPage() {
           <p className="text-[#5B6B84] dark:text-slate-400 text-sm">{BRAND.tagline}</p>
         </div>
 
-        <Link href="/demo" className="block group">
+        {/* <a> e não <Link>: /demo entra na conta da demonstração — não pode ser pré-carregado. */}
+        <a href="/demo" className="block group">
           <div className="rounded-2xl border border-[#2563EB]/15 dark:border-blue-500/30 bg-[#E8F2FF]/60 dark:bg-blue-900/20 px-4 py-3.5 flex items-center gap-3 hover:bg-[#E8F2FF] dark:hover:bg-blue-900/30 transition-colors">
             <div className="h-9 w-9 rounded-xl nobli-gradient flex items-center justify-center shrink-0 shadow-md shadow-[#2563EB]/25">
               <Sparkles className="h-4 w-4 text-white" />
@@ -118,7 +125,7 @@ export default function LoginPage() {
             </div>
             <ArrowRight className="h-4 w-4 text-[#2563EB] shrink-0 group-hover:translate-x-0.5 transition-transform" />
           </div>
-        </Link>
+        </a>
 
         <div className="relative flex items-center gap-3">
           <div className="flex-1 border-t border-slate-100 dark:border-slate-700/80" />

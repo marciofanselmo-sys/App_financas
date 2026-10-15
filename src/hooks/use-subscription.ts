@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { logSafeError } from '@/lib/supabase-error'
 import { Feature, PLANS, PlanDefinition, PlanTier, TRIAL_PLAN, tierFor } from '@/lib/plans'
 import { useTrial } from '@/hooks/use-trial'
+import { DEMO_EMAIL } from '@/lib/demo'
 
 export type SubscriptionStatus =
   | 'free' | 'active' | 'past_due' | 'canceled' | 'refunded' | 'chargeback'
@@ -35,6 +36,12 @@ export function useSubscription() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
     setUserId(user.id)
+    // Demonstração: a conta de exemplo mostra o app inteiro (plano Anual).
+    if (user.email?.toLowerCase() === DEMO_EMAIL.toLowerCase()) {
+      setSubscription({ status: 'active', plan: 'anual', current_period_end: null, customer_email: user.email ?? null })
+      setLoading(false)
+      return
+    }
 
     const { data, error } = await supabase
       .from('subscriptions')

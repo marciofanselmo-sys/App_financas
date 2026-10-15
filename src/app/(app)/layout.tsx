@@ -11,6 +11,7 @@ import { TrialEndModal } from '@/components/trial/trial-end-modal'
 import { useTrialJourneySync } from '@/hooks/use-trial-journey'
 import { useSubscription } from '@/hooks/use-subscription'
 import { usePrimeirosPassosCandidato } from '@/hooks/use-primeiros-passos'
+import { DemoMode } from '@/components/demo/demo-mode'
 
 function LayoutInner({ children }: { children: React.ReactNode }) {
   usePageTracker()
@@ -25,6 +26,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
         <Sidebar />
       </div>
       <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 min-w-0">
+        <DemoMode />
         <EmailConfirmBanner />
         <TrialClock />
         {inTrial && <TrialToasts />}

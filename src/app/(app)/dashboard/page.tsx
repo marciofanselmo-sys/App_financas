@@ -283,7 +283,7 @@ export default function DashboardPage() {
         <MonthlyFlowChart data={monthlyFlowData} loading={chartsLoading} />
       </div>
 
-      <div>
+      <div data-tour="fluxo">
         <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-[#93A5C1] dark:text-slate-500 mb-3">
           Fluxo do mês
         </h2>
@@ -306,7 +306,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div data-tour="categorias" className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <ExpenseDistributionChart data={expenseChartData} loading={loading} />
         <IncomeCommitmentChart
           segments={incomeCommitment.segments}
