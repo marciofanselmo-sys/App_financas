@@ -1,16 +1,19 @@
 -- ============================================================================
 -- Demonstração ao vivo (botão "Ver demonstração")
 -- ============================================================================
--- Rodar no SQL Editor do Supabase DEPOIS de criar o usuário
--- demo@noblifinance.com.br (cadastro normal em /auth/register). Idempotente nas
--- partes 1 e 2; a parte 3 MOVE os dados da conta de teste +versao2 (família
--- Almeida Souza) para a conta da demo — rodar uma vez só.
+-- Rodar no SQL Editor do Supabase. Idempotente.
+--
+-- A demonstração usa a PRÓPRIA conta de teste da família Almeida Souza
+-- (marcio.fanselmo+versao2@gmail.com): nada é copiado nem movido. Só o
+-- e-mail dela passa a ser demo@noblifinance.com.br — para o Gmail pessoal não
+-- aparecer para quem vê a demonstração. A senha é a da variável DEMO_PASSWORD
+-- da Vercel: na primeira entrada pelo /demo o servidor a aplica sozinho.
 --
 -- 1. is_demo_user(): a sessão atual é a conta da demo?
 -- 2. Políticas RESTRITIVAS: a conta da demo não grava, não altera e não apaga
 --    nada em nenhuma tabela com user_id (ler continua igual). É o bloqueio de
 --    verdade — o da tela só mostra o convite.
--- 3. Dados da família Almeida Souza passam para a conta da demo.
+-- 3. A conta da família vira a conta da demo (troca o e-mail e o nome).
 -- ============================================================================
 
 -- 1 ───────────────────────────────────────────────────────────────────────────
@@ -49,45 +52,24 @@ end $$;
 
 -- 3 ───────────────────────────────────────────────────────────────────────────
 do $$
-declare
-  demo   uuid;
-  origem uuid;
-  r      record;
+declare conta uuid;
 begin
-  select id into demo   from auth.users where lower(email) = 'demo@noblifinance.com.br';
-  select id into origem from auth.users where lower(email) = 'marcio.fanselmo+versao2@gmail.com';
-  if demo is null then raise exception 'Crie primeiro o usuário demo@noblifinance.com.br'; end if;
-  if origem is null then raise exception 'Conta marcio.fanselmo+versao2@gmail.com não encontrada'; end if;
+  select id into conta from auth.users
+   where lower(email) in ('marcio.fanselmo+versao2@gmail.com', 'demo@noblifinance.com.br')
+   order by (lower(email) = 'demo@noblifinance.com.br') desc
+   limit 1;
+  if conta is null then raise exception 'Conta da família (marcio.fanselmo+versao2@gmail.com) não encontrada'; end if;
+  if exists (select 1 from auth.users where lower(email) = 'demo@noblifinance.com.br' and id <> conta) then
+    raise exception 'Já existe outro usuário com demo@noblifinance.com.br — apague-o em Authentication antes';
+  end if;
 
-  -- A conta da demo nasce com poucas linhas (categorias padrão, perfil): saem,
-  -- para os dados da família entrarem sem conflito.
-  for r in
-    select c.relname as t
-    from pg_class c
-    join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
-    where c.relkind = 'r'
-      and exists (select 1 from information_schema.columns col
-                  where col.table_schema = 'public' and col.table_name = c.relname and col.column_name = 'user_id')
-    order by case c.relname when 'transactions' then 0 when 'events' then 1 else 2 end
-  loop
-    execute format('delete from public.%I where user_id = $1', r.t) using demo;
-  end loop;
+  update auth.users
+     set email = 'demo@noblifinance.com.br',
+         email_confirmed_at = coalesce(email_confirmed_at, now()),
+         raw_user_meta_data = coalesce(raw_user_meta_data, '{}'::jsonb) || jsonb_build_object('full_name', 'Família Almeida Souza')
+   where id = conta;
 
-  for r in
-    select c.relname as t
-    from pg_class c
-    join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
-    where c.relkind = 'r'
-      and exists (select 1 from information_schema.columns col
-                  where col.table_schema = 'public' and col.table_name = c.relname and col.column_name = 'user_id')
-  loop
-    execute format('update public.%I set user_id = $1 where user_id = $2', r.t) using demo, origem;
-  end loop;
-
-  -- Preferências guardadas no perfil (pilares do planejamento, categorias v2…).
-  update auth.users d
-     set raw_user_meta_data = coalesce(o.raw_user_meta_data, '{}'::jsonb) || jsonb_build_object('full_name', 'Família Almeida Souza'),
-         email_confirmed_at = coalesce(d.email_confirmed_at, now())
-    from auth.users o
-   where d.id = demo and o.id = origem;
+  update auth.identities
+     set identity_data = coalesce(identity_data, '{}'::jsonb) || jsonb_build_object('email', 'demo@noblifinance.com.br')
+   where user_id = conta and provider = 'email';
 end $$;
