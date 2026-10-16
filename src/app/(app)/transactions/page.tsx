@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useContaAtiva, escolherContaAtiva } from '@/hooks/use-conta-ativa'
 import { useTransactions } from '@/hooks/use-transactions'
-import { TransactionBoard, Transaction, BoardType, BoardKind, BOARD_COLORS, BOARD_ICONS, BoardIconKey } from '@/types'
+import { TransactionBoard, Transaction, BoardType, BoardKind, CATEGORY_COLORS, BOARD_ICONS, BoardIconKey } from '@/types'
 import { BOARD_KINDS, boardKind } from '@/lib/board-kind'
 import { BoardIcon } from '@/components/transactions/board-icon'
 import { Button } from '@/components/ui/button'
@@ -51,12 +51,12 @@ interface AccountTemplate {
 }
 
 const ACCOUNT_TEMPLATES: AccountTemplate[] = [
-  { id: 'conta-corrente',   label: 'Conta Corrente',   description: 'Bradesco, Itaú, Nubank...', icon: 'building',      color: '#3b82f6', type: 'ambos',  kind: 'corrente', suggestedName: 'Conta Corrente'   },
-  { id: 'cartao-credito',   label: 'Cartão de Crédito', description: 'Crédito e compras parceladas', icon: 'credit-card',  color: '#8b5cf6', type: 'saida',  kind: 'credito', suggestedName: 'Cartão de Crédito' },
-  { id: 'carteira-digital', label: 'Carteira Digital',  description: 'PicPay, Mercado Pago, PayPal', icon: 'wallet',       color: '#06b6d4', type: 'ambos',  kind: 'digital', suggestedName: 'Carteira Digital'  },
-  { id: 'poupanca',         label: 'Poupança',          description: 'Reserva de emergência', icon: 'piggy-bank',    color: '#10b981', type: 'ambos',  kind: 'poupanca', suggestedName: 'Poupança'          },
-  { id: 'dinheiro-fisico',  label: 'Dinheiro Físico',   description: 'Espécie e carteira', icon: 'coins',         color: '#f59e0b', type: 'ambos',  kind: 'dinheiro', suggestedName: 'Dinheiro Físico'   },
-  { id: 'outro',            label: 'Outro',             description: 'Personalizado', icon: 'wallet',       color: BOARD_COLORS[2], type: 'ambos', kind: 'outro', suggestedName: '' },
+  { id: 'conta-corrente',   label: 'Conta Corrente',   description: 'Bradesco, Itaú, Nubank...', icon: 'building',      color: CATEGORY_COLORS[7], type: 'ambos',  kind: 'corrente', suggestedName: 'Conta Corrente'   },
+  { id: 'cartao-credito',   label: 'Cartão de Crédito', description: 'Crédito e compras parceladas', icon: 'credit-card',  color: CATEGORY_COLORS[10], type: 'saida',  kind: 'credito', suggestedName: 'Cartão de Crédito' },
+  { id: 'carteira-digital', label: 'Carteira Digital',  description: 'PicPay, Mercado Pago, PayPal', icon: 'wallet',       color: CATEGORY_COLORS[6], type: 'ambos',  kind: 'digital', suggestedName: 'Carteira Digital'  },
+  { id: 'poupanca',         label: 'Poupança',          description: 'Reserva de emergência', icon: 'piggy-bank',    color: CATEGORY_COLORS[4], type: 'ambos',  kind: 'poupanca', suggestedName: 'Poupança'          },
+  { id: 'dinheiro-fisico',  label: 'Dinheiro Físico',   description: 'Espécie e carteira', icon: 'coins',         color: CATEGORY_COLORS[1], type: 'ambos',  kind: 'dinheiro', suggestedName: 'Dinheiro Físico'   },
+  { id: 'outro',            label: 'Outro',             description: 'Personalizado', icon: 'wallet',       color: CATEGORY_COLORS[9], type: 'ambos', kind: 'outro', suggestedName: '' },
 ]
 
 const BOARD_TYPE_OPTIONS: { value: BoardType; label: string; desc: string }[] = [
@@ -79,7 +79,7 @@ interface FormState {
 
 const EMPTY_FORM: FormState = {
   name: '',
-  color: BOARD_COLORS[1],
+  color: CATEGORY_COLORS[7],
   icon: 'wallet',
   description: '',
   type: 'ambos',
@@ -107,6 +107,15 @@ export default function TransactionsPage() {
   const [formStep, setFormStep] = useState<'template' | 'form'>('template')
   const [editing, setEditing] = useState<TransactionBoard | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
+  // Paleta igual à das categorias; o número em cada bolinha diz quantas
+  // outras contas já usam aquela cor. Conta antiga com cor fora da paleta
+  // continua aparecendo como primeira opção, para não perder a escolha.
+  const colorUsers = new Map<string, string[]>()
+  for (const b of boards) {
+    if (editing && b.id === editing.id) continue
+    colorUsers.set(b.color, [...(colorUsers.get(b.color) ?? []), b.name])
+  }
+  const colorChoices = CATEGORY_COLORS.includes(form.color) ? CATEGORY_COLORS : [form.color, ...CATEGORY_COLORS]
   const [deleteTarget, setDeleteTarget] = useState<TransactionBoard | null>(null)
   const [deleteStep, setDeleteStep] = useState<1 | 2>(1)
   const [deleteTxCount, setDeleteTxCount] = useState<number | null>(null)
@@ -637,21 +646,36 @@ export default function TransactionsPage() {
               <div className="space-y-2">
                 <Label>Cor</Label>
                 <div className="flex flex-wrap gap-2 pt-1">
-                  {BOARD_COLORS.map(color => (
-                    <button
-                      key={color}
-                      type="button"
-                      onClick={() => setForm(f => ({ ...f, color }))}
-                      className="h-7 w-7 rounded-full border-2 transition-transform hover:scale-110"
-                      style={{
-                        backgroundColor: color,
-                        borderColor: form.color === color ? '#1e293b' : 'transparent',
-                        outline: form.color === color ? '2px solid white' : 'none',
-                        outlineOffset: '-3px',
-                      }}
-                    />
-                  ))}
+                  {colorChoices.map(color => {
+                    const users = colorUsers.get(color) ?? []
+                    return (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, color }))}
+                        title={users.length ? `Já usada por: ${users.join(', ')}` : 'Livre'}
+                        className="relative h-7 w-7 rounded-full border-2 transition-transform hover:scale-110"
+                        style={{
+                          backgroundColor: color,
+                          borderColor: form.color === color ? '#1e293b' : 'transparent',
+                          outline: form.color === color ? '2px solid white' : 'none',
+                          outlineOffset: '-3px',
+                        }}
+                      >
+                        {users.length > 0 && (
+                          <span className="absolute -top-1 -right-1 h-3.5 min-w-3.5 px-0.5 rounded-full bg-white dark:bg-slate-900 text-[9px] font-bold leading-[14px] text-slate-600 dark:text-slate-300 shadow">
+                            {users.length}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  {(colorUsers.get(form.color) ?? []).length > 0
+                    ? <>Essa cor já é usada por: {(colorUsers.get(form.color) ?? []).join(', ')}.</>
+                    : 'Nenhuma outra conta usa essa cor.'}
+                </p>
               </div>
 
               <div className="flex gap-2 pt-2">
