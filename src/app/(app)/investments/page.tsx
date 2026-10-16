@@ -5,7 +5,7 @@ import { withPlan } from '@/components/plan/with-plan'
 import { useState, useMemo } from 'react'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { usePositionImport } from '@/hooks/use-position-import'
-import { TransactionBoard, BoardType, BOARD_COLORS, BOARD_ICONS, BoardIconKey } from '@/types'
+import { TransactionBoard, BoardType, CATEGORY_COLORS, paletteColor, BOARD_ICONS, BoardIconKey } from '@/types'
 import { formatCurrency, rentColor } from '@/components/investments/rico-position-summary'
 import { BoardIcon } from '@/components/transactions/board-icon'
 import { Button } from '@/components/ui/button'
@@ -50,11 +50,11 @@ interface AccountTemplate {
 // Todas do tipo "ambos" — o extrato de uma conta de investimento mistura
 // rendimentos/vendas (entrada) com compras de ativos (saída) na mesma conta.
 const ACCOUNT_TEMPLATES: AccountTemplate[] = [
-  { id: 'corretora',   label: 'Corretora',           description: 'RICO, XP, Clear, Nubank Investimentos...', icon: 'trending-up', color: '#22c55e', type: 'ambos', suggestedName: 'RICO' },
-  { id: 'previdencia', label: 'Previdência Privada', description: 'PGBL, VGBL',                                icon: 'piggy-bank',   color: '#10b981', type: 'ambos', suggestedName: 'Previdência' },
-  { id: 'cripto',      label: 'Criptomoedas',        description: 'Binance, Mercado Bitcoin...',               icon: 'coins',        color: '#f59e0b', type: 'ambos', suggestedName: 'Cripto' },
-  { id: 'tesouro',     label: 'Tesouro Direto',      description: 'Títulos públicos',                          icon: 'dollar-sign',  color: '#3b82f6', type: 'ambos', suggestedName: 'Tesouro Direto' },
-  { id: 'outro',       label: 'Outro',               description: 'Personalizado',                             icon: 'trending-up',  color: BOARD_COLORS[4], type: 'ambos', suggestedName: '' },
+  { id: 'corretora',   label: 'Corretora',           description: 'RICO, XP, Clear, Nubank Investimentos...', icon: 'trending-up', color: CATEGORY_COLORS[4], type: 'ambos', suggestedName: 'RICO' },
+  { id: 'previdencia', label: 'Previdência Privada', description: 'PGBL, VGBL',                                icon: 'piggy-bank',   color: CATEGORY_COLORS[5], type: 'ambos', suggestedName: 'Previdência' },
+  { id: 'cripto',      label: 'Criptomoedas',        description: 'Binance, Mercado Bitcoin...',               icon: 'coins',        color: CATEGORY_COLORS[2], type: 'ambos', suggestedName: 'Cripto' },
+  { id: 'tesouro',     label: 'Tesouro Direto',      description: 'Títulos públicos',                          icon: 'dollar-sign',  color: CATEGORY_COLORS[7], type: 'ambos', suggestedName: 'Tesouro Direto' },
+  { id: 'outro',       label: 'Outro',               description: 'Personalizado',                             icon: 'trending-up',  color: CATEGORY_COLORS[9], type: 'ambos', suggestedName: '' },
 ]
 
 interface FormState {
@@ -67,7 +67,7 @@ interface FormState {
 
 const EMPTY_FORM: FormState = {
   name: '',
-  color: BOARD_COLORS[1],
+  color: CATEGORY_COLORS[7],
   icon: 'trending-up',
   description: '',
   type: 'ambos',
@@ -83,6 +83,14 @@ function InvestmentsPage() {
   const [formStep, setFormStep] = useState<'template' | 'form'>('template')
   const [editing, setEditing] = useState<TransactionBoard | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
+  // Mesma paleta e mesma contagem da tela de categorias: o número em cada
+  // bolinha diz quantas outras contas já usam aquela cor.
+  const colorUsers = new Map<string, string[]>()
+  for (const b of boards) {
+    if (editing && b.id === editing.id) continue
+    const c = paletteColor(b.color)
+    colorUsers.set(c, [...(colorUsers.get(c) ?? []), b.name])
+  }
   const [deleteTarget, setDeleteTarget] = useState<TransactionBoard | null>(null)
   const [deleteStep, setDeleteStep] = useState<1 | 2>(1)
   const [deleteTxCount, setDeleteTxCount] = useState<number | null>(null)
@@ -179,7 +187,7 @@ function InvestmentsPage() {
 
   function openEdit(board: TransactionBoard) {
     setEditing(board)
-    setForm({ name: board.name, color: board.color, icon: board.icon, description: board.description ?? '', type: board.type })
+    setForm({ name: board.name, color: paletteColor(board.color), icon: board.icon, description: board.description ?? '', type: board.type })
     setFormStep('form')
     setFormOpen(true)
   }
@@ -617,21 +625,36 @@ function InvestmentsPage() {
               <div className="space-y-2">
                 <Label>Cor</Label>
                 <div className="flex flex-wrap gap-2 pt-1">
-                  {BOARD_COLORS.map(color => (
-                    <button
-                      key={color}
-                      type="button"
-                      onClick={() => setForm(f => ({ ...f, color }))}
-                      className="h-7 w-7 rounded-full border-2 transition-transform hover:scale-110"
-                      style={{
-                        backgroundColor: color,
-                        borderColor: form.color === color ? '#1e293b' : 'transparent',
-                        outline: form.color === color ? '2px solid white' : 'none',
-                        outlineOffset: '-3px',
-                      }}
-                    />
-                  ))}
+                  {CATEGORY_COLORS.map(color => {
+                    const users = colorUsers.get(color) ?? []
+                    return (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, color }))}
+                        title={users.length ? `Já usada por: ${users.join(', ')}` : 'Livre'}
+                        className="relative h-7 w-7 rounded-full border-2 transition-transform hover:scale-110"
+                        style={{
+                          backgroundColor: color,
+                          borderColor: form.color === color ? '#1e293b' : 'transparent',
+                          outline: form.color === color ? '2px solid white' : 'none',
+                          outlineOffset: '-3px',
+                        }}
+                      >
+                        {users.length > 0 && (
+                          <span className="absolute -top-1 -right-1 h-3.5 min-w-3.5 px-0.5 rounded-full bg-white dark:bg-slate-900 text-[9px] font-bold leading-[14px] text-slate-600 dark:text-slate-300 shadow">
+                            {users.length}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  {(colorUsers.get(form.color) ?? []).length > 0
+                    ? <>Essa cor já é usada por: {(colorUsers.get(form.color) ?? []).join(', ')}.</>
+                    : 'Nenhuma outra conta usa essa cor.'}
+                </p>
               </div>
 
               <div className="flex gap-2 pt-2">

@@ -280,3 +280,13 @@ export const CATEGORY_COLORS = [
   '#7e22ce', '#ec4899', '#fda4af', '#92400e', '#64748b',
 ]
 
+// Cor da paleta antiga (contas criadas antes) → a mais próxima de
+// CATEGORY_COLORS. Mesmo de-para de migration_category_colors_v2.sql.
+const OLD_COLOR_TO_PALETTE: Record<string, string> = {
+  '#10b981': '#16a34a', '#22c55e': '#16a34a', '#06b6d4': '#22d3ee', '#3b82f6': '#2563eb',
+  '#8b5cf6': '#a78bfa', '#f59e0b': '#facc15', '#ef4444': '#dc2626', '#14b8a6': '#065f46',
+  '#6366f1': '#7e22ce', '#6b7280': '#64748b',
+}
+export function paletteColor(color: string): string {
+  return OLD_COLOR_TO_PALETTE[color?.toLowerCase()] ?? color
+}

@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useContaAtiva, escolherContaAtiva } from '@/hooks/use-conta-ativa'
 import { useTransactions } from '@/hooks/use-transactions'
-import { TransactionBoard, Transaction, BoardType, BoardKind, CATEGORY_COLORS, BOARD_ICONS, BoardIconKey } from '@/types'
+import { TransactionBoard, Transaction, BoardType, BoardKind, CATEGORY_COLORS, paletteColor, BOARD_ICONS, BoardIconKey } from '@/types'
 import { BOARD_KINDS, boardKind } from '@/lib/board-kind'
 import { BoardIcon } from '@/components/transactions/board-icon'
 import { Button } from '@/components/ui/button'
@@ -107,15 +107,14 @@ export default function TransactionsPage() {
   const [formStep, setFormStep] = useState<'template' | 'form'>('template')
   const [editing, setEditing] = useState<TransactionBoard | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
-  // Paleta igual à das categorias; o número em cada bolinha diz quantas
-  // outras contas já usam aquela cor. Conta antiga com cor fora da paleta
-  // continua aparecendo como primeira opção, para não perder a escolha.
+  // Mesma paleta e mesma contagem da tela de categorias: o número em cada
+  // bolinha diz quantas outras contas já usam aquela cor.
   const colorUsers = new Map<string, string[]>()
   for (const b of boards) {
     if (editing && b.id === editing.id) continue
-    colorUsers.set(b.color, [...(colorUsers.get(b.color) ?? []), b.name])
+    const c = paletteColor(b.color)
+    colorUsers.set(c, [...(colorUsers.get(c) ?? []), b.name])
   }
-  const colorChoices = CATEGORY_COLORS.includes(form.color) ? CATEGORY_COLORS : [form.color, ...CATEGORY_COLORS]
   const [deleteTarget, setDeleteTarget] = useState<TransactionBoard | null>(null)
   const [deleteStep, setDeleteStep] = useState<1 | 2>(1)
   const [deleteTxCount, setDeleteTxCount] = useState<number | null>(null)
@@ -174,7 +173,7 @@ export default function TransactionsPage() {
   function openEdit(board: TransactionBoard) {
     setEditing(board)
     setForm({
-      name: board.name, color: board.color, icon: board.icon,
+      name: board.name, color: paletteColor(board.color), icon: board.icon,
       description: board.description ?? '', type: board.type, kind: boardKind(board),
       openingBalance: board.opening_balance ? String(board.opening_balance).replace('.', ',') : '',
     })
@@ -646,7 +645,7 @@ export default function TransactionsPage() {
               <div className="space-y-2">
                 <Label>Cor</Label>
                 <div className="flex flex-wrap gap-2 pt-1">
-                  {colorChoices.map(color => {
+                  {CATEGORY_COLORS.map(color => {
                     const users = colorUsers.get(color) ?? []
                     return (
                       <button
