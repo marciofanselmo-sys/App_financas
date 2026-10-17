@@ -35,6 +35,9 @@ export async function GET(req: NextRequest) {
   }
   if (error) return fail()
 
+  // Virou o mês? As datas da demo andam junto (só na primeira entrada do mês).
+  try { await createAdminClient().rpc('demo_alinhar') } catch { /* sem a função: fica como está */ }
+
   const visita = crypto.randomUUID()
   const origem = req.nextUrl.searchParams.get('origem') ?? req.nextUrl.searchParams.get('utm_source') ?? ''
   await registrarEventoDemo('demo_inicio', visita, origem ? { origem: origem.slice(0, 60) } : {})
