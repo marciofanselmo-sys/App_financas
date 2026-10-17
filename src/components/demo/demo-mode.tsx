@@ -11,7 +11,11 @@ import { DEMO_BLOCKED_EVENT, DEMO_EMAIL, TOUR_REPORT_EVENT, TOUR_REPORT_TAB, cle
 const CTA_HREF = '/demo/sair?para=teste'
 const TOUR_KEY = 'nobli_demo_tour'
 
-interface Step { path: string; target?: string; tab?: 'mensal' | 'anual'; title: string; text: string }
+interface Step {
+  path: string; target?: string; tab?: 'mensal' | 'anual'; title: string; text: string
+  /** Sem o alvo na tela (ex.: a família não tem eventos), o passo é pulado. */
+  optional?: boolean
+}
 
 // Uma história: o app organizou tudo sozinho → mostrou para onde vai o
 // dinheiro → ajudou a planejar → entregou o ano pronto. Termina no convite.
@@ -57,7 +61,7 @@ const STEPS: Step[] = [
     text: 'Melhor e pior mês, categorias do ano e a comparação com o ano anterior. Também sai em PDF.',
   },
   {
-    path: '/reports', tab: 'anual', target: '[data-tour="rel-eventos"]',
+    path: '/reports', tab: 'anual', target: '[data-tour="rel-eventos"]', optional: true,
     title: 'Quanto custou cada viagem',
     text: 'Viagens, festas e reformas separadas do dia a dia: quanto custou cada uma e quanto sobraria no ano sem elas.',
   },
@@ -206,7 +210,9 @@ function TourBalloon({ step, data, total, onNext, onSkip }: {
 
   // Acha o alvo (a tela pode ainda estar carregando) e acompanha rolagem.
   useLayoutEffect(() => {
-    if (!data.target) { setRect(null); return }
+    // Passo novo: nunca reaproveita o contorno do passo anterior.
+    setRect(null)
+    if (!data.target) return
     let tries = 0
     let el: Element | null = null
     let timer: ReturnType<typeof setTimeout>
@@ -218,12 +224,15 @@ function TourBalloon({ step, data, total, onNext, onSkip }: {
         setTimeout(measure, 450)
       } else if (tries++ < 30) {
         timer = setTimeout(find, 150)
+      } else if (data.optional) {
+        onNext()
       }
     }
     find()
     window.addEventListener('scroll', measure, true)
     window.addEventListener('resize', measure)
     return () => { clearTimeout(timer); window.removeEventListener('scroll', measure, true); window.removeEventListener('resize', measure) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.target])
 
   const W = 320
@@ -239,11 +248,15 @@ function TourBalloon({ step, data, total, onNext, onSkip }: {
     style = { bottom: 88, left: Math.max(12, vw / 2 - W / 2) }
   }
 
+  if (data.optional && !rect) return null
+
   return (
     <div className="print:hidden">
       {rect && (
-        <div className="fixed z-[60] pointer-events-none rounded-2xl ring-[3px] ring-[#2563EB] transition-all"
-          style={{ top: rect.top - 6, left: rect.left - 6, width: rect.width + 12, height: rect.height + 12, boxShadow: '0 0 0 9999px rgba(15,23,42,0.45)' }} />
+        // Contorno azul por outline: o box-shadow já é o escurecimento em volta
+        // (anel do Tailwind também é box-shadow e seria apagado).
+        <div className="fixed z-[60] pointer-events-none rounded-2xl transition-all"
+          style={{ top: rect.top - 6, left: rect.left - 6, width: rect.width + 12, height: rect.height + 12, outline: '3px solid #3b82f6', boxShadow: '0 0 0 9999px rgba(2,6,23,0.62)' }} />
       )}
       <div className="fixed z-[61] rounded-2xl bg-white dark:bg-[#111c2d] shadow-2xl border border-slate-100 dark:border-white/10 p-4" style={{ ...style, width: W, maxWidth: 'calc(100vw - 24px)' }}>
         <div className="flex items-start justify-between gap-2">
