@@ -8,7 +8,7 @@ import Link from 'next/link'
 import { usePlan } from '@/hooks/use-subscription'
 import type { Category, Transaction } from '@/types'
 
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, useEffect, Fragment } from 'react'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useTransactionBoards } from '@/hooks/use-transaction-boards'
 import { useRecurring } from '@/hooks/use-recurring'
@@ -48,6 +48,7 @@ import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 import { CategoryIcon, categoryIconKey, guessIconKey } from '@/lib/category-icons'
 import { Kpi, OverviewSection } from '@/components/ui/overview-blocks'
 import { useEvents } from '@/hooks/use-events'
+import { TOUR_REPORT_EVENT, TOUR_REPORT_TAB } from '@/lib/demo'
 import { AnnualEventsSection, eventYearStats } from '@/components/reports/annual-events'
 
 const fmt = (v: number) =>
@@ -485,7 +486,7 @@ function MonthlyReport({ month, year, boardId, excludeBoardIds }: { month: numbe
       </div>
 
       {highlights.length > 0 && (
-        <div className="grid gap-3 md:grid-cols-3">
+        <div data-tour="rel-mensal" className="grid gap-3 md:grid-cols-3">
           {highlights.slice(0, 3).map((h, i) => {
             const { icon: Icon, cls } = HIGHLIGHT_STYLE[h.tone]
             return (
@@ -800,7 +801,7 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
       </div>
 
       {highlights.length > 0 && (
-        <div className="grid gap-3 md:grid-cols-3">
+        <div data-tour="rel-anual" className="grid gap-3 md:grid-cols-3">
           {highlights.slice(0, 3).map((h, i) => {
             const { icon: Icon, cls } = HIGHLIGHT_STYLE[h.tone]
             return (
@@ -842,7 +843,9 @@ function AnnualReport({ year, boardId, excludeBoardIds }: { year: number; boardI
         </OverviewSection>
       )}
 
-      <AnnualEventsSection stats={eventsYear.stats} total={eventsYear.total} totalExpenses={totalExpenses} totalIncome={totalIncome} />
+      <div data-tour="rel-eventos">
+        <AnnualEventsSection stats={eventsYear.stats} total={eventsYear.total} totalExpenses={totalExpenses} totalIncome={totalIncome} />
+      </div>
 
       {/* Evolução mensal — recolhida na tela, aberta no PDF */}
       <section className="rounded-xl border border-slate-200 dark:border-white/[0.08] print:border-0 bg-slate-50/70 dark:bg-white/[0.03] print:bg-white">
@@ -1649,6 +1652,14 @@ function InvestmentsReport({ year, boardId }: { year: number; boardId: string })
 // ── Página principal ──────────────────────────────────────────────────────────
 function ReportsPage() {
   const [type, setType] = useState<ReportType>('mensal')
+  // Tour da demonstração: abre a aba que o passo pede (Mensal/Anual).
+  useEffect(() => {
+    const apply = (t: string | null) => { if (t && REPORT_TYPES.some(r => r.id === t)) setType(t as ReportType) }
+    try { apply(sessionStorage.getItem(TOUR_REPORT_TAB)) } catch { /* sem sessão */ }
+    const onTab = (e: Event) => apply(String((e as CustomEvent).detail ?? ''))
+    window.addEventListener(TOUR_REPORT_EVENT, onTab)
+    return () => window.removeEventListener(TOUR_REPORT_EVENT, onTab)
+  }, [])
   // Em vitrine (sem o plano), abre no último mês fechado: o mês corrente
   // costuma estar pela metade.
   const vitrine = useVitrine()

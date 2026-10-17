@@ -51,3 +51,7 @@ export function trackDemo(event: 'demo_tour' | 'demo_cta' | 'demo_bloqueio', key
     body: JSON.stringify({ event, key }),
   }).catch(() => {})
 }
+
+/** Tour: qual aba de Relatórios abrir (lida ao montar a tela e por evento). */
+export const TOUR_REPORT_TAB = 'nobli_tour_aba_relatorio'
+export const TOUR_REPORT_EVENT = 'nobli-tour-aba-relatorio'
