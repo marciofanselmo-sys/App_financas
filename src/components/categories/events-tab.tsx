@@ -38,9 +38,6 @@ interface EventSummary {
   /** Só no filtro de período: gastos do período que não estão marcados no evento. */
   untaggedCount: number
   untaggedValue: number
-  /** Lista da tela: os marcados + os gastos do período ainda fora do evento (não somam). */
-  listTxs?: Transaction[]
-  period?: { from: string; to: string }
 }
 
 // Período escolhido nos encerrados, guardado no navegador por evento
@@ -116,22 +113,22 @@ export function EventsTab({
     return build(ev, txs)
   }
 
-  // Período (encerrados): os NÚMEROS do evento são sempre só o que está
-  // marcado nele — os mesmos do card. O período só procura gastos dessas
-  // datas que ainda não foram marcados: aparecem na lista como "fora do
-  // evento", sem somar, para a pessoa marcar com o ⋮. (Antes o período somava
-  // todos os gastos das datas, e o detalhe dava um valor diferente do card.)
+  // Período da viagem: TODOS os gastos das suas contas entre as datas
+  // (marcados ou não no evento) + o que voltou marcado no evento. Contas de
+  // investimento e movimentação entre contas ficam de fora.
   const investmentIds = useMemo(() => new Set(boards.filter(b => b.is_investment).map(b => b.id)), [boards])
-  function summarizePeriod(ev: AppEvent, from: string, to: string, base: EventSummary): EventSummary {
-    const untagged = transactions
-      .filter(t => t.type === 'despesa' && t.event_id !== ev.id && t.date >= from && t.date <= to)
+  function summarizePeriod(ev: AppEvent, from: string, to: string): EventSummary {
+    const txs = transactions
+      .filter(t => t.date >= from && t.date <= to)
       .filter(t => !isInternalMovement(t) && !(t.board_id && investmentIds.has(t.board_id)))
+      .filter(t => t.type === 'despesa' || t.event_id === ev.id)
+      .sort((a, b) => b.date.localeCompare(a.date))
+    const out = build(ev, txs)
+    const untagged = txs.filter(t => t.type === 'despesa' && t.event_id !== ev.id)
     return {
-      ...base,
-      period: { from, to },
+      ...out, first: from, last: to,
       untaggedCount: untagged.length,
       untaggedValue: untagged.reduce((sum, t) => sum + Number(t.amount), 0),
-      listTxs: [...base.txs, ...untagged].sort((a, b) => b.date.localeCompare(a.date)),
     }
   }
 
@@ -187,7 +184,7 @@ export function EventsTab({
     writePeriod(selId, p)
   }
   const view = selected
-    ? (periodMode && period ? summarizePeriod(selected.total.event, period.from, period.to, selected.total) : byMonth ? selected.month : selected.total)
+    ? (periodMode && period ? summarizePeriod(selected.total.event, period.from, period.to) : byMonth ? selected.month : selected.total)
     : null
   const monthTotal = active.reduce((s, x) => s + x.month.net, 0)
 
@@ -389,7 +386,7 @@ export function EventsTab({
           <CalendarRange className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
           <div className="min-w-0">
             <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Período de {selected!.total.event.name}</p>
-            <p className="text-[11px] text-slate-400">Procura gastos dessas datas que ainda não estão no evento. Os números do evento contam só o que está marcado.</p>
+            <p className="text-[11px] text-slate-400">Mostra todos os gastos das suas contas nessas datas — marcados ou não no evento.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
             <label className="flex items-center gap-1.5 text-xs text-slate-500">
@@ -508,8 +505,7 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
   }, [s.txs, s.first, s.last, byDay])
   // Muitos dias: o gráfico fica mais largo que o card e rola para o lado.
   const chartMinWidth = series.length * (byDay ? 22 : 44)
-  const list = s.listTxs ?? s.txs
-  const txs = showAll ? list : list.slice(0, 8)
+  const txs = showAll ? s.txs : s.txs.slice(0, 8)
   return (
     <section className="bg-white dark:bg-[#111c2d] rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] p-5 space-y-4">
       <div className="flex items-center gap-3">
@@ -521,7 +517,7 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
           <p className="text-xs text-slate-400">
             {s.first ? `${dm(s.first)} a ${dm(s.last!)}` : 'Sem lançamentos'} · {ev.closed ? 'encerrado' : 'em andamento'}
             {monthLabel && ` · mostrando ${monthLabel}`}
-
+            {periodMode && ' · todos os gastos do período'}
           </p>
         </div>
       </div>
@@ -541,10 +537,10 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
         ))}
       </div>
 
-      {periodMode && s.period && s.untaggedCount > 0 && (
+      {periodMode && s.untaggedCount > 0 && (
         <p className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-          <strong>{s.untaggedCount} gasto{s.untaggedCount === 1 ? '' : 's'} de {dm(s.period.from)} a {dm(s.period.to)} ({money(s.untaggedValue)})</strong> não {s.untaggedCount === 1 ? 'está marcado' : 'estão marcados'} no evento
-          e não {s.untaggedCount === 1 ? 'entra' : 'entram'} nos números acima. {s.untaggedCount === 1 ? 'Aparece' : 'Aparecem'} na lista como &ldquo;fora do evento&rdquo; — use o ⋮ para marcar, se fizer parte.
+          <strong>{s.untaggedCount} gasto{s.untaggedCount === 1 ? '' : 's'} do período ({money(s.untaggedValue)})</strong> não {s.untaggedCount === 1 ? 'está marcado' : 'estão marcados'} no evento.
+          Eles entram nos números acima; use o ⋮ do lançamento para marcar no evento, se fizer parte.
         </p>
       )}
 
@@ -592,7 +588,7 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
 
 
       <OverviewSection icon={ReceiptText} title="Lançamentos" subtitle="De todas as contas · para trocar a categoria, abra na conta">
-        {list.length === 0 ? (
+        {s.txs.length === 0 ? (
           <p className="text-xs text-slate-400 mt-3">Nenhum lançamento {monthLabel ? 'neste mês' : 'neste evento'}.</p>
         ) : (
           <>
@@ -643,9 +639,9 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
                 )
               })}
             </ul>
-            {!showAll && list.length > txs.length && (
+            {!showAll && s.txs.length > txs.length && (
               <button type="button" onClick={onShowAll} className="mt-2 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline">
-                Ver os {list.length} lançamentos →
+                Ver os {s.txs.length} lançamentos →
               </button>
             )}
           </>
