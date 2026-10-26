@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button'
 import { OverviewSection } from '@/components/ui/overview-blocks'
 import { AppEvent, Category, Transaction, TransactionBoard } from '@/types'
 import { cn } from '@/lib/utils'
-import { isInternalMovement } from '@/lib/internal-movement'
 
 const money = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
@@ -113,23 +112,15 @@ export function EventsTab({
     return build(ev, txs)
   }
 
-  // Período da viagem: TODOS os gastos das suas contas entre as datas
-  // (marcados ou não no evento) + o que voltou marcado no evento. Contas de
-  // investimento e movimentação entre contas ficam de fora.
-  const investmentIds = useMemo(() => new Set(boards.filter(b => b.is_investment).map(b => b.id)), [boards])
+  // Período (encerrados): só os lançamentos DO EVENTO dentro das datas. Está
+  // no evento, soma; não está, não soma — e a lista mostra exatamente o que
+  // está somando. (Antes somava todos os gastos das contas nas datas, mesmo
+  // os que não eram do evento.)
   function summarizePeriod(ev: AppEvent, from: string, to: string): EventSummary {
     const txs = transactions
-      .filter(t => t.date >= from && t.date <= to)
-      .filter(t => !isInternalMovement(t) && !(t.board_id && investmentIds.has(t.board_id)))
-      .filter(t => t.type === 'despesa' || t.event_id === ev.id)
+      .filter(t => t.event_id === ev.id && t.date >= from && t.date <= to)
       .sort((a, b) => b.date.localeCompare(a.date))
-    const out = build(ev, txs)
-    const untagged = txs.filter(t => t.type === 'despesa' && t.event_id !== ev.id)
-    return {
-      ...out, first: from, last: to,
-      untaggedCount: untagged.length,
-      untaggedValue: untagged.reduce((sum, t) => sum + Number(t.amount), 0),
-    }
+    return { ...build(ev, txs), first: from, last: to }
   }
 
   function build(ev: AppEvent, txs: Transaction[]): EventSummary {
@@ -386,7 +377,7 @@ export function EventsTab({
           <CalendarRange className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
           <div className="min-w-0">
             <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Período de {selected!.total.event.name}</p>
-            <p className="text-[11px] text-slate-400">Mostra todos os gastos das suas contas nessas datas — marcados ou não no evento.</p>
+            <p className="text-[11px] text-slate-400">Mostra só os lançamentos do evento entre essas datas.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
             <label className="flex items-center gap-1.5 text-xs text-slate-500">
@@ -517,7 +508,7 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
           <p className="text-xs text-slate-400">
             {s.first ? `${dm(s.first)} a ${dm(s.last!)}` : 'Sem lançamentos'} · {ev.closed ? 'encerrado' : 'em andamento'}
             {monthLabel && ` · mostrando ${monthLabel}`}
-            {periodMode && ' · todos os gastos do período'}
+            {periodMode && ' · só as datas escolhidas'}
           </p>
         </div>
       </div>
