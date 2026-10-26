@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { OverviewSection } from '@/components/ui/overview-blocks'
 import { AppEvent, Category, Transaction, TransactionBoard } from '@/types'
 import { cn } from '@/lib/utils'
+import { motherNameByCategory, motherOf } from '@/lib/category-tree'
 
 const money = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
@@ -23,6 +24,9 @@ const daysBetween = (a: string, b: string) =>
 
 type StatusFilter = 'all' | 'open' | 'closed'
 
+/** Categoria (a mãe) com as subcategorias dentro. */
+interface CatSlice { name: string; value: number; color: string; subs: { name: string; value: number }[] }
+
 interface EventSummary {
   event: AppEvent
   txs: Transaction[]
@@ -31,9 +35,9 @@ interface EventSummary {
   net: number
   first: string | null
   last: string | null
-  cats: { name: string; value: number; color: string }[]
+  cats: CatSlice[]
   /** Entradas do evento (estornos, reembolsos) por categoria. */
-  incomeCats: { name: string; value: number; color: string }[]
+  incomeCats: CatSlice[]
   /** Só no filtro de período: gastos do período que não estão marcados no evento. */
   untaggedCount: number
   untaggedValue: number
@@ -93,14 +97,14 @@ export function EventsTab({
     return { y: t.getFullYear(), m: t.getMonth() }
   })
 
-  // Cor da categoria (a da mãe, se for subcategoria) e o nome da mãe.
+  // Categoria-mãe de um lançamento (pelo tipo, como nos Relatórios) e a cor dela.
   const catInfo = useMemo(() => {
-    const byName = new Map<string, Category>()
-    for (const c of categories) if (!byName.has(c.name)) byName.set(c.name, c)
-    return (name: string) => {
-      const c = byName.get(name)
-      const mother = c?.parent_id ? categories.find(m => m.id === c.parent_id) ?? c : c
-      return { mother: mother?.name ?? name, color: mother?.color ?? OTHER_COLOR }
+    const mothers = motherNameByCategory(categories)
+    const colorOf = new Map<string, string>()
+    for (const c of categories) if (!c.parent_id && !colorOf.has(c.name)) colorOf.set(c.name, c.color)
+    return (name: string, type?: Transaction['type']) => {
+      const mother = motherOf(name, mothers, type)
+      return { mother, color: colorOf.get(mother) ?? categories.find(c => c.name === name)?.color ?? OTHER_COLOR }
     }
   }, [categories])
   const boardName = (id: string | null | undefined) => boards.find(b => b.id === id)?.name.trim() ?? 'Sem conta'
@@ -125,24 +129,30 @@ export function EventsTab({
 
   function build(ev: AppEvent, txs: Transaction[]): EventSummary {
     let spent = 0, back = 0
-    const cats = new Map<string, { name: string; value: number; color: string }>()
-    const incomeCats = new Map<string, { name: string; value: number; color: string }>()
+    const cats = new Map<string, CatSlice & { subMap: Map<string, number> }>()
+    const incomeCats = new Map<string, CatSlice & { subMap: Map<string, number> }>()
     for (const t of txs) {
       const v = Number(t.amount)
-      const info = catInfo(t.category || 'Outros')
+      const name = t.category || 'Outros'
+      const info = catInfo(name, t.type)
       const target = t.type === 'despesa' ? cats : incomeCats
       if (t.type === 'despesa') spent += v
       else back += v
-      const c = target.get(info.mother) ?? { name: info.mother, value: 0, color: info.color }
+      const c = target.get(info.mother) ?? { name: info.mother, value: 0, color: info.color, subs: [], subMap: new Map() }
       c.value += v
+      if (name !== info.mother) c.subMap.set(name, (c.subMap.get(name) ?? 0) + v)
       target.set(info.mother, c)
     }
+    const finish = (m: Map<string, CatSlice & { subMap: Map<string, number> }>): CatSlice[] =>
+      [...m.values()]
+        .map(({ subMap, ...c }) => ({ ...c, subs: [...subMap.entries()].sort((a, b) => b[1] - a[1]).map(([n, value]) => ({ name: n, value })) }))
+        .sort((a, b) => b.value - a.value)
     return {
       event: ev, txs, spent, back, net: spent - back,
       first: txs.length ? txs[txs.length - 1].date : null,
       last: txs.length ? txs[0].date : null,
-      cats: [...cats.values()].sort((a, b) => b.value - a.value),
-      incomeCats: [...incomeCats.values()].sort((a, b) => b.value - a.value),
+      cats: finish(cats),
+      incomeCats: finish(incomeCats),
       untaggedCount: 0,
       untaggedValue: 0,
     }
@@ -647,13 +657,20 @@ function CategoryDonut({ title, subtitle, iconClass, cats, total, centerLabel, c
   title: string
   subtitle: string
   iconClass: string
-  cats: { name: string; value: number; color: string }[]
+  cats: CatSlice[]
   total: number
   centerLabel: string
   centerClass: string
   empty: string
 }) {
   const sum = cats.reduce((a, c) => a + c.value, 0)
+  // Subcategorias recolhidas: toque na categoria para abrir.
+  const [open, setOpen] = useState<Set<string>>(new Set())
+  const toggle = (n: string) => setOpen(prev => {
+    const next = new Set(prev)
+    if (next.has(n)) next.delete(n); else next.add(n)
+    return next
+  })
   return (
     <OverviewSection icon={ChartPie} iconClass={iconClass} title={title} subtitle={subtitle}>
       {sum > 0 ? (
@@ -673,14 +690,35 @@ function CategoryDonut({ title, subtitle, iconClass, cats, total, centerLabel, c
             </div>
           </div>
           <ul className="flex-1 min-w-0 w-full space-y-1.5">
-            {cats.map(c => (
-              <li key={c.name} className="flex items-center gap-2 text-xs">
-                <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
-                <span className="flex-1 min-w-0 truncate text-slate-600 dark:text-slate-300">{c.name}</span>
-                <span className="tabular-nums text-slate-400">{Math.round(c.value / sum * 100)}%</span>
-                <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-200 w-24 text-right">{money(c.value)}</span>
-              </li>
-            ))}
+            {cats.map(c => {
+              const hasSubs = c.subs.length > 0
+              const isOpen = open.has(c.name)
+              return (
+                <li key={c.name} className="text-xs">
+                  <button type="button" disabled={!hasSubs} onClick={() => toggle(c.name)}
+                    className={cn('w-full flex items-center gap-2 text-left', hasSubs && 'cursor-pointer hover:opacity-80')}>
+                    <ChevronRight className={cn('h-3 w-3 text-slate-400 shrink-0 transition-transform', isOpen && 'rotate-90', !hasSubs && 'invisible')} />
+                    <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                    <span className="flex-1 min-w-0 truncate text-slate-600 dark:text-slate-300">
+                      {c.name}{hasSubs && !isOpen && <span className="ml-1 text-[10.5px] text-slate-400">({c.subs.length})</span>}
+                    </span>
+                    <span className="tabular-nums text-slate-400">{Math.round(c.value / sum * 100)}%</span>
+                    <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-200 w-24 text-right">{money(c.value)}</span>
+                  </button>
+                  {isOpen && (
+                    <ul className="mt-1 mb-1.5 ml-[30px] pl-2 border-l-2 border-slate-100 dark:border-white/[0.08] space-y-1">
+                      {c.subs.map(sub => (
+                        <li key={sub.name} className="flex items-center gap-2 text-[11px]">
+                          <span className="flex-1 min-w-0 truncate text-slate-500 dark:text-slate-400">{sub.name}</span>
+                          <span className="tabular-nums text-slate-400">{Math.round(sub.value / sum * 100)}%</span>
+                          <span className="tabular-nums text-slate-600 dark:text-slate-300 w-24 text-right">{money(sub.value)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         </div>
       ) : <p className="text-xs text-slate-400 mt-4">{empty}</p>}
