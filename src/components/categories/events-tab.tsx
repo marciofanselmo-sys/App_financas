@@ -544,7 +544,7 @@ function EventDetail({ s, monthLabel, showAll, onShowAll, boardName, catColor, r
       {periodMode && s.period && s.untaggedCount > 0 && (
         <p className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
           <strong>{s.untaggedCount} gasto{s.untaggedCount === 1 ? '' : 's'} de {dm(s.period.from)} a {dm(s.period.to)} ({money(s.untaggedValue)})</strong> não {s.untaggedCount === 1 ? 'está marcado' : 'estão marcados'} no evento
-          e não {s.untaggedCount === 1 ? 'entra' : 'entram'} nos números acima. {s.untaggedCount === 1 ? 'Aparece' : 'Aparecem'} na lista como &ldquo;fora do evento&rdquo; — use o ⋮ para marcar, se fizer parte.
+          {` e não ${s.untaggedCount === 1 ? 'entra' : 'entram'} nos números acima. ${s.untaggedCount === 1 ? 'Aparece' : 'Aparecem'} na lista como “fora do evento” — use o ⋮ para marcar, se fizer parte.`}
         </p>
       )}
 
