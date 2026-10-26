@@ -15,7 +15,10 @@ const ddmm = (iso: string) => iso.split('-').reverse().slice(0, 2).join('/')
 
 export interface EventYearStat {
   event: AppEvent
+  /** Custo final: gasto − o que voltou (estornos, reembolsos) — o mesmo da aba Eventos. */
   total: number
+  spent: number
+  back: number
   count: number
   first: string
   last: string
@@ -30,31 +33,35 @@ export interface EventYearStat {
 export function eventYearStats(expenses: Transaction[], events: AppEvent[], categories: Category[]) {
   const mothers = motherNameByCategory(categories)
   const byId = new Map(events.map(e => [e.id, e]))
-  const acc = new Map<string, { total: number; count: number; first: string; last: string; cats: Map<string, number> }>()
+  const acc = new Map<string, { spent: number; back: number; count: number; first: string; last: string; cats: Map<string, number> }>()
   const byMother = new Map<string, number>()
   for (const t of expenses) {
-    if (t.type !== 'despesa' || !t.event_id || !byId.has(t.event_id)) continue
+    if (!t.event_id || !byId.has(t.event_id)) continue
     const amt = Number(t.amount)
-    const mother = motherOf(t.category, mothers, t.type)
-    const a = acc.get(t.event_id) ?? { total: 0, count: 0, first: t.date, last: t.date, cats: new Map() }
-    a.total += amt
+    const a = acc.get(t.event_id) ?? { spent: 0, back: 0, count: 0, first: t.date, last: t.date, cats: new Map() }
     a.count++
     if (t.date < a.first) a.first = t.date
     if (t.date > a.last) a.last = t.date
-    a.cats.set(mother, (a.cats.get(mother) ?? 0) + amt)
     acc.set(t.event_id, a)
+    // O que voltou (estorno, reembolso) abate o custo — como na aba Eventos.
+    if (t.type !== 'despesa') { a.back += amt; continue }
+    a.spent += amt
+    const mother = motherOf(t.category, mothers, t.type)
+    a.cats.set(mother, (a.cats.get(mother) ?? 0) + amt)
     byMother.set(mother, (byMother.get(mother) ?? 0) + amt)
   }
   const stats: EventYearStat[] = [...acc.entries()].map(([id, a]) => ({
     event: byId.get(id)!,
-    total: a.total,
+    total: a.spent - a.back,
+    spent: a.spent,
+    back: a.back,
     count: a.count,
     first: a.first,
     last: a.last,
     byCategory: [...a.cats.entries()]
       .sort((x, y) => y[1] - x[1])
       .map(([name, amount]) => ({ name, amount, color: categories.find(c => c.name === name)?.color ?? '#94a3b8' })),
-  })).sort((x, y) => y.total - x.total)
+  })).filter(e => e.spent > 0.005).sort((x, y) => y.total - x.total)
   return { stats, total: stats.reduce((s, e) => s + e.total, 0), byMother: Object.fromEntries(byMother) }
 }
 
@@ -65,9 +72,12 @@ export function AnnualEventsSection({ stats, total, totalExpenses, totalIncome }
   totalIncome: number
 }) {
   if (stats.length === 0) return null
-  const dayToDay = Math.max(0, totalExpenses - total)
-  const balanceWithout = totalIncome - dayToDay
-  const share = totalExpenses > 0 ? (total / totalExpenses) * 100 : 0
+  // Tirar os eventos do ano: sai o que foi gasto neles e o que voltou deles.
+  const spentAll = stats.reduce((t, e) => t + e.spent, 0)
+  const backAll = stats.reduce((t, e) => t + e.back, 0)
+  const dayToDay = Math.max(0, totalExpenses - spentAll)
+  const balanceWithout = totalIncome - backAll - dayToDay
+  const share = totalExpenses > 0 ? (spentAll / totalExpenses) * 100 : 0
 
   return (
     <OverviewSection
@@ -87,7 +97,7 @@ export function AnnualEventsSection({ stats, total, totalExpenses, totalIncome }
             <div className="bg-violet-500" style={{ width: `${Math.min(100, share)}%` }} />
           </div>
           <div className="flex justify-between text-[11px] text-slate-400 mt-1">
-            <span>Eventos {fmt(total)}</span>
+            <span>Eventos {fmt(spentAll)}</span>
             <span>Dia a dia {fmt(dayToDay)}</span>
           </div>
         </div>
@@ -117,8 +127,11 @@ export function AnnualEventsSection({ stats, total, totalExpenses, totalIncome }
               {s.first === s.last ? ddmm(s.first) : s.event.closed ? `${ddmm(s.first)} a ${ddmm(s.last)}` : `desde ${ddmm(s.first)}`}
               {' · '}{s.count} lançamento{s.count === 1 ? '' : 's'} · {pct(s.total, totalExpenses)} das despesas
             </p>
+            {s.back > 0.005 && (
+              <p className="text-[11px] text-slate-400">gastou {fmt(s.spent)} · voltou <span className="text-emerald-600">+{fmt(s.back)}</span></p>
+            )}
             <div className="flex h-2 rounded-full overflow-hidden mt-3 bg-slate-100 dark:bg-white/[0.08]">
-              {s.byCategory.map(c => <div key={c.name} title={c.name} style={{ width: `${(c.amount / s.total) * 100}%`, backgroundColor: c.color }} />)}
+              {s.byCategory.map(c => <div key={c.name} title={c.name} style={{ width: `${(c.amount / s.spent) * 100}%`, backgroundColor: c.color }} />)}
             </div>
             <ul className="mt-2 space-y-0.5 text-xs">
               {s.byCategory.slice(0, 4).map(c => (
