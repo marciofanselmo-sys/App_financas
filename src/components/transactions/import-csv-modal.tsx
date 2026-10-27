@@ -15,7 +15,7 @@ import { useRules, applyUserRules, findInternalRule, internalRuleTarget, isInter
 import { useHistoryWindow } from '@/hooks/use-history-window'
 import { textoJanela } from '@/lib/plans'
 import { Upload, Download, CheckCircle, AlertCircle, FileText, Zap, Tag, TrendingUp, History, Lock } from 'lucide-react'
-import { parseOFX, guessCategory } from '@/utils/parse-ofx'
+import { parseOFX, guessCategory, fitGuessedCategory } from '@/utils/parse-ofx'
 import { parseRicoExtratoXLSX, isRicoExtratoRows } from '@/utils/parse-rico-extrato'
 import { extractPdfText } from '@/utils/extract-pdf-text'
 import { selectAllPages } from '@/lib/supabase/select-all'
@@ -543,6 +543,9 @@ export function ImportCSVModal({ open, onClose, onImported, boardId }: ImportCSV
   // "não pegava" nas importações seguintes. Sem regra que case, a sugestão do
   // banco continua valendo.
   const enhanceWithUserRules = useCallback((rows: PreviewRow[]): PreviewRow[] => {
+    // Categorias novas (Viagens, Assinaturas…) só valem para quem já as tem.
+    const names = categories.filter(c => c.type === 'despesa' || c.type === 'ambos').map(c => c.name)
+    rows = rows.map(r => r.type === 'despesa' ? { ...r, category: fitGuessedCategory(r.category, names) } : r)
     if (!rules.length) return rows
     return rows.map(r => {
       // A regra devolve categoria E conta de destino. O board_id vinha sendo
