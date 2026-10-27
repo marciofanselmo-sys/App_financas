@@ -9,20 +9,13 @@ interface OFXTransaction {
   category: string
 }
 
-// A ordem importa: a primeira categoria que casa ganha. Assinaturas vem antes
-// de Compras ("amazon prime" × "amazon"), Compras antes de Alimentação
-// ("mercado livre" × "mercado") e Viagens antes de Transporte ("passagem aerea").
 const CATEGORY_KEYWORDS: Record<string, string[]> = {
-  Assinaturas: ['netflix', 'spotify', 'deezer', 'prime video', 'amazon prime', 'disney', 'hbo', 'max.com', 'globoplay', 'paramount', 'youtube premium', 'youtube music', 'apple.com', 'icloud', 'google one', 'google storage', 'microsoft 365', 'chatgpt', 'openai', 'dropbox', 'canva'],
-  Viagens: ['viagem', 'hotel', 'pousada', 'hostel', 'airbnb', 'booking', 'decolar', '123milhas', 'hurb', 'passagem aerea', 'aérea', 'latam', 'gol ', 'azul ', 'buser', 'blablacar', 'clickbus', 'rodoviaria', 'rodoviária', 'localiza', 'movida', 'unidas'],
-  Compras: ['shopee', 'mercado livre', 'mercadolivre', 'amazon', 'magalu', 'magazine luiza', 'americanas', 'aliexpress', 'shein', 'temu', 'renner', 'riachuelo', 'c&a', 'zara', 'casas bahia', 'kabum', 'leroy merlin', 'tok&stok', 'tokstok'],
-  Alimentação: ['supermercado', 'mercado', 'restaurante', 'lanche', 'pizza', 'burger', 'hamburguer', 'ifood', 'rappi', 'delivery', 'ze delivery', 'zé delivery', 'padaria', 'açougue', 'hortifruti', 'conveniencia', 'conveniência', 'cafe', 'café', 'bar ', 'boteco', 'peixaria'],
-  Transporte: ['uber', '99pop', '99app', 'taxi', 'táxi', 'onibus', 'ônibus', 'metro', 'metrô', 'trem', 'combustivel', 'combustível', 'gasolina', 'etanol', 'posto ', 'shell', 'ipiranga', 'br distribuidora', 'estacionamento', 'pedagio', 'pedágio', 'sem parar', 'veloe', 'conectcar', 'passagem'],
+  Alimentação: ['supermercado', 'mercado', 'restaurante', 'lanche', 'pizza', 'burger', 'hamburguer', 'ifood', 'rappi', 'delivery', 'padaria', 'açougue', 'hortifruti', 'conveniencia', 'conveniência', 'cafe', 'café', 'bar ', 'boteco', 'peixaria'],
+  Transporte: ['uber', '99pop', '99app', 'taxi', 'táxi', 'onibus', 'ônibus', 'metro', 'metrô', 'trem', 'combustivel', 'combustível', 'gasolina', 'etanol', 'posto ', 'shell', 'ipiranga', 'br distribuidora', 'estacionamento', 'pedagio', 'pedágio', 'passagem'],
   Moradia: ['aluguel', 'condominio', 'condomínio', 'agua ', 'água ', 'sabesp', 'copasa', 'cemig', 'enel', 'cpfl', 'eletropaulo', 'luz ', 'energia', 'gas encanado', 'gás', 'comgas', 'internet', 'vivo', 'claro', 'tim', 'oi ', 'nextel', 'iptu', 'seguro resid'],
-  Saúde: ['farmacia', 'farmácia', 'drogaria', 'droga', 'remedio', 'remédio', 'medico', 'médico', 'hospital', 'clinica', 'clínica', 'laboratorio', 'laboratório', 'plano de saude', 'unimed', 'bradesco saude', 'amil', 'dental', 'odonto', 'academia', 'smart fit', 'wellhub', 'gympass', 'totalpass'],
+  Saúde: ['farmacia', 'farmácia', 'drogaria', 'droga', 'remedio', 'remédio', 'medico', 'médico', 'hospital', 'clinica', 'clínica', 'laboratorio', 'laboratório', 'plano de saude', 'unimed', 'bradesco saude', 'amil', 'dental', 'odonto', 'academia', 'smart fit'],
   Educação: ['escola', 'faculdade', 'universidade', 'curso', 'livro', 'mensalidade', 'colegio', 'colégio', 'educacao', 'educação', 'alura', 'udemy', 'coursera', 'material escolar'],
-  'Família e pets': ['petz', 'cobasi', 'petshop', 'pet shop', 'veterinario', 'veterinário', 'creche', 'berçário'],
-  Lazer: ['cinema', 'teatro', 'show', 'ingresso', 'clube', 'decathlon', 'esporte', 'jogo', 'game', 'steam', 'playstation', 'xbox'],
+  Lazer: ['cinema', 'teatro', 'show', 'ingresso', 'netflix', 'spotify', 'prime video', 'disney', 'hbo', 'clube', 'viagem', 'hotel', 'airbnb', 'booking', 'passagem aerea', 'aérea', 'latam', 'gol ', 'azul ', 'decathlon', 'esporte', 'jogo', 'game'],
   Salário: ['salario', 'salário', 'pagamento sal', 'folha', 'remuneracao', 'remuneração', 'pro-labore', 'prolabore'],
   // "pix recebido" e "transferencia recebida" saíram daqui: Pix de familiar ou
   // da própria conta virava Freelance (ex.: o cônjuge mandando dinheiro).
@@ -99,23 +92,6 @@ function hasKeyword(text: string, keyword: string): boolean {
   const word = escapeRegex(kw.trim())
   const end = kw.endsWith(' ') ? '(?![a-z0-9])' : ''
   return new RegExp(`(?:^|[^a-z0-9])${word}${end}`).test(text)
-}
-
-// Categorias que entraram na árvore padrão em out/2026. Quem criou a conta
-// antes pode não ter: aí a sugestão cai na categoria antiga equivalente
-// (ou em "Outros"), para nunca gravar um nome de categoria que não existe.
-const NEW_CATEGORY_FALLBACK: Record<string, string[]> = {
-  Viagens: ['Lazer'],
-  Assinaturas: ['Lazer'],
-  Compras: ['Pessoal', 'Cuidados pessoais'],
-  'Família e pets': [],
-}
-
-export function fitGuessedCategory(category: string, available: string[]): string {
-  const fallback = NEW_CATEGORY_FALLBACK[category]
-  if (!fallback) return category
-  const has = (name: string) => available.find(a => a.trim().toLowerCase() === name.toLowerCase())
-  return has(category) ?? fallback.map(has).find(Boolean) ?? 'Outros'
 }
 
 export function guessCategory(description: string, type: TransactionType): string {
